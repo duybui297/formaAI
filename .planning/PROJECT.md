@@ -2,7 +2,7 @@
 
 ## What This Is
 
-A web-based AI document translation PoC that takes office documents (DOCX, PDF, PPTX) in any language pair and returns translated versions that preserve the original format as closely as the format allows. Built as an internal demo for the VNEXT **AICore** team to evaluate whether Qwen-class LLMs plus layout-aware processing can beat commodity document translation tools (Azure Translator, DeepL, Google Docs translate) on quality, terminology control, and UX.
+A web-based AI document translation PoC that takes office documents (DOCX, PDF, PPTX) in any language pair and returns translated versions that preserve the original format as closely as the format allows. Built as an internal demo for the **AICore** team (an AI-native startup) to evaluate whether Qwen-class LLMs plus layout-aware processing can beat commodity document translation tools (Azure Translator, DeepL, Google Docs translate) on quality, terminology control, and UX.
 
 ## Core Value
 
@@ -47,9 +47,9 @@ A web-based AI document translation PoC that takes office documents (DOCX, PDF, 
 ## Context
 
 **Organizational:**
-- Built at VNEXT (Vietnamese tech company) for an **internal peer team (AICore)** to evaluate AI doc-translation capability.
+- Built at **AICore** (an AI-native startup) as an internal demo to evaluate AI doc-translation capability.
 - PoC-first: the goal is a demo that wins AICore's confidence in 2–3 weeks, not a production launch.
-- User (Thu, AI Engineer) already runs two production RAG systems at VNEXT (scala-i-ask on AWS Bedrock; ICOM-P3 on Azure OpenAI). Strong Python/FastAPI, LangChain, LlamaIndex, Qdrant, Redis, RabbitMQ background to draw on.
+- User (Thu, AI Engineer at AICore) has a strong Python/FastAPI, LangChain, LlamaIndex, Qdrant, Redis, RabbitMQ background from prior production RAG work to draw on.
 
 **Technical landscape:**
 - **Model:** `qwen-mt-turbo` — Alibaba's dedicated translation model on DashScope. (Research verified the user-provided name "qwen3.6-plus" does not exist in the live catalog; `qwen-mt-turbo` is the correct pick: 92 languages incl. Vietnamese, a native `terminology` API parameter for glossary injection, ~$0.49 / 1M output tokens.) Accessed via the **OpenAI-compatible endpoint** `https://dashscope-intl.aliyuncs.com/compatible-mode/v1` using the `openai` Python SDK — not the `dashscope` SDK. DashScope international vs China endpoints are separate accounts with non-portable keys; a Day-1 health check from the dev machine is required.
@@ -68,10 +68,10 @@ A web-based AI document translation PoC that takes office documents (DOCX, PDF, 
 - **Tech stack (model)**: `qwen-mt-turbo` on Alibaba DashScope (international endpoint), accessed via the `openai` Python SDK against the OpenAI-compatible base URL. Glossary uses the native `terminology` API parameter.
 - **Tech stack (backend)**: Python / FastAPI assumed — matches Thu's existing production stack and keeps cognitive overhead low. Async patterns for long-running translation jobs.
 - **Tech stack (frontend)**: Next.js (React) assumed — matches ICOM-P3 frontend; fastest path to a demo-quality UI.
-- **Audience**: Internal VNEXT team (AICore). No external users, no data-residency contract — but Qwen API routes through Alibaba Cloud; flag if AICore has concerns about that.
+- **Audience**: Internal AICore team. No external users, no data-residency contract — but Qwen API routes through Alibaba Cloud; flag if AICore has concerns about that.
 - **Deployment**: Internal web app (docker-compose or single VM) is sufficient for the PoC demo.
 - **Quality bar**: "Readable + high fidelity + pixel-perfect" was the user's stated aspiration — the realistic per-format bars are documented in `## Context` above. We will not promise pixel-perfect on scanned PDFs.
-- **Languages**: Multi-lingual — pair is user-selected per job, not hardcoded. Vietnamese, English, Japanese, Chinese must all work well given VNEXT's market.
+- **Languages**: Multi-lingual — pair is user-selected per job, not hardcoded. Vietnamese, English, Japanese, Chinese must all work well given AICore's target market.
 
 ## Key Decisions
 

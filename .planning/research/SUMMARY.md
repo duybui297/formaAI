@@ -1,6 +1,6 @@
 # Project Research Summary
 
-**Project:** AI Translation PoC (VNEXT AICore Demo)
+**Project:** AI Translation PoC (AICore Demo)
 **Domain:** Web-based AI document translation — DOCX, PPTX, native PDF, scanned PDF
 **Researched:** 2026-04-17
 **Confidence:** HIGH (stack and pitfalls verified against live docs and library source; architecture
@@ -32,7 +32,7 @@ change the API call signature, the tool choices, and the expected PoC output for
 
 | # | Question | How to Answer | Blocking For |
 |---|----------|---------------|--------------|
-| Q1 | Does `qwen-mt-turbo` respond correctly on `dashscope-intl.aliyuncs.com` with the VNEXT API key? | `curl` test from the actual demo machine + Python snippet from STACK.md Section 2 | Everything — entire pipeline depends on this |
+| Q1 | Does `qwen-mt-turbo` respond correctly on `dashscope-intl.aliyuncs.com` with the AICore API key? | `curl` test from the actual demo machine + Python snippet from STACK.md Section 2 | Everything — entire pipeline depends on this |
 | Q2 | Does `qwen-mt-turbo`'s `terminology` parameter actually enforce glossary terms in Vietnamese output? | Send a 5-segment test batch with 3 known company terms; inspect all output segments | Glossary feature (Phase 2) |
 | Q3 | What is PaddleOCR PP-OCRv5's first-run model download behavior? (~1 GB on cold start) | `docker run` and time the first OCR call; pin the model version | Phase 4 OCR pipeline; demo day cold-start risk |
 
@@ -40,7 +40,7 @@ change the API call signature, the tool choices, and the expected PoC output for
 
 ## Executive Summary
 
-This is a two-to-three week PoC of an AI document translation tool targeting the VNEXT AICore team.
+This is a two-to-three week PoC of an AI document translation tool targeting the AICore team (an AI-native startup).
 The core differentiators over commodity tools (Azure Translator, DeepL, Google) are: LLM translation
 quality via a specialized Qwen model, native glossary enforcement, layout-aware format preservation,
 and a side-by-side review UX that no free-tier competitor offers. The research confirms this is an
@@ -284,7 +284,7 @@ edge cases that require test-doc validation.
   post-processing safety net regardless.
 - **PaddleOCR CPU-only inference speed on the demo machine** — if too slow for a live demo, fall
   back to Azure Document Intelligence ($1.50/1K pages, confirmed VN+JA+ZH support).
-- **SmartArt in real VNEXT PPTX files** — python-pptx cannot translate SmartArt; must flag visibly
+- **SmartArt in real AICore PPTX files** — python-pptx cannot translate SmartArt; must flag visibly
   rather than silently skip; check any demo PPTX for SmartArt before demo day.
 
 ---

@@ -44,6 +44,9 @@ Validate DashScope + `qwen-mt-turbo` from the dev machine, stand up the full doc
 ### Language detection
 - **D-16:** Auto-detect source language is handled by `qwen-mt-turbo` natively: pass `source_lang='auto'` in the translation_options. The detected language from the API response metadata is persisted on the Job row and shown in the UI ("Detected: Vietnamese"). No separate detection library.
 
+### Frontend framework version
+- **D-20 (added 2026-04-17 after deeper research):** Pin **Next.js `^16.2.3`** + **React 19**, not Next.js 15 as originally sketched in CLAUDE.md. Next.js 16 was released Oct 2025 and is six months into stable point releases; greenfield projects skip the 15→16 migration pain entirely (async `cookies()`/`headers()`/`params`/`searchParams` — we write async from day one; Turbopack default — we have no webpack config to break; `middleware.ts` → `proxy.ts` rename — cosmetic, we have no edge middleware; new `"use cache"` directive — clearer mental model for new code). `@tanstack/react-query` v5 has official Next 16 support; `@monaco-editor/react` (for Phase 2) works unchanged via the existing `dynamic(() => import, { ssr: false })` pattern. Keep `@microsoft/fetch-event-source` (per user direction) — unmaintained library but compatible with Next.js 16 and gives us custom-header support we'll want when auth lands in v2. **Follow-up:** CLAUDE.md needs a small update to reflect Next.js 16 pinning after Phase 1 ships.
+
 ### Concurrency & infra
 - **D-17:** arq worker topology: **2 worker processes** (demo resilience — one dying doesn't halt the demo). Each job runs on a single worker, but within that worker up to **4 batches translate concurrently via `asyncio.gather`**. This caps per-job DashScope concurrency at 4 (rate-limit blast radius bounded).
 - **D-18:** `scripts/healthcheck.py` (INFRA-01) covers the full stack end-to-end: DashScope intl endpoint reachable + `qwen-mt-turbo` responds to a 1-sentence VN→EN probe, `terminology` param behavior (INFRA-02: documented output on glossary term present vs absent), Postgres reachable + Alembic migrations at head, Redis reachable + arq queue writable, Noto CJK + Noto Sans Vietnamese fonts present at expected paths. Same script gets reused in Phase 5 DEMO-02.
@@ -122,6 +125,7 @@ Validate DashScope + `qwen-mt-turbo` from the dev machine, stand up the full doc
 - **Observability / traces / dashboards** — v2 per PROJECT.md; stdout JSON logging is sufficient for the PoC.
 - **Auth + multi-tenancy** — v2; Phase 1 is single-user single-team.
 - **Rate-limit measurement & dynamic batch-size adaptation** — STATE.md notes DashScope intl limits aren't published; measure during Phase 1 testing but keep the config value static for the demo.
+- **`qwen3.6-plus` as VLM OCR path (Phase 4 hook)** — Verified 2026-04-17: `qwen3.6-plus` is live on DashScope (released 2026-04-02) and is multimodal with 1M context. Does NOT replace `qwen-mt-turbo` for translation (no native `terminology` param, no `translation_options`, higher cost, general vs specialized). DOES become a candidate for Phase 4 scanned-PDF OCR as a single-model OCR+translate path alongside PaddleOCR PP-OCRv5. Re-evaluate when Phase 4 kicks off.
 
 </deferred>
 

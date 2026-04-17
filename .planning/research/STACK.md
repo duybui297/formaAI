@@ -35,7 +35,7 @@ Source: https://www.alibabacloud.com/help/en/model-studio/models (live catalog)
 
 ### Recommendation: OpenAI-compatible endpoint + `openai` Python SDK
 
-**Endpoint:** `https://dashscope-intl.aliyuncs.com/compatible-mode/v1` (Singapore region; appropriate for VNEXT)
+**Endpoint:** `https://dashscope-intl.aliyuncs.com/compatible-mode/v1` (Singapore region; appropriate for AICore)
 
 ```python
 from openai import OpenAI
@@ -215,7 +215,7 @@ Use when: self-hosting GPU is not available, or when the doc contains complex ta
 - Read model supports VN, JA, ZH, EN with high accuracy on real-world scanned docs.
 - $1.50/1000 pages for standard Read (free tier: 500 pages/month).
 - Returns JSON with bounding boxes, reading order, table structure — easier to post-process.
-- Data routed through Azure: acceptable for internal VNEXT PoC; flag if AICore has data residency concerns.
+- Data routed through Azure: acceptable for internal AICore PoC; flag if AICore has data residency concerns.
 
 **Ranking for this PoC (VN + JA + ZH + EN):**
 

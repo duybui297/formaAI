@@ -265,7 +265,7 @@ The LLM has no awareness that its input is OCR garbage. It will generate fluent 
 ### Pitfall 11: Hyperlinks and Non-Translatable Content Translated by LLM
 
 **What goes wrong:**
-The LLM "helpfully" translates URLs, email addresses, code snippets, variable names (`{{username}}`, `{company_name}`), and template placeholders. A DOCX with the hyperlink `https://vnext.vn/products` becomes `https://vnext.vn/sản-phẩm` in the output, breaking the link. Template variables like `{{first_name}}` become `{{tên_đệm}}` — breaking downstream rendering.
+The LLM "helpfully" translates URLs, email addresses, code snippets, variable names (`{{username}}`, `{company_name}`), and template placeholders. A DOCX with the hyperlink `https://example.com/products` becomes `https://example.com/sản-phẩm` in the output, breaking the link. Template variables like `{{first_name}}` become `{{tên_đệm}}` — breaking downstream rendering.
 
 **Why it happens:**
 Without explicit instruction, the model treats the entire segment as translatable text. It has learned that these strings often have meaning and will apply semantic translation.
@@ -288,7 +288,7 @@ Without explicit instruction, the model treats the entire segment as translatabl
 ### Pitfall 12: Glossary Terms Not Respected Despite Injection
 
 **What goes wrong:**
-Even with a glossary injected in the system prompt (`"Always translate 'VNEXT' as 'VNEXT'"`, `"Translate 'RAG' as 'Hệ thống RAG'")`), the LLM sporadically ignores glossary constraints — especially for terms that look translatable in context, multi-word terms, or terms that appear in idioms.
+Even with a glossary injected in the system prompt (`"Always translate 'AICore' as 'AICore'"`, `"Translate 'RAG' as 'Hệ thống RAG'")`), the LLM sporadically ignores glossary constraints — especially for terms that look translatable in context, multi-word terms, or terms that appear in idioms.
 
 **Why it happens:**
 The LLM treats the glossary as a soft preference, not a hard rule. Under distribution shift (e.g., the term appears in an unusual syntactic position), the model's in-context learning weight for the glossary instruction loses to the prior from pretraining.

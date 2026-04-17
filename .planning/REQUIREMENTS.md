@@ -5,7 +5,7 @@
 
 ## v1 Requirements
 
-Requirements for the 2–3 week demo for the VNEXT AICore team. Each maps to exactly one roadmap phase.
+Requirements for the 2–3 week demo for the AICore team (an AI-native startup). Each maps to exactly one roadmap phase.
 
 ### Infrastructure
 

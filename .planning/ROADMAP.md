@@ -2,7 +2,7 @@
 
 ## Overview
 
-A 2–3 week sprint to build a web-based AI document translation demo for the VNEXT AICore team. The build follows the pipeline contract: validate the DashScope endpoint and model first, then ship DOCX end-to-end (the hero format), layer on the two highest-value differentiators (glossary and review UX), extend to PPTX and native PDF, add scanned PDF last, and harden for the demo. Every phase delivers a coherent, verifiable capability — the demo succeeds on Phases 1–3 alone if time is tight.
+A 2–3 week sprint to build a web-based AI document translation demo for the AICore team (an AI-native startup). The build follows the pipeline contract: validate the DashScope endpoint and model first, then ship DOCX end-to-end (the hero format), layer on the two highest-value differentiators (glossary and review UX), extend to PPTX and native PDF, add scanned PDF last, and harden for the demo. Every phase delivers a coherent, verifiable capability — the demo succeeds on Phases 1–3 alone if time is tight.
 
 ## Phases
 

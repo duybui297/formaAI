@@ -328,7 +328,7 @@ Minimum set to make the demo compelling. Each item maps to something AICore revi
 
 ### 10. Security / Privacy
 
-**Flag for AICore:** Qwen API routes through Alibaba Cloud (DashScope). If AICore has data-residency concerns about document content leaving the VNEXT network to Alibaba Cloud infrastructure, this must be raised before the PoC demo — not after. No on-prem option in PoC scope (Qwen is API-only). Mitigation: use test/synthetic documents in the demo; redact any sensitive content.
+**Flag for AICore:** Qwen API routes through Alibaba Cloud (DashScope). If AICore has data-residency concerns about document content leaving the AICore network to Alibaba Cloud infrastructure, this must be raised before the PoC demo — not after. No on-prem option in PoC scope (Qwen is API-only). Mitigation: use test/synthetic documents in the demo; redact any sensitive content.
 
 **Anti-feature for PoC:** Audit trail, document retention policies, end-to-end encryption at rest, on-prem Qwen (requires self-hosted model — significant infrastructure).
 
@@ -357,5 +357,5 @@ Minimum set to make the demo compelling. Each item maps to something AICore revi
 - [Intento State of Translation Automation 2025](https://inten.to/the-state-of-translation-automation-2025/)
 
 ---
-*Feature research for: AI document translation PoC (VNEXT internal demo)*
+*Feature research for: AI document translation PoC (AICore internal demo)*
 *Researched: 2026-04-17*

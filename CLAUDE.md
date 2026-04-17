@@ -3,7 +3,7 @@
 
 **AI Translation PoC**
 
-A web-based AI document translation PoC that takes office documents (DOCX, PDF, PPTX) in any language pair and returns translated versions that preserve the original format as closely as the format allows. Built as an internal demo for the VNEXT **AICore** team to evaluate whether Qwen-class LLMs plus layout-aware processing can beat commodity document translation tools (Azure Translator, DeepL, Google Docs translate) on quality, terminology control, and UX.
+A web-based AI document translation PoC that takes office documents (DOCX, PDF, PPTX) in any language pair and returns translated versions that preserve the original format as closely as the format allows. Built as an internal demo for the **AICore** team (an AI-native startup) to evaluate whether Qwen-class LLMs plus layout-aware processing can beat commodity document translation tools (Azure Translator, DeepL, Google Docs translate) on quality, terminology control, and UX.
 
 **Core Value:** **Translate documents with format fidelity that makes the translated output usable as-is** — without forcing reviewers to re-create layouts. Everything else (UX polish, glossary features, multi-format scope) is secondary to this.
 
@@ -13,10 +13,10 @@ A web-based AI document translation PoC that takes office documents (DOCX, PDF, 
 - **Tech stack (model)**: `qwen-mt-turbo` on Alibaba DashScope (international endpoint), accessed via the `openai` Python SDK against the OpenAI-compatible base URL. Glossary uses the native `terminology` API parameter.
 - **Tech stack (backend)**: Python / FastAPI assumed — matches Thu's existing production stack and keeps cognitive overhead low. Async patterns for long-running translation jobs.
 - **Tech stack (frontend)**: Next.js (React) assumed — matches ICOM-P3 frontend; fastest path to a demo-quality UI.
-- **Audience**: Internal VNEXT team (AICore). No external users, no data-residency contract — but Qwen API routes through Alibaba Cloud; flag if AICore has concerns about that.
+- **Audience**: Internal AICore team. No external users, no data-residency contract — but Qwen API routes through Alibaba Cloud; flag if AICore has concerns about that.
 - **Deployment**: Internal web app (docker-compose or single VM) is sufficient for the PoC demo.
 - **Quality bar**: "Readable + high fidelity + pixel-perfect" was the user's stated aspiration — the realistic per-format bars are documented in `## Context` above. We will not promise pixel-perfect on scanned PDFs.
-- **Languages**: Multi-lingual — pair is user-selected per job, not hardcoded. Vietnamese, English, Japanese, Chinese must all work well given VNEXT's market.
+- **Languages**: Multi-lingual — pair is user-selected per job, not hardcoded. Vietnamese, English, Japanese, Chinese must all work well given AICore's target market.
 <!-- GSD:project-end -->
 
 <!-- GSD:stack-start source:research/STACK.md -->
@@ -64,7 +64,7 @@ A web-based AI document translation PoC that takes office documents (DOCX, PDF, 
 - Read model supports VN, JA, ZH, EN with high accuracy on real-world scanned docs.
 - $1.50/1000 pages for standard Read (free tier: 500 pages/month).
 - Returns JSON with bounding boxes, reading order, table structure — easier to post-process.
-- Data routed through Azure: acceptable for internal VNEXT PoC; flag if AICore has data residency concerns.
+- Data routed through Azure: acceptable for internal AICore PoC; flag if AICore has data residency concerns.
 | OCR Engine | VN quality | JA/ZH quality | Self-host | Cost | Ease | Verdict |
 |-----------|-----------|--------------|---------|------|------|---------|
 | PaddleOCR PP-OCRv5 | HIGH | HIGH | Yes | Free | Medium | **Recommended default** |
