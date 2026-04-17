@@ -52,7 +52,7 @@ A web-based AI document translation PoC that takes office documents (DOCX, PDF, 
 - User (Thu, AI Engineer) already runs two production RAG systems at VNEXT (scala-i-ask on AWS Bedrock; ICOM-P3 on Azure OpenAI). Strong Python/FastAPI, LangChain, LlamaIndex, Qdrant, Redis, RabbitMQ background to draw on.
 
 **Technical landscape:**
-- **Model:** Qwen (Alibaba) chosen up-front. Exact model (likely `qwen-plus`, `qwen-max`, or `qwen3-*` family) to be confirmed in research; user wrote "qwen3.6-plus" which needs verification against the current DashScope catalog. Reasons to pick Qwen: strong multi-lingual coverage (CJK + SEA languages including Vietnamese), OpenAI-compatible API, lower cost than GPT-4/Claude for bulk translation.
+- **Model:** `qwen-mt-turbo` — Alibaba's dedicated translation model on DashScope. (Research verified the user-provided name "qwen3.6-plus" does not exist in the live catalog; `qwen-mt-turbo` is the correct pick: 92 languages incl. Vietnamese, a native `terminology` API parameter for glossary injection, ~$0.49 / 1M output tokens.) Accessed via the **OpenAI-compatible endpoint** `https://dashscope-intl.aliyuncs.com/compatible-mode/v1` using the `openai` Python SDK — not the `dashscope` SDK. DashScope international vs China endpoints are separate accounts with non-portable keys; a Day-1 health check from the dev machine is required.
 - **Formats:** OOXML (DOCX, PPTX) are structured XML — translate text runs in place. Native PDF needs layout-aware extraction (PyMuPDF / pdfplumber) and careful reinsertion. Scanned PDF needs OCR (candidates: PaddleOCR, Tesseract, Azure Document Intelligence, commercial APIs).
 - **Commercial baseline to exceed:** Azure AI Translator's Document Translation API already preserves OOXML + PDF formatting and supports Vietnamese. "We wrapped Azure" is not a compelling demo — our angle is LLM quality + glossary control + layout intelligence + review UX.
 
@@ -65,7 +65,7 @@ A web-based AI document translation PoC that takes office documents (DOCX, PDF, 
 ## Constraints
 
 - **Timeline**: 2–3 weeks from kickoff to demo — drives aggressive scoping and "hero format first" prioritization.
-- **Tech stack (model)**: Qwen via Alibaba DashScope API — chosen by the user; research should confirm the exact model variant and SDK.
+- **Tech stack (model)**: `qwen-mt-turbo` on Alibaba DashScope (international endpoint), accessed via the `openai` Python SDK against the OpenAI-compatible base URL. Glossary uses the native `terminology` API parameter.
 - **Tech stack (backend)**: Python / FastAPI assumed — matches Thu's existing production stack and keeps cognitive overhead low. Async patterns for long-running translation jobs.
 - **Tech stack (frontend)**: Next.js (React) assumed — matches ICOM-P3 frontend; fastest path to a demo-quality UI.
 - **Audience**: Internal VNEXT team (AICore). No external users, no data-residency contract — but Qwen API routes through Alibaba Cloud; flag if AICore has concerns about that.
@@ -77,7 +77,7 @@ A web-based AI document translation PoC that takes office documents (DOCX, PDF, 
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Qwen (DashScope) as the translation LLM | User directive; strong multi-lingual (incl. Vietnamese) and cheaper than GPT-4/Claude | — Pending |
+| `qwen-mt-turbo` (DashScope international, OpenAI-compatible endpoint) | Dedicated translation model with native `terminology` glossary API; 92 languages incl. Vietnamese; ~$0.49/1M output tokens | ✓ Good — verified against live catalog |
 | DOCX + native PDF are the "hero" formats | Most common real-world docs; best fidelity achievable in PoC scope; PPTX is visual bonus | — Pending |
 | Scanned PDF = "readable" bar only | Layout reconstruction from OCR is research-level; side-by-side or overlay is honest and still useful | — Pending |
 | Build differentiators on top of a translation core: LLM quality + glossary + smart-layout + review UX | "We wrapped Azure" isn't a compelling demo; these four are what AICore will remember | — Pending |
