@@ -158,17 +158,80 @@ Explicitly excluded from the PoC. Prevents scope creep.
 
 ## Traceability
 
-To be populated during roadmap creation. Each requirement maps to exactly one phase.
+Each v1 requirement maps to exactly one phase.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| *(roadmapper fills this in)* | | |
+| INFRA-01 | Phase 1 | Pending |
+| INFRA-02 | Phase 1 | Pending |
+| INFRA-03 | Phase 1 | Pending |
+| INFRA-04 | Phase 1 | Pending |
+| INFRA-05 | Phase 1 | Pending |
+| UPLD-01 | Phase 1 | Pending |
+| UPLD-02 | Phase 1 | Pending |
+| UPLD-03 | Phase 1 | Pending |
+| UPLD-04 | Phase 1 | Pending |
+| UPLD-05 | Phase 1 | Pending |
+| CORE-01 | Phase 1 | Pending |
+| CORE-02 | Phase 1 | Pending |
+| CORE-03 | Phase 1 | Pending |
+| CORE-04 | Phase 1 | Pending |
+| CORE-05 | Phase 1 | Pending |
+| CORE-06 | Phase 1 | Pending |
+| JOB-01 | Phase 1 | Pending |
+| JOB-02 | Phase 1 | Pending |
+| JOB-03 | Phase 1 | Pending |
+| JOB-04 | Phase 1 | Pending |
+| DOCX-01 | Phase 1 | Pending |
+| DOCX-02 | Phase 1 | Pending |
+| DOCX-03 | Phase 1 | Pending |
+| DOCX-04 | Phase 1 | Pending |
+| LANG-01 | Phase 1 | Pending |
+| LANG-02 | Phase 1 | Pending |
+| GLOS-01 | Phase 2 | Pending |
+| GLOS-02 | Phase 2 | Pending |
+| GLOS-03 | Phase 2 | Pending |
+| GLOS-04 | Phase 2 | Pending |
+| GLOS-05 | Phase 2 | Pending |
+| REV-01 | Phase 2 | Pending |
+| REV-02 | Phase 2 | Pending |
+| REV-03 | Phase 2 | Pending |
+| REV-04 | Phase 2 | Pending |
+| REV-05 | Phase 2 | Pending |
+| REV-06 | Phase 2 | Pending |
+| LAYOUT-01 | Phase 2 | Pending |
+| LAYOUT-02 | Phase 2 | Pending |
+| LAYOUT-03 | Phase 2 | Pending |
+| PPTX-01 | Phase 3 | Pending |
+| PPTX-02 | Phase 3 | Pending |
+| PPTX-03 | Phase 3 | Pending |
+| PPTX-04 | Phase 3 | Pending |
+| PDF-01 | Phase 3 | Pending |
+| PDF-02 | Phase 3 | Pending |
+| PDF-03 | Phase 3 | Pending |
+| PDF-04 | Phase 3 | Pending |
+| OCR-01 | Phase 4 | Pending |
+| OCR-02 | Phase 4 | Pending |
+| OCR-03 | Phase 4 | Pending |
+| OCR-04 | Phase 4 | Pending |
+| DEMO-01 | Phase 5 | Pending |
+| DEMO-02 | Phase 5 | Pending |
+| DEMO-03 | Phase 5 | Pending |
 
 **Coverage:**
-- v1 requirements: 55 total (pending roadmap mapping)
-- Mapped to phases: 0
-- Unmapped: 55 ⚠️
+- v1 requirements: 55 total
+- Mapped to phases: 55
+- Unmapped: 0 ✓
+
+| Phase | Requirements | Count |
+|-------|-------------|-------|
+| Phase 1: Foundation + DOCX Pipeline | INFRA-01–05, UPLD-01–05, CORE-01–06, JOB-01–04, DOCX-01–04, LANG-01–02 | 26 |
+| Phase 2: Review UX + Glossary | GLOS-01–05, REV-01–06, LAYOUT-01–03 | 14 |
+| Phase 3: PPTX + Native PDF | PPTX-01–04, PDF-01–04 | 8 |
+| Phase 4: Scanned PDF (OCR) | OCR-01–04 | 4 |
+| Phase 5: Demo Hardening | DEMO-01–03 | 3 |
+| **Total** | | **55** |
 
 ---
 *Requirements defined: 2026-04-17*
-*Last updated: 2026-04-17 after initial definition*
+*Last updated: 2026-04-17 — traceability populated after roadmap creation*
