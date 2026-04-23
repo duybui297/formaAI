@@ -30,7 +30,21 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. User can drag-and-drop a DOCX file, select source and target languages (including auto-detect), optionally select a glossary, submit the form, and be redirected to a job status page that shows live segment progress (e.g., "143 / 210 segments translated")
   4. The translated DOCX downloads with paragraph structure, bold/italic/underline, fonts, headings, table cells, and hyperlinks preserved — the run-merge strategy, NFC normalization, placeholder protection, and segment-count assertion are all active; a failed batch surfaces a human-readable error rather than silent truncation
   5. A job with an invalid format is rejected with a clear error message; a job with a 5xx/rate-limit error surfaces retries in the UI rather than crashing silently
-**Plans**: TBD
+**Plans**: 11 plans
+
+Plans:
+- [ ] 01-01-infra-prereqs-PLAN.md — Docker, docker-compose, pyproject.toml, frontend package.json, healthcheck script
+- [ ] 01-02-backend-core-PLAN.md — Settings/logging config, DB models (Job+Segment), SQLAlchemy session, Alembic init, test conftest
+- [ ] 01-03-llm-core-PLAN.md — LLM client, translate_batch with CORE-03/04/05/06, token budget, TDD
+- [ ] 01-04-docx-pipeline-PLAN.md — DOCX extractor + reassembler + placeholder protection, TDD
+- [ ] 01-05-job-worker-PLAN.md — arq worker, job service, progress publish, retry logic
+- [ ] 01-06-fastapi-api-PLAN.md — FastAPI app, upload endpoint, job/SSE endpoints, languages endpoint
+- [ ] 01-07-frontend-shell-PLAN.md — Next.js shell, TypeScript types, useJobProgress hook, TanStack setup
+- [ ] 01-08-upload-page-PLAN.md — UploadForm, LanguageSelect, tracked-changes modal, upload proxy
+- [ ] 01-09-job-status-page-PLAN.md — Job status page, StageIndicator, ProgressBar, animated counter, ErrorDetails
+- [ ] 01-10-jobs-list-page-PLAN.md — Jobs list page, StatusBadge, polling table
+- [ ] 01-11-migrations-integration-tests-PLAN.md — Alembic first migration, DashScope integration tests, DOCX round-trip tests
+
 **UI hint**: yes
 
 ### Phase 2: Review UX + Glossary
@@ -85,7 +99,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation + DOCX Pipeline | 0/TBD | Not started | - |
+| 1. Foundation + DOCX Pipeline | 0/11 | Not started | - |
 | 2. Review UX + Glossary | 0/TBD | Not started | - |
 | 3. PPTX + Native PDF | 0/TBD | Not started | - |
 | 4. Scanned PDF (OCR) | 0/TBD | Not started | - |
