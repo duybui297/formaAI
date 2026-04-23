@@ -10,13 +10,14 @@
 **System Type:** Content Generation — LLM-powered translation pipeline with native glossary injection (single model call per batch; no agents, no RAG, no multi-step reasoning)
 
 **Description:**
-<!-- One-paragraph description of what this AI system does, who uses it, and what "good" looks like -->
+Phase 1 delivers a document translation pipeline for AICore's internal reviewers — AI engineers and product stakeholders who want to judge whether Qwen-class LLMs can beat commodity document translation tools (Azure Translator, DeepL, Google Docs translate) on real-world office documents. A user uploads a DOCX, selects a language pair (Vietnamese, English, Japanese, or Chinese), and receives a translated DOCX where run-level formatting — bold, italic, underline, font family, font color, hyperlinks, heading styles — survives the round-trip intact. "Good" is defined by a bilingual reviewer opening the output without needing to reformat it before distributing: the translated text reads naturally in the target language, no paragraphs are missing, glossary terms appear as specified, and the document structure is indistinguishable from one a human translator would produce in Word. What differentiates this from a raw text translator (or from pasting into ChatGPT) is format fidelity: the pipeline reads OOXML at the run level, preserves every formatting attribute individually, and writes translated text back per the run-merge invariant (DOCX-02) — so a bold Vietnamese heading becomes a bold English heading, not plain text.
 
 **Critical Failure Modes:**
-<!-- The 3-5 behaviors that absolutely cannot go wrong in this system -->
-1.
-2.
-3.
+1. **Silent segment loss** — the model returns N−1 (or fewer) translated lines for N input segments and the pipeline proceeds without detecting the mismatch, writing a reassembled DOCX with missing paragraphs. CORE-03 assertion exists specifically to catch this; if it is missing or disabled, the failure is invisible until a human reviewer notices a truncated document.
+2. **Run-level formatting destruction** — the pipeline writes translated text via `paragraph.text = value` instead of the run-merge strategy (DOCX-02), silently wiping all bold, italic, underline, font, color, and heading attributes. The user receives a plain-text document that looks nothing like the original and cannot be used as-is.
+3. **DashScope region key mismatch surfaces as a cryptic opaque 401** — a China-region API key used against the international endpoint returns HTTP 401 with an empty error body. Without an explicit error message identifying the cause, users cannot distinguish a bad key from a bad document or a pipeline bug; the healthcheck (INFRA-01) must surface "use the key issued at dashscope-intl.aliyuncs.com, not the China console" as the first-line error message.
+4. **NFC/NFD mismatch produces broken Vietnamese diacritics** — the model returns NFD-composed Unicode (common for Vietnamese tone marks), which renders correctly on screen but breaks downstream string equality, search, and diff operations. CORE-04 normalisation must run on every output string; if it is skipped, the bug is invisible during visual review but breaks every automated check that compares segments.
+5. **Retry loop fires without cap on 5xx errors** — CORE-06 without a bounded retry count and exponential backoff allows a transient DashScope 500/503 to hold an arq worker slot indefinitely, blocking all subsequent jobs in the queue and making the demo appear hung with no user-visible error.
 
 ---
 
@@ -24,51 +25,205 @@
 
 > Researched by `gsd-domain-researcher`. Grounds the evaluation strategy in domain expert knowledge.
 
-**Industry Vertical:** <!-- healthcare | legal | finance | customer service | education | developer tooling | e-commerce | etc. -->
+**Industry Vertical:** Professional document translation / localization — specifically office document translation (DOCX hero format, Phase 1) for internal knowledge workers and enterprise teams.
 
-**User Population:** <!-- who uses this system and in what context -->
+**User Population:** Phase 1 target — AICore internal reviewers (AI engineers, product stakeholders) evaluating translation pipeline quality against commodity tools. Broader target market they represent: enterprise knowledge workers who currently use Azure Translator Document Translation, DeepL, or Google Docs translate to localise business documents across Vietnamese, English, Japanese, and Chinese.
 
-**Stakes Level:** <!-- Low | Medium | High | Critical -->
+**Stakes Level:** Medium (PoC — internal demo, no external users, no regulated content). Escalation path: if AICore productises for external customers translating contracts, financial reports, or medical records, stakes escalate to High or Critical, requiring formal LQA programs, ISO 17100 compliance, and MQM-graded post-editing workflows.
 
-**Output Consequence:** <!-- what happens downstream when the AI output is acted on -->
+**Output Consequence:** The translated DOCX is opened by a bilingual reviewer who may edit inline and then distribute internally (meeting notes, product specs, internal reports). If the output is not usable as-is — missing paragraphs, broken formatting, wrong terminology — the reviewer must reformat or retranslate from scratch, defeating the pipeline's core value. In Phase 2+, an "export as final" path means the output may be distributed without further human review, raising the consequence level.
+
+---
 
 ### What Domain Experts Evaluate Against
 
-<!-- Domain-specific rubric ingredients — in practitioner language, not AI jargon -->
-<!-- Format: Dimension / Good (expert accepts) / Bad (expert flags) / Stakes / Source -->
+---
+
+**Dimension: Meaning fidelity (Accuracy)**
+
+Good (bilingual reviewer accepts): Every clause, number, date, named entity, and obligation in the source paragraph is present in the translation — nothing added, nothing dropped, nothing substituted. A Vietnamese business clause specifying "30 ngày kể từ ngày ký" translates to English as "30 days from the signing date", not "one month" and not "30 business days".
+
+Bad (bilingual reviewer flags): A subordinate clause is omitted from the translation. A monetary amount is changed ("1 tỷ đồng" becomes "1 billion USD" instead of "1 billion VND"). A negative ("không được" — must not) is rendered as a positive. A proper noun (product name, company name) is translated when it should be left in the source form.
+
+Stakes: Critical for business/legal documents. High for internal reports (omissions mislead decision-making). Medium for informal memos.
+
+Source: MQM 2.0 Accuracy category (omission, addition, mistranslation, untranslated); ISO 17100:2015 §5.3.1 (translation step requirements); ISO 5060:2024 (translation evaluation).
+
+---
+
+**Dimension: Target-language fluency**
+
+Good (bilingual reviewer accepts): The translation reads as if composed by a native speaker of the target language — natural sentence rhythm, no word-for-word calque, correct particles and connectives. A Japanese translation of a Vietnamese business letter uses appropriate keigo (formal register) and standard Japanese business phrasing, not a literal rendering of Vietnamese sentence structure.
+
+Bad (bilingual reviewer flags): "Translationese" — the sentence structure is copied from the source language, producing unnatural target-language text (e.g., Vietnamese SOV patterns imposed on English, or English article usage copied into Japanese where articles do not exist). Repetitive or awkward phrasing that a native speaker would not produce.
+
+Stakes: High — unnatural text signals machine translation to every reader, undermining the demo's core claim of LLM quality over commodity tools.
+
+Source: MQM 2.0 Fluency / Linguistic conventions category; DQF (TAUS Dynamic Quality Framework) Fluency dimension; practitioner LQA standard for post-editing MT output.
+
+---
+
+**Dimension: Terminology consistency**
+
+Good (bilingual reviewer accepts): A domain term used 12 times in the source document is translated the same way all 12 times in the output. If a glossary is provided ("AICore" → "AICore" [preserve], "tài liệu kỹ thuật" → "technical documentation"), the glossary form appears in every occurrence — not sometimes "AICore" and sometimes "AI Core", not sometimes "technical documentation" and sometimes "technical docs".
+
+Bad (bilingual reviewer flags): The same source term is translated three different ways across the document. A glossary term is not respected — the model uses a synonym or a back-translation of the target term instead of the specified form. Terminology inversion: the model uses the target-to-source direction from the glossary (e.g., given "biosensor → cảm biến sinh học", it translates "cảm biến sinh học" as "biosensor" instead of leaving it or translating forward). (GLOS-04 / INFRA-02 maps here.)
+
+Stakes: High for product documentation and any document where consistent naming matters. Critical for legal and regulatory documents where term inconsistency creates ambiguity about obligations.
+
+Source: MQM 2.0 Terminology category (wrong term, inconsistent use of terms); ISO 17100:2015 §5.3.1; qwen-mt-turbo `terminology` API parameter (CORE-05, INFRA-02).
+
+---
+
+**Dimension: Register and style appropriateness**
+
+Good (bilingual reviewer accepts): A formal Vietnamese business proposal translates to English with formal register — "We respectfully request" not "We want". A technical specification reads like a specification, not like a letter. CJK business correspondence uses the appropriate level of keigo / polite forms for the audience.
+
+Bad (bilingual reviewer flags): A board report is translated with colloquial phrasing. A legal clause is softened by informal vocabulary. The translated document sounds like it was written by someone who does not know the conventions of that document type in the target language or culture.
+
+Stakes: Medium for internal memos. High for customer-facing or board-level documents. The PoC audience (AICore internal) will notice this immediately because they are evaluating against DeepL and Azure Translator, both of which are calibrated for business register.
+
+Source: MQM 2.0 Style category; DQF Audience appropriateness dimension; translation industry practitioner knowledge (LSP QA standard).
+
+---
+
+**Dimension: Locale correctness**
+
+Good (bilingual reviewer accepts): Dates in Japanese output appear as "2026年4月23日" not "23/04/2026". Numbers in Vietnamese output use the Vietnamese decimal separator convention where applicable. CJK punctuation (「」 for Japanese quotation marks, 。for Japanese sentence termination) is used correctly rather than ASCII equivalents (", .) in target-language contexts. Vietnamese tone marks are fully preserved and correctly composed (NFC normalization — CORE-04).
+
+Bad (bilingual reviewer flags): A date formatted "23/04/2026" appears unchanged in a Japanese document that should use the nengo or ISO 8601 form. ASCII quotation marks appear in Chinese output where 「」or " " are conventional. Vietnamese output contains broken diacritic sequences (e.g., "tài liê ̣u" with a decomposed combining character instead of the precomposed "tài liệu"). Numbers use the source locale format in the target locale context.
+
+Stakes: High — locale formatting errors are immediately visible to any native speaker and signal low-quality MT output even if the semantic content is correct. NFC diacritics failures (CORE-04) additionally break downstream search and segment-diff operations.
+
+Source: MQM 2.0 Locale conventions category (number format, date format, punctuation); Unicode NFC normalization standard; Vietnamese diacritic composition known failure mode in MT pipelines; CORE-04 invariant.
+
+---
+
+**Dimension: Formatting preservation (document round-trip fidelity)**
+
+Good (bilingual reviewer accepts): The translated DOCX, opened in Word or Google Docs, looks like a translated version of the original: bold headings are still bold, italic product names are still italic, hyperlinks still navigate to the correct URLs, table cells contain translated text in the same cell position, numbered lists retain their numbering sequence, and font families are preserved (or gracefully substituted with an equivalent).
+
+Bad (bilingual reviewer flags): All runs are rendered in the default font with no bold/italic/underline because the pipeline used `paragraph.text = value` instead of the run-merge strategy. A hyperlink's display text is translated but the href target is broken or swapped. A table row is missing because its cell content was treated as a standalone paragraph and dropped during segmentation. A numbered list restarts at 1 mid-document because list XML was corrupted during reassembly. (DOCX-01, DOCX-02, DOCX-03 map here.)
+
+Stakes: Critical for the PoC — this is the primary differentiator over commodity tools. If a reviewer opens the translated DOCX and needs to manually reformat, the pipeline has failed its core value claim.
+
+Source: DOCX-01/02/03 requirements; python-docx run-merge strategy invariant; practitioner localization engineering knowledge (OOXML structure and run-level attributes); project CLAUDE.md explicit anti-pattern ("paragraph.text = value destroys run-level formatting").
+
+---
+
+**Dimension: Completeness (no segment silently dropped)**
+
+Good (bilingual reviewer accepts): Every paragraph, table cell, list item, heading, and comment body in the source document has a corresponding translated segment in the output document. A document with 210 source paragraphs produces a translated document with 210 translated paragraphs — verified by the segment-count assertion on every batch.
+
+Bad (bilingual reviewer flags): A paragraph is present in the source DOCX but absent from the translated DOCX. The last section of a long document is untranslated because the final batch timed out and the pipeline proceeded without retrying. A table cell is empty in the output because the segmentation walker missed it. (CORE-03 assertion maps here.)
+
+Stakes: Critical — a document with silently missing content is not "usable as-is"; it is actively misleading. The reviewer cannot verify completeness without a bilingual side-by-side view, which is not available in Phase 1.
+
+Source: CORE-03 segment-count invariant; MQM 2.0 Accuracy / Omission category; practitioner LSP QA standard (segment completeness is a hard-fail criterion in production post-editing workflows).
+
+---
+
+**Dimension: Non-translatable handling**
+
+Good (bilingual reviewer accepts): URLs remain as URLs ("https://aicore.vn" does not become "https://lõitrítuệnhântạo.vn"). Email addresses, product version strings ("v2.3.1"), variable placeholders ("{{user_name}}"), and code identifiers ("translate_batch()") survive the round-trip unchanged. Proper nouns that should not be translated (brand names, people's names per instruction) are left in the source form.
+
+Bad (bilingual reviewer flags): A URL in a DOCX hyperlink is translated as if it were prose text, producing a broken link. A version number is changed (1.2 → một phẩy hai, then re-encoded as "1,2" with a decimal comma). A code placeholder is translated into Vietnamese, breaking a mail-merge or template system that will process the document downstream. (CORE-05 placeholder protection maps here.)
+
+Stakes: High — broken URLs and corrupted placeholders cause immediate operational failures when the translated document is used (shared links break, mail-merge systems fail, API docs become unusable).
+
+Source: CORE-05 invariant (`⟦T{n}⟧` placeholder extraction/restoration); DOCX-03 (hyperlinks as non-translatable); MQM 2.0 Accuracy / Mistranslation (non-translatable rendered as translatable content); practitioner localization engineering standard.
+
+---
 
 ### Known Failure Modes in This Domain
 
-<!-- Domain-specific failure modes from research — not generic hallucination, but how it manifests here -->
+**Untranslated-in-place (copy-through):** The model returns the source segment verbatim when it cannot confidently translate — a known behavior of MT models on low-resource language pairs or highly technical content. For Vietnamese ↔ Japanese on domain-specific terminology, this can affect 5-15% of segments. Unlike a hallucination, the output text is correct source-language text — visually plausible but semantically wrong for the target language. Detectable by checking if output == input after NFC normalization.
+
+**Partial translation (truncated output):** On long batches near the 8,192-token input limit, the model may translate the first N segments and silently stop, returning fewer lines than were sent. CORE-03 catches this at the count-assertion level, but the failure mode recurs if the assertion is bypassed or the retry exhausts without success, leaving the remainder of the document in the source language.
+
+**Format leak (markup bleed-through):** The model occasionally includes XML-like tags, markdown formatting (`**bold**`, `_italic_`), or OOXML fragment strings (`<w:r>`) in the translated output — either because the system prompt trained the model to produce structured output, or because the source text included angle brackets. These appear verbatim in the translated DOCX as literal characters, corrupting the display text.
+
+**Terminology inversion:** When a glossary is provided in source→target direction, some MT models — including instruction-tuned LLMs — occasionally apply the mapping in reverse, translating target-language content as if it were source-language content. This is most likely when the source document contains mixed-language content (e.g., a Vietnamese document with English product names). GLOS-04's post-translation verification pass detects this for the glossary terms it checks, but general inversion on non-glossary terms is undetected without human review.
+
+**Date/locale regression on CJK output:** Vietnamese and Japanese date formats differ fundamentally from English (ISO 8601 vs. nengo vs. dd/mm/yyyy). The model frequently produces a consistent locale format within a single document but reverts to the source locale format on subsequent runs — a non-deterministic output that passes spot-checking but fails systematic review. Locale correctness is difficult to assert with code-based metrics and requires human review of at least a sample.
+
+---
 
 ### Regulatory / Compliance Context
 
-<!-- Relevant regulations or constraints — or "None identified" if genuinely none apply -->
+**ISO 17100:2015** — International standard for translation service requirements. Not a hard compliance requirement for this PoC (internal AICore use only), but it defines the professional quality benchmark that LSP QA teams use and informs the rubric dimensions above. If AICore productises for external customers, ISO 17100 compliance becomes a procurement requirement for enterprise buyers.
+
+**ISO 5060:2024** — New ISO standard (published 2024) on translation quality evaluation, complementing ISO 17100. Provides evaluation methodology guidance consistent with MQM 2.0.
+
+**MQM 2.0 (ASTM F43 committee)** — Industry-standard error taxonomy maintained by ASTM International and the MQM Council. Not a regulation, but adopted as the de-facto evaluation framework by Google, Microsoft, and most enterprise LSPs. The rubric dimensions above map directly to MQM 2.0 categories.
+
+**GDPR / data residency** — Not currently applicable (internal AICore PoC, no personal data in test documents). Flag if AICore uses this pipeline to translate documents containing employee or customer PII — qwen-mt-turbo routes through Alibaba Cloud's international infrastructure, which may trigger data residency review for EU or regulated-industry customers.
+
+**HIPAA / financial regulations** — None applicable for the PoC. Escalation path: medical record translation → HIPAA BAA required from Alibaba Cloud; financial document translation for regulated institutions → may require on-premise or sovereign-cloud deployment.
+
+---
 
 ### Domain Expert Roles for Evaluation
 
-| Role | Responsibility |
-|------|---------------|
-| <!-- e.g., Senior practitioner --> | <!-- Dataset labeling / rubric calibration / production sampling --> |
+| Role | Responsibility in Eval |
+|------|------------------------|
+| Bilingual reviewer (VN↔EN or VN↔JA) | Reference dataset labeling — judges meaning fidelity, fluency, register, and locale correctness on 10–20 gold-standard DOCX samples; calibrates the LLM judge rubric against human scores |
+| Localization engineer | Format-fidelity calibration — opens output DOCX files in Word and flags run-level formatting losses, hyperlink breakage, list structure corruption, table cell misalignment; defines the pass/fail bar for DOCX-01/02/03 |
+| LSP QA lead (consulting) | MQM rubric validation — reviews the error taxonomy mapping against current MQM 2.0 categories; validates that the Good/Bad criteria above meet the standard applied by professional post-editing workflows; spot-checks 5–10 translated segments against the rubric |
+
+---
+
+### Research Sources
+
+- [MQM (Multidimensional Quality Metrics) — themqm.org overview](https://themqm.org/introduction-to-tqe/an-overview/)
+- [MQM 2.0 scoring model and error taxonomy](https://themqm.org/)
+- [The Multi-Range Theory of Translation Quality Measurement (arxiv 2405.16969)](https://arxiv.org/html/2405.16969v5)
+- [ISO 17100 & ISO 18587 — TÜV SÜD certification overview](https://www.tuvsud.com/en-us/services/auditing-and-system-certification/iso-17100)
+- [Translation Quality Standards explained: ISO, ASTM, MQM — POEditor Blog](https://poeditor.com/blog/translation-quality-standards/)
+- [The 8 most used standards and metrics for Translation Quality Evaluation — TAUS](https://www.taus.net/resources/blog/the-8-most-used-standards-and-metrics-for-translation-quality-evaluation)
+- [Document-Based LLM Translation: Seeing the Bigger Picture — tolingo 2025](https://www.tolingo.com/en/blog/document-based-llm-translation)
+- [LLM translation failure modes in production — Microsoft Learn, Globalization](https://learn.microsoft.com/en-us/globalization/localization/ai/ai-and-llms-for-translation)
+- [AI Translation Study: LLMs vs. NMT — Localize Articles](https://localizejs.com/articles/what-a-blind-ai-translation-study-reveals-about-modern-localization)
 
 ---
 
 ## 2. Framework Decision
 
-**Selected Framework:** <!-- e.g., LlamaIndex v0.10.x -->
+**Selected Framework:** openai SDK 1.x — raw, no higher-level wrapper (LangChain / LlamaIndex / LangGraph / CrewAI explicitly rejected)
 
-**Version:** <!-- Pin the version -->
+**Version:** openai >= 1.40, < 2 (pin in `pyproject.toml`)
 
 **Rationale:**
-<!-- Why this framework fits this system type, team context, and production requirements -->
+Phase 1 is a linear, token-budgeted translation pipeline — one `qwen-mt-turbo` call per batch,
+no agents, no RAG, no conditional branching. Every framework wrapper in the matrix adds
+abstraction cost with zero payoff here:
+
+- LangChain / LlamaIndex wrappers obscure the `extra_body` path required for the native
+  `terminology` parameter on qwen-mt-turbo; glossary injection is a CORE-05 correctness
+  invariant, not a nice-to-have.
+- Batching logic is custom token-budget math (segment packing up to ~2–4K input tokens per
+  batch with CORE-03 segment-count assertion), not a LangChain chain.
+- Retry / exponential-backoff lives at the arq worker layer already.
+- openai SDK is already locked by CLAUDE.md and already familiar from ICOM-P3 (Azure OpenAI
+  same shape).
+- Explicit anti-pattern from the decision matrix: "Using LangChain for a simple pipeline —
+  direct SDK call is less code, faster, and easier to debug."
 
 **Alternatives Considered:**
 
 | Framework | Ruled Out Because |
 |-----------|------------------|
-| | |
+| `dashscope` Python SDK | Separate async surface, less mature than openai's native async; breaks OpenAI-ecosystem tooling (langfuse, instructor, etc.); CLAUDE.md explicitly says "DO NOT use" |
+| LangChain 0.3.x | Chain abstraction adds zero value for a single-call-per-batch pipeline; `extra_body` plumbing for `terminology` is awkward through `ChatOpenAI`; debug cost > implementation cost |
+| LlamaIndex 0.12.x | Built for RAG / ingestion pipelines; phase has no retrieval step; Node / Document abstractions are off-scope |
+| LangGraph | State-graph orchestration makes sense for agents / conditional flows; phase has linear flow upload → batch → translate → reassemble |
+| CrewAI | Multi-agent framework; phase has no agent delegation |
+| Instructor 0.6.x (alternative pick) | Thin Pydantic decorator on top of openai SDK; adopt only if a future requirement needs structured typed output beyond raw translation strings — zero framework overhead, fully compatible with `extra_body` |
 
-**Vendor Lock-In Accepted:** <!-- Yes / No / Partial — document the trade-off consciously -->
+**Vendor Lock-In Accepted:** Partial.
+- **openai SDK**: near-zero lock-in — works against DashScope, Azure OpenAI, OpenAI.com, and most open-source LLM servers via base_url. Swap is a config change.
+- **qwen-mt-turbo `terminology` parameter**: DashScope-specific. If AICore later wants to swap to Azure OpenAI or Bedrock Claude, glossary injection becomes prompt-level, not API-native. Document this as a migration cost in the `terminology` helper so future swap is visible.
+- **DashScope international endpoint (`dashscope-intl.aliyuncs.com`)**: routes through Alibaba Cloud. Flagged in CONTEXT.md as an AICore data-residency call to make before demo.
 
 ---
 
@@ -77,87 +232,586 @@
 > Fetched from official docs by `gsd-ai-researcher`. Distilled for this specific use case.
 
 ### Installation
+
 ```bash
-# Install command(s)
+# Add to pyproject.toml via uv — pin the minor range to avoid 2.x breaking changes
+uv add 'openai>=1.40,<2'
+
+# Also needed for approximate token counting (qwen tokenizer not public; cl100k_base
+# is the best available approximation for batch budget estimation)
+uv add tiktoken
 ```
 
 ### Core Imports
+
 ```python
-# Key imports for this use case
+import os
+import unicodedata
+from openai import AsyncOpenAI, OpenAI
+from openai import RateLimitError, APIStatusError, APIConnectionError, AuthenticationError
 ```
 
-### Entry Point Pattern
+### Client Initialisation — Sync and Async
+
 ```python
-# Minimal working example for this system type
+import os
+from openai import OpenAI, AsyncOpenAI
+
+# Async client — use this inside arq workers and FastAPI route handlers.
+# Create ONCE at worker startup; share via arq ctx dict. Never re-create per call.
+async_client = AsyncOpenAI(
+    api_key=os.environ["DASHSCOPE_API_KEY"],   # must be the intl key, NOT the China key
+    base_url="https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+    max_retries=0,   # disable SDK-level retries — CORE-06 retry lives in the arq worker
+    timeout=60.0,    # per-call timeout in seconds
+)
+
+# Sync client — for scripts, healthchecks, and tests that use asyncio.run().
+# Do not use inside an already-running event loop (arq, FastAPI).
+sync_client = OpenAI(
+    api_key=os.environ["DASHSCOPE_API_KEY"],
+    base_url="https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+    max_retries=0,
+    timeout=60.0,
+)
+```
+
+### Entry Point Pattern — `translate_batch`
+
+The canonical batch translation function for Phase 1.
+Takes a list of pre-segmented strings; returns the same-length translated list.
+All CORE invariants are enforced inside this function.
+
+```python
+import os
+import unicodedata
+import asyncio
+from typing import Sequence
+from openai import AsyncOpenAI, RateLimitError, APIStatusError
+
+# ---------------------------------------------------------------------------
+# Minimal working entry point — copy-paste runnable.
+# Real implementation lives in app/llm/translator.py.
+# ---------------------------------------------------------------------------
+
+async def translate_batch(
+    client: AsyncOpenAI,
+    segments: Sequence[str],
+    source_lang: str,          # e.g. "auto", "Vietnamese", "Japanese"
+    target_lang: str,          # e.g. "English", "Vietnamese"
+    glossary: dict[str, str] | None = None,  # {source_term: target_term}
+    model: str = "qwen-mt-turbo",
+) -> list[str]:
+    """
+    Translate a batch of segments in a single qwen-mt-turbo call.
+
+    Enforces:
+      CORE-03 — segment count assertion (raises on length mismatch)
+      CORE-04 — NFC Unicode normalisation (input + output)
+      CORE-05 — placeholder segments (whitespace-only / digits-only) bypass the model
+    """
+    if not segments:
+        raise ValueError("translate_batch: segments must be non-empty")
+
+    # CORE-04: NFC-normalise input
+    nfc = lambda s: unicodedata.normalize("NFC", s)
+    normalised = [nfc(seg) for seg in segments]
+
+    # CORE-05: identify pure-whitespace / pure-digit segments — these are
+    # returned as-is without being sent to the model, preventing the model
+    # from dropping or translating them. Replace with a numbered placeholder
+    # in the payload so the segment count stays intact.
+    _PLACEHOLDER_PREFIX = "⟦T"   # ⟦T
+    _PLACEHOLDER_SUFFIX = "⟧"    # ⟧
+
+    passthrough_indices: set[int] = set()
+    payload_segments: list[str] = []
+    for i, seg in enumerate(normalised):
+        stripped = seg.strip()
+        if not stripped or stripped.isdigit():
+            passthrough_indices.add(i)
+            # Put a numbered stub so the LLM payload segment count still matches
+            payload_segments.append(f"{_PLACEHOLDER_PREFIX}{i}{_PLACEHOLDER_SUFFIX}")
+        else:
+            payload_segments.append(seg)
+
+    # Encode the segment list as a newline-delimited block.
+    # The model receives the entire batch in a single user message.
+    # qwen-mt-turbo is instruction-tuned for translation: do NOT add a system
+    # prompt saying "translate this" — the translation directive comes entirely
+    # from translation_options in extra_body (see Pitfall #2 below).
+    user_content = "\n".join(payload_segments)
+
+    # Build translation_options for extra_body
+    translation_options: dict = {
+        "source_lang": source_lang,
+        "target_lang": target_lang,
+    }
+    if glossary:
+        translation_options["terms"] = [
+            {"source": src, "target": tgt}
+            for src, tgt in glossary.items()
+        ]
+
+    response = await client.chat.completions.create(
+        model=model,
+        messages=[{"role": "user", "content": user_content}],
+        extra_body={"translation_options": translation_options},
+        # Do NOT pass temperature — qwen-mt models either ignore it or
+        # may reject it depending on model variant. Leave unset. (See Pitfall #3.)
+    )
+
+    raw_output = response.choices[0].message.content or ""
+    translated_lines = raw_output.split("\n")
+
+    # CORE-03: segment count assertion — must match payload_segments length
+    if len(translated_lines) != len(payload_segments):
+        raise ValueError(
+            f"CORE-03 violation: sent {len(payload_segments)} segments, "
+            f"received {len(translated_lines)} translated lines. "
+            f"model={model}, source_lang={source_lang}, target_lang={target_lang}"
+        )
+
+    # Rebuild full output list: passthrough segments use original normalised text
+    result: list[str] = []
+    for i, (orig, translated) in enumerate(zip(normalised, translated_lines)):
+        if i in passthrough_indices:
+            result.append(orig)   # passthrough: return original, not the placeholder
+        else:
+            result.append(nfc(translated))   # CORE-04: NFC output
+
+    return result
 ```
 
 ### Key Abstractions
-<!-- Framework-specific concepts the developer must understand before coding -->
+
 | Concept | What It Is | When You Use It |
 |---------|-----------|-----------------|
-| | | |
+| `AsyncOpenAI` | Async HTTP client wrapping the OpenAI REST API. Shares a single httpx `AsyncClient` connection pool. | Instantiate once at worker startup; inject via arq `ctx`. Never create per-call. |
+| `chat.completions.create` | The single API call that drives all LLM interaction in Phase 1. Takes `messages` + optional kwargs. | One call per token-budgeted batch. Non-streaming in Phase 1 (we need the full response to assert segment count). |
+| `extra_body` | Dict merged into the raw JSON request body. Used to pass parameters not in the OpenAI spec. | Required for `translation_options` on every qwen-mt call. This is the ONLY way to inject glossary terms and set src/tgt language on the MT model. |
+| `extra_headers` | Dict merged into the request headers. | Not needed for Phase 1. Use in future if DashScope requires `X-DashScope-SSE: enable` for streaming or telemetry headers. |
+| `response.usage` | `CompletionUsage(prompt_tokens, completion_tokens, total_tokens)`. | Read after every call to track per-batch cost and populate Job metrics. `prompt_tokens` is approximate — qwen's tokenizer differs from tiktoken cl100k_base. |
 
 ### Common Pitfalls
-<!-- Gotchas specific to this framework and system type — from docs, issues, and community reports -->
-1.
-2.
-3.
+
+1. **Region key mismatch (401 with empty body).**
+   Using a China-region DashScope key (`sk-...` issued at dashscope.aliyun.com) against the intl endpoint (`dashscope-intl.aliyuncs.com`) returns HTTP 401 with an empty or opaque error body — not the standard `AuthenticationError` message. The fix is always "use the key issued at the international console". Document this in the healthcheck error message. (Source: CONTEXT.md D-10, confirmed via community reports.)
+
+2. **Prepending a system prompt breaks translation mode.**
+   qwen-mt-turbo is not a chat model. It takes raw text to translate in the user message and ALL directives in `translation_options` via `extra_body`. Adding `{"role": "system", "content": "Translate from Vietnamese to English"}` is silently ignored at best; at worst the model treats the system message as text to translate. Never add a system message to qwen-mt-turbo calls. The model does not support multi-turn — always send a single `user` message per call.
+
+3. **Temperature parameter behaviour is inconsistent across qwen-mt variants.**
+   Official docs show temperature is "accepted" for qwen-mt-plus (default 0.65, range [0, 2)) but the qwen-mt-turbo documentation does not list temperature as a supported parameter and examples never include it. Do not pass `temperature` to qwen-mt calls. If a future variant requires it, add it explicitly to the model config with a comment explaining the source.
+
+4. **8,192 input token hard limit (not 1M).**
+   qwen-mt-turbo and qwen-mt-plus have a **maximum input of 8,192 tokens per call** — the 1M context window in CLAUDE.md refers to the underlying Qwen3 base model used for general chat tasks, not the MT API variant. A batch must not exceed ~7,000 tokens of payload (leave headroom). The Phase 1 batch budget of 2–4K input tokens comfortably satisfies this. A single segment larger than 7K tokens must be handled as a job-level error (see CONTEXT.md D-08) — never silently split mid-sentence.
+
+5. **`response.choices[0].message.content` is `None` on certain error states.**
+   When DashScope returns a 200 with a finish_reason of `"content_filter"` or `"length"`, `message.content` can be `None`. Always guard: `raw_output = response.choices[0].message.content or ""` before calling `.split()`. An empty string from a content filter triggers the CORE-03 count assertion immediately, surfacing the failure clearly.
 
 ### Recommended Project Structure
+
 ```
-project/
-├── # Framework-specific folder layout
+backend/
+├── src/
+│   └── app/
+│       ├── llm/
+│       │   ├── __init__.py
+│       │   ├── client.py          # AsyncOpenAI singleton factory;
+│       │   │                      # reads DASHSCOPE_API_KEY + BASE_URL from settings
+│       │   ├── translator.py      # translate_batch() — main entry point
+│       │   ├── terminology.py     # glossary dict → translation_options["terms"] list;
+│       │   │                      # also documents the migration cost if DashScope is swapped
+│       │   └── token_budget.py    # segment packing: estimate_tokens(), pack_into_batches()
+│       └── workers/
+│           └── translate_worker.py   # arq worker; injects client via ctx["llm_client"]
+└── tests/
+    └── llm/
+        ├── test_translator.py     # unit: mock AsyncOpenAI; verify CORE-03/04/05 invariants
+        ├── test_terminology.py    # unit: glossary → terms serialisation
+        ├── test_token_budget.py   # unit: packing edge cases (oversized segment, CJK ratio)
+        └── test_integration.py   # integration (INFRA-02): live call to DashScope;
+                                   # guarded by DASHSCOPE_API_KEY env var in CI
 ```
+
+### Sources
+
+- [Qwen-MT API (DashScope OpenAI-compatible)](https://www.alibabacloud.com/help/en/model-studio/qwen-mt-api)
+- [Qwen-MT Machine Translation Guide](https://www.alibabacloud.com/help/en/model-studio/machine-translation)
+- [Qwen-MT Blog Post — terminology/terms parameter structure](https://qwenlm.github.io/blog/qwen-mt/)
+- [DashScope OpenAI Compatibility Docs — endpoint URLs](https://www.alibabacloud.com/help/en/model-studio/compatibility-of-openai-with-dashscope)
+- [openai Python SDK — AsyncOpenAI, extra_body, retries](https://github.com/openai/openai-python/blob/main/README.md)
 
 ---
 
 ## 4. Implementation Guidance
 
-**Model Configuration:**
-<!-- Which model(s), temperature, max tokens, and other key parameters -->
+### Model Configuration
 
-**Core Pattern:**
-<!-- The primary implementation pattern for this system type in this framework -->
+| Parameter | Primary | Fallback | Notes |
+|-----------|---------|----------|-------|
+| Model ID | `qwen-mt-turbo` | `qwen-mt-plus` | Fallback activated on CORE-03 failure or explicit quality-retry path (Phase 2+) |
+| Input cost | $0.16 / 1M tokens | $2.46 / 1M tokens | ~15x cost difference; use turbo by default |
+| Output cost | $0.49 / 1M tokens | $7.37 / 1M tokens | |
+| `temperature` | **Do not set** | **Do not set** | MT models handle this internally; setting it risks rejection or unstable output |
+| `max_tokens` | 4096 | 4096 | Output cap per batch; a 2-4K input batch should never produce more than 4K output tokens |
+| `max_retries` | 0 (SDK) | 0 (SDK) | Set to 0 on the client; exponential backoff is implemented manually in the arq worker (CORE-06) so you control retry logging and progress events |
+| `timeout` | 60.0 s | 60.0 s | Per-call HTTP timeout. For a 4K token batch, p99 latency is typically <10s; 60s is a safe ceiling |
+| Input token limit | 8,192 | 8,192 | Hard limit per call for qwen-mt models. Target 2–4K per batch to leave headroom and bound failure blast radius |
 
-**Tool Use:**
-<!-- Tools/integrations needed and how to configure them -->
+### Core Pattern — `translate_batch` with arq worker integration
 
-**State Management:**
-<!-- How state is persisted, retrieved, and updated -->
+```python
+# app/llm/client.py
+import os
+from openai import AsyncOpenAI
+from app.core.config import Settings
 
-**Context Window Strategy:**
-<!-- How to manage context limits for this system type -->
+def make_llm_client(settings: Settings) -> AsyncOpenAI:
+    """
+    Factory for the shared AsyncOpenAI client.
+    Called once at arq worker startup; stored in ctx["llm_client"].
+    The client owns the httpx connection pool — create once, never per-call.
+    """
+    return AsyncOpenAI(
+        api_key=settings.dashscope_api_key.get_secret_value(),
+        base_url=str(settings.dashscope_base_url),
+        max_retries=0,   # CORE-06 retry is in the worker, not the SDK
+        timeout=60.0,
+    )
+```
+
+```python
+# app/workers/translate_worker.py  (arq worker)
+import asyncio
+import structlog
+from openai import RateLimitError, APIStatusError, APIConnectionError
+from app.llm.client import make_llm_client
+from app.llm.translator import translate_batch
+from app.core.config import get_settings
+
+log = structlog.get_logger()
+settings = get_settings()
+
+# ---------------------------------------------------------------------------
+# arq worker lifecycle — client created once, reused across all jobs
+# ---------------------------------------------------------------------------
+async def startup(ctx: dict) -> None:
+    ctx["llm_client"] = make_llm_client(settings)
+
+async def shutdown(ctx: dict) -> None:
+    await ctx["llm_client"].close()
+
+# ---------------------------------------------------------------------------
+# CORE-06 retry with exponential backoff
+# Retried errors: 429 RateLimitError, 5xx APIStatusError, APIConnectionError
+# Non-retried: 400 BadRequestError (bad payload), 401 AuthenticationError
+# ---------------------------------------------------------------------------
+_MAX_RETRIES = 3
+_BACKOFF_BASE = 2.0   # seconds; sleep = base ** attempt (2s, 4s, 8s)
+
+async def translate_batch_with_retry(
+    ctx: dict,
+    segments: list[str],
+    source_lang: str,
+    target_lang: str,
+    glossary: dict[str, str] | None,
+    job_id: str,
+    batch_id: int,
+) -> list[str]:
+    client = ctx["llm_client"]
+    last_exc: Exception | None = None
+
+    for attempt in range(_MAX_RETRIES):
+        try:
+            return await translate_batch(
+                client=client,
+                segments=segments,
+                source_lang=source_lang,
+                target_lang=target_lang,
+                glossary=glossary,
+            )
+        except RateLimitError as exc:
+            last_exc = exc
+            wait = _BACKOFF_BASE ** (attempt + 1)
+            log.warning("rate_limit_retry", job_id=job_id, batch=batch_id,
+                        attempt=attempt + 1, wait_s=wait)
+            await asyncio.sleep(wait)
+        except APIStatusError as exc:
+            if exc.status_code < 500:
+                raise   # 4xx (except 429) — do not retry; surface immediately
+            last_exc = exc
+            wait = _BACKOFF_BASE ** (attempt + 1)
+            log.warning("server_error_retry", job_id=job_id, batch=batch_id,
+                        status=exc.status_code, attempt=attempt + 1, wait_s=wait)
+            await asyncio.sleep(wait)
+        except APIConnectionError as exc:
+            last_exc = exc
+            wait = _BACKOFF_BASE ** (attempt + 1)
+            log.warning("connection_retry", job_id=job_id, batch=batch_id,
+                        attempt=attempt + 1, wait_s=wait)
+            await asyncio.sleep(wait)
+
+    raise RuntimeError(
+        f"All {_MAX_RETRIES} retries exhausted for job={job_id} batch={batch_id}"
+    ) from last_exc
+```
+
+### Tool Use
+
+None in Phase 1. qwen-mt-turbo does not support function-calling / tools — it is a translation-specialized model, not a general chat model. Do not pass `tools=` or `tool_choice=` parameters.
+
+### State Management
+
+The LLM layer is stateless. All job state lives in PostgreSQL (`jobs` table: status, stage, segments_done, segments_total, error_msg) and Redis pub/sub (live progress events for SSE). The `translate_batch` function takes pure inputs and returns pure outputs — no side effects, no internal state.
+
+The arq `ctx` dict carries the shared `AsyncOpenAI` client across calls within a single worker process — this is connection-pool sharing, not state.
+
+### Context Window Strategy — Token-Budget Batch Packing
+
+qwen-mt-turbo has an **8,192 input token hard limit per call**. Phase 1 targets 2–4K input tokens per batch to:
+- bound the blast radius of a CORE-03 count mismatch (fewer segments = easier retry)
+- keep per-batch latency under ~5s (smaller batches = faster first-token response)
+- give headroom for the output to expand (translated text is often longer than source)
+
+**Token estimation (approximate — qwen tokenizer is not public):**
+
+```python
+# app/llm/token_budget.py
+import tiktoken
+
+# cl100k_base is the closest public approximation.
+# Accepts ~10-15% error; for budget purposes this is fine.
+_ENC = tiktoken.get_encoding("cl100k_base")
+
+# Char-to-token ratio heuristics (empirical, adjust if actual usage data differs)
+_RATIO_LATIN = 4.0    # English: ~4 chars per token
+_RATIO_CJK   = 1.5    # Japanese / Chinese: ~1.5 chars per token
+_RATIO_VN    = 3.0    # Vietnamese: ~3 chars per token (diacritic-heavy Latin)
+
+def estimate_tokens(text: str) -> int:
+    """
+    Fast token estimate. Uses tiktoken cl100k_base as baseline.
+    Slightly over-estimates CJK and slightly under-estimates diacritic-heavy
+    Latin scripts relative to qwen's actual tokenizer — acceptable for batching.
+    """
+    return len(_ENC.encode(text))
+
+def pack_into_batches(
+    segments: list[str],
+    budget_tokens: int = 3000,  # default: 3K input tokens; tune via TOKEN_BUDGET env
+) -> list[list[str]]:
+    """
+    Pack segments into batches whose combined token estimate <= budget_tokens.
+    A segment that alone exceeds budget_tokens is placed in its own batch.
+    Never splits a segment mid-sentence (DOCX-02 invariant).
+    """
+    batches: list[list[str]] = []
+    current_batch: list[str] = []
+    current_tokens: int = 0
+
+    for seg in segments:
+        seg_tokens = estimate_tokens(seg)
+        if current_batch and (current_tokens + seg_tokens > budget_tokens):
+            batches.append(current_batch)
+            current_batch = [seg]
+            current_tokens = seg_tokens
+        else:
+            current_batch.append(seg)
+            current_tokens += seg_tokens
+
+    if current_batch:
+        batches.append(current_batch)
+
+    return batches
+```
+
+**Edge case — oversized single segment (D-08):**
+If `estimate_tokens(seg) > 7000`, the segment exceeds the safe per-call input budget alone. The worker must not sentence-split it (that would corrupt run-level formatting). Instead, raise a `SegmentTooLargeError` with `segment_id`, token estimate, and source_text excerpt, write it to the job's `errors.log`, and set the job status to `failed` with a human-readable message pointing at the offending paragraph.
 
 ---
 
 ## 4b. AI Systems Best Practices
 
-> Written by `gsd-ai-researcher`. Cross-cutting patterns every developer building AI systems needs — independent of framework choice.
+> Cross-cutting patterns for this specific framework + system type.
 
-### Structured Outputs with Pydantic
+### 4b.1 Structured Outputs with Pydantic
 
-<!-- Framework-specific Pydantic integration pattern for this use case -->
-<!-- Include: output model definition, how the framework uses it, retry logic on validation failure -->
+qwen-mt-turbo output is plain text (not JSON), so `response_format={"type": "json_object"}` is not used. However, the request and response envelopes are modelled with Pydantic to enforce the CORE-03 invariant at the type level and make the worker's data flow explicit.
 
 ```python
-# Pydantic output model for this system type
+# app/llm/schemas.py
+from __future__ import annotations
+from pydantic import BaseModel, Field, model_validator
+
+class TokenUsage(BaseModel, frozen=True):
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
+
+class TranslateBatchRequest(BaseModel, frozen=True):
+    segments: list[str] = Field(..., min_length=1)
+    source_lang: str
+    target_lang: str
+    glossary: dict[str, str] | None = None
+    model: str = "qwen-mt-turbo"
+
+class TranslateBatchResponse(BaseModel, frozen=True):
+    segments: list[str]
+    usage: TokenUsage
+
+    @model_validator(mode="after")
+    def _validate_non_empty(self) -> "TranslateBatchResponse":
+        if not self.segments:
+            raise ValueError("TranslateBatchResponse.segments must be non-empty")
+        return self
+
+def assert_segment_count(
+    request: TranslateBatchRequest,
+    response: TranslateBatchResponse,
+) -> None:
+    """
+    CORE-03 invariant: translated segment count must equal input segment count.
+    Call this immediately after constructing TranslateBatchResponse.
+    Raises ValueError with full context on mismatch.
+    """
+    if len(response.segments) != len(request.segments):
+        raise ValueError(
+            f"CORE-03 segment count mismatch: "
+            f"expected={len(request.segments)}, got={len(response.segments)}, "
+            f"model={request.model}, src={request.source_lang}, tgt={request.target_lang}"
+        )
 ```
 
-### Async-First Design
+**Retry logic for CORE-03 violations:**
+A segment count mismatch means the model reformatted the output (e.g. merged two short lines). Retry strategy:
+1. Log the raw `response.choices[0].message.content` at DEBUG level (full text, not truncated — needed for diagnosis).
+2. Retry up to 2 times on the same model before escalating to `qwen-mt-plus` (Phase 2+ concern; in Phase 1 raise after 2 retries).
+3. On third failure, raise `Core03ViolationError` with the batch's segment list and the raw model output. The worker catches this, writes it to `errors.log`, and marks the job `failed`.
 
-<!-- How async is handled in this framework, the one common mistake, and when to stream vs. await -->
+Do NOT silently proceed with a mismatched count. A wrong-length list fed to the DOCX reassembler will corrupt the output document.
 
-### Prompt Engineering Discipline
+### 4b.2 Async-First Design
 
-<!-- System vs. user prompt separation, few-shot guidance, token budget strategy -->
+**How async works here:** The arq worker runs in a single `asyncio` event loop. `AsyncOpenAI` uses `httpx.AsyncClient` internally — all DashScope calls are non-blocking coroutines. Up to 4 batches per job run concurrently via `asyncio.gather` (D-17), sharing the same httpx connection pool from the single `AsyncOpenAI` client.
 
-### Context Window Management
+```python
+# Correct: share one client across concurrent batch calls in a job
+async def translate_all_batches(
+    ctx: dict,
+    batches: list[list[str]],
+    source_lang: str,
+    target_lang: str,
+    glossary: dict[str, str] | None,
+    job_id: str,
+) -> list[list[str]]:
+    # asyncio.gather runs up to 4 tasks concurrently (capped by semaphore)
+    sem = asyncio.Semaphore(4)   # D-17: max 4 concurrent DashScope calls per job
 
-<!-- Strategy specific to this system type: RAG chunking / conversation summarisation / agent compaction -->
+    async def _call(batch_id: int, batch: list[str]) -> list[str]:
+        async with sem:
+            return await translate_batch_with_retry(
+                ctx=ctx,
+                segments=batch,
+                source_lang=source_lang,
+                target_lang=target_lang,
+                glossary=glossary,
+                job_id=job_id,
+                batch_id=batch_id,
+            )
 
-### Cost and Latency Budget
+    return list(await asyncio.gather(
+        *[_call(i, batch) for i, batch in enumerate(batches)]
+    ))
+```
 
-<!-- Per-call cost estimate, caching strategy, sub-task model routing -->
+**The one common mistake — `asyncio.run()` inside a running loop:**
+arq workers already run in an asyncio event loop. Calling `asyncio.run(translate_batch(...))` inside a worker function crashes with `RuntimeError: This event loop is already running`. Always `await` directly; never nest `asyncio.run()`. The sync `OpenAI` client is for scripts and tests only — never import it into worker or FastAPI code.
+
+**Stream vs. await:**
+Phase 1 uses `await` (non-streaming). Streaming is intentionally off:
+- Streaming returns tokens as bytes incrementally — the complete translated text is needed before the CORE-03 segment count assertion can run.
+- Per D-17, progress UX is batch-level (e.g. "batch 7/24 done"), not token-level.
+- If streaming is ever enabled for a future UX feature, the count assertion must be deferred to stream end — this is a non-trivial change to the reassembler.
+
+### 4b.3 Prompt Engineering Discipline
+
+**qwen-mt-turbo is not a prompt-driven model.** Do not treat it like a general chat model.
+
+| What to do | What NOT to do |
+|------------|---------------|
+| Put raw source text in `messages[0]["content"]` | Add `{"role": "system", "content": "Translate from X to Y"}` — ignored or mis-translated |
+| Set language pair in `translation_options.source_lang` / `target_lang` | Prepend "Translate the following Vietnamese text to English:\n\n" to the user message |
+| Inject glossary via `translation_options.terms` | Add "Use these terms: biosensor=cảm biến sinh học" to the message text |
+| Use `translation_options.domains` for stylistic context ("formal business document") | Use `temperature` to control style |
+
+**`source_lang` precision improves output quality.** When the source language is known (it is, from the Job row after language detection), always set `source_lang` explicitly (e.g. `"Vietnamese"`, `"Japanese"`). Reserve `"auto"` for the language-detection healthcheck call and for jobs where the user explicitly did not set a language pair.
+
+**`max_tokens` must always be set.** Never leave it unbounded in production. A translation of a 3K input-token batch should not produce 32K output tokens. Set `max_tokens=4096` per batch call. If the model hits the limit (finish_reason `"length"`), treat it the same as a CORE-03 violation — log and retry once; if it happens again, fail the batch.
+
+**Few-shot prompting:** Not applicable. qwen-mt-turbo is a translation-specialized model; few-shot examples in the user message would be treated as text to translate, not as instructions.
+
+**`translation_options.domains` for domain context (optional, Phase 2+):**
+Domain prompts are supported but must be in English (documented limitation). For Phase 1, do not set `domains` — the model performs well without it. Reserve for a quality improvement experiment once a baseline translation dataset exists.
+
+### 4b.4 Context Window Management
+
+**The problem for this system type:** Each qwen-mt-turbo call is limited to 8,192 input tokens. The batch packer in `token_budget.py` must respect this hard limit.
+
+**CJK vs. Latin token ratios matter more than paragraph count.** A 10-paragraph Vietnamese document and a 10-paragraph Japanese document of nominally equal character length will have different token counts. Always estimate tokens from the actual text, not from a fixed paragraphs-per-batch heuristic.
+
+**The "one giant paragraph" edge case (D-08):**
+A legal document may have a single paragraph that is 5,000+ words — a common anti-pattern in Vietnamese legal text. If `estimate_tokens(seg) > 7000`, the segment cannot be batched with anything and also cannot be sentence-split without risking DOCX-02 corruption. Strategy:
+1. If 0 < tokens <= 8,000: send as its own single-segment batch. Warn in structlog.
+2. If tokens > 8,000 (beyond hard limit): fail the batch immediately with `SegmentTooLargeError`. Surface segment ID and a character-count hint in the job error detail so the user knows which paragraph to break manually.
+
+**Output expansion headroom:**
+Translation often expands text. English → Vietnamese typically expands 20–40%; Chinese → English contracts. The 2–4K input token target (vs 8,192 max) provides ~50% headroom for output expansion, preventing `finish_reason="length"` on normal documents.
+
+**No conversation history or summarisation needed.** Each batch is stateless — qwen-mt-turbo does not use prior turns. The 1M "context window" advertised for the underlying Qwen3 model is not accessible via the MT API variant, which has a hard 8,192 per-call input cap.
+
+### 4b.5 Cost and Latency Budget
+
+**Per-batch cost (qwen-mt-turbo, intl pricing):**
+
+| Scenario | Input tokens | Output tokens | Input cost | Output cost | Total |
+|----------|-------------|--------------|------------|-------------|-------|
+| Typical batch | 3,000 | 3,600 (+20%) | $0.00048 | $0.00176 | ~$0.0023 |
+| Large batch | 4,000 | 5,200 (+30%) | $0.00064 | $0.00255 | ~$0.0032 |
+
+**Per-job cost (10,000 segments, avg 30 tokens/segment):**
+
+| Stage | Token estimate | Cost |
+|-------|---------------|------|
+| Input: 10K segs × 30 tok | 300,000 tokens | $0.048 |
+| Output: 300K × 1.25 expansion | 375,000 tokens | $0.184 |
+| **Total per job** | 675,000 tokens | **~$0.23** |
+
+At 100 documents/day (ambitious PoC load), total daily cost ≈ $23. Well within PoC budget.
+
+**Per-batch latency target:**
+- 3K token batch: p50 ~3s, p99 ~8s on DashScope intl (empirical; tune `timeout=60.0` conservatively)
+- 4 concurrent batches per job (D-17): effective throughput ≈ 4× single-batch rate
+- A 10K-segment document split into ~100 batches of 100 segments each, running 4-wide: estimated wall-clock ~75 seconds under normal conditions
+
+**Caching strategy — optional in Phase 1, seam reserved:**
+The deterministic segment ID from D-06 (`sha256(source_text + structural_position)[:16]`) enables a translation-memory cache keyed on `(segment_hash, source_lang, target_lang, glossary_id)`. Not implemented in Phase 1, but the hook is: before calling `translate_batch`, check Redis for a cache hit; on miss, call and cache the result with `EXPIRE 7d`.
+
+```python
+# Future cache check pattern (Phase 2+, not Phase 1 code)
+cache_key = f"tm:{segment_hash}:{source_lang}:{target_lang}:{glossary_id or 'none'}"
+cached = await redis.get(cache_key)
+if cached:
+    return cached.decode("utf-8")
+# ...translate...
+await redis.set(cache_key, result, ex=7 * 86400)
+```
+
+**Sub-task model routing:**
+- `qwen-mt-turbo` (primary): all translation batches
+- `qwen-mt-plus` (fallback): activated only on CORE-03 count mismatch after 2 turbo retries, or on explicit quality-retry path (Phase 2+). The model routing seam is in `translate_batch_with_retry` — swap `model="qwen-mt-turbo"` to `model="qwen-mt-plus"` on retry. No other logic change required.
+- Never use `qwen3-max` or `qwen3-plus` for bulk translation — no native `terminology` parameter, 10–15× higher cost, no quality advantage for translation tasks. (CLAUDE.md explicit anti-pattern.)
 
 ---
 
@@ -165,33 +819,174 @@ project/
 
 ### Dimensions
 
-| Dimension | Rubric (Pass/Fail or 1-5) | Measurement Approach | Priority |
-|-----------|--------------------------|---------------------|----------|
-| | | Code / LLM Judge / Human | Critical / High / Medium |
+The 10 dimensions below are grounded in Section 1b's MQM-grounded rubric ingredients and the Phase 1 correctness invariants. Code-checkable invariants are CI gates that block merge on failure. LLM-judge dimensions run on-demand via `make eval`. Human eval dimensions are out-of-band calibration, not CI-blocking.
+
+| # | Dimension | Rubric | Measurement | Priority | Source |
+|---|-----------|--------|-------------|----------|--------|
+| 1 | **Segment count equality** | PASS: `len(translated_lines) == len(input_segments)` for every batch. FAIL: any batch where the count differs by even 1 — silent paragraph loss in the reassembled DOCX. | Code (pytest unit + integration) | Critical | CORE-03 |
+| 2 | **NFC normalization** | PASS: every output string satisfies `unicodedata.is_normalized("NFC", s) == True`. FAIL: any output string that contains NFD-composed combining characters (e.g., Vietnamese tone marks in decomposed form). | Code (pytest unit) | Critical | CORE-04 |
+| 3 | **Placeholder round-trip** | PASS: every `⟦T{n}⟧` marker sent to the model is returned verbatim in the same position; no placeholder is translated, renamed, or dropped. FAIL: any output where a placeholder token is missing, altered, or appears as translated text (e.g., `⟦T2⟧` becomes `[T2]` or is absent). | Code (pytest unit — parametrize over 5 fixture batches with 1–3 placeholders each) | Critical | CORE-05 |
+| 4 | **Terminology injection honored** | PASS: for a VN→EN batch with glossary `{"phần mềm": "software", "người dùng": "user"}`, every occurrence of each source term in the output is replaced by the specified target term — not a synonym, not a variant spelling. FAIL: glossary term appears in output as a synonym ("programme", "end-user") instead of the exact specified form, or the source-language term appears untranslated. | Code (integration test against live DashScope using 2–3 curated glossary fixtures; guarded by `DASHSCOPE_API_KEY`) | Critical | CORE-05 / INFRA-02 / Section 1b Terminology |
+| 5 | **Run-level formatting preservation** | PASS: a golden DOCX round-tripped through the full pipeline has the same run count and the same `bold`, `italic`, `underline`, `font.name`, `font.color.rgb`, and heading style on every sampled run as the source. FAIL: any sampled run loses a formatting attribute that was present in the source, or the run count increases (run-merge explosion). | Code (pytest fixture-driven — 3 golden DOCX fixtures; python-docx assertions on sampled runs before/after) | Critical | DOCX-01 / DOCX-02 / Section 1b Formatting |
+| 6 | **No run-merge explosion** | PASS: `len(output_doc.paragraphs[i].runs) <= len(source_doc.paragraphs[i].runs)` for all paragraphs in the golden DOCX round-trip. FAIL: translated DOCX has more runs per paragraph than source (indicates the pipeline split runs instead of merging them). | Code (pytest, same golden DOCX fixture as row 5) | High | DOCX-02 |
+| 7 | **Retry cap and clean failure** | PASS: a mock that returns HTTP 500 on every call causes the worker to exhaust exactly `_MAX_RETRIES` attempts with exponential backoff delays (2s, 4s, 8s) and then raises `RuntimeError` — no infinite loop, no silent swallow. FAIL: the worker retries indefinitely, hangs, or proceeds with a partial result after exhausting retries. | Code (pytest unit — mock `AsyncOpenAI.chat.completions.create` to always raise `APIStatusError(500)`) | Critical | CORE-06 |
+| 8 | **Meaning fidelity (MQM Accuracy)** | 1 = Major omission, addition, or mistranslation that changes the meaning (e.g., "không được" rendered as positive; monetary amount changed). 3 = Minor inaccuracy that does not change the overall meaning (e.g., "30 days" vs "approximately 30 days"). 5 = Every clause, number, entity, and obligation faithfully rendered; a bilingual reviewer would accept without editing. Target: mean >= 4.0 on the reference dataset. | LLM Judge (qwen-mt-plus or claude-sonnet-4-6 as judge; calibrated to match human scores within ±1 on 5 pre-labeled segments before trusting) | High | Section 1b Meaning fidelity |
+| 9 | **Target-language fluency** | 1 = Translationese so severe the target language reads as a word-for-word calque of the source (Vietnamese SOV patterns in English output; missing Japanese particles). 3 = Understandable but occasionally unnatural phrasing a native speaker would edit. 5 = Reads as if composed by a native speaker; natural rhythm and connectives; appropriate particles/articles. Target: mean >= 4.0 on the reference dataset. | LLM Judge (same judge as row 8; calibrated separately for each language pair — VN→EN and VN→JA require different calibration sets) | High | Section 1b Target-language fluency |
+| 10 | **Register appropriateness** | PASS: a formal Vietnamese business clause ("Kính đề nghị Quý Công ty...") translates to English with formal register ("We respectfully request...") and a technical specification translates as specification-register, not colloquial. FAIL: board-level or legal language is rendered colloquially; the translated document would embarrass the sender in a business context. | LLM Judge (Pass/Fail per segment; judge prompt includes document-type label and target-language register conventions as context) | Medium | Section 1b Register and style |
+
+**Out-of-band human eval (Phase 1 calibration, not CI):**
+- Bilingual reviewer (Thu for VN↔EN; one VNEXT colleague for VN↔JA) scores 10–20 gold segments on the 1–5 MQM scale to calibrate the LLM judge for rows 8–10. Target: LLM judge and human reviewer agree within ±1 on >= 80% of samples before the judge is trusted.
+- Localization engineer opens 3–5 complex DOCX output files in Word to calibrate the pass/fail bar for row 5 (formatting preservation) — assessing hyperlink integrity, table cell alignment, numbered list continuity, and tracked-change handling (DOCX-04).
+
+---
 
 ### Eval Tooling
 
-**Primary Tool:** <!-- e.g., RAGAS + Langfuse -->
+**Primary Tool: Arize Phoenix** (open-source, self-hostable, framework-agnostic via OpenTelemetry)
+
+**Why Phoenix over alternatives:**
+- No existing eval tooling detected in this repo (scan confirmed zero langfuse/langsmith/braintrust/promptfoo references). Phoenix is the opinionated GSD default.
+- The pipeline uses the raw openai SDK — Phoenix's `openai` auto-instrumentation captures every `chat.completions.create` call (model, token usage, latency) with zero code changes to the worker.
+- Self-hostable via `pip install arize-phoenix` — no external account required, appropriate for an internal AICore PoC.
+- The tracing UI at `http://localhost:6006` gives per-job trace trees showing each batch call's latency, token counts, and response content — directly useful for debugging CORE-03 failures and cost attribution.
+
+**Alternative tools and when to prefer them:**
+- **Langfuse** (open-source, self-hostable): prefer if the team wants richer prompt versioning and A/B experiment management (Phase 5 A/B comparison against Azure Translator — see REQUIREMENTS.md AB-01). Langfuse has a cleaner multi-user dashboard for team review. Migrate from Phoenix to Langfuse when Phase 5 lands.
+- **Braintrust**: prefer if AICore wants a hosted platform with built-in dataset management and experiment comparison UI. Adds an external service dependency — defer unless the team decides to invest in eval infrastructure beyond the PoC.
+- **Opik** (Comet's open-source eval tool): prefer if the team already uses Comet for ML experiment tracking. No reason to introduce it here.
+- **LangSmith**: relevant only if LangChain/LangGraph are adopted — they are not in Phase 1 (Section 2).
+- **Promptfoo**: prefer for prompt regression testing in CI once a stable prompt format exists. Not applicable here because qwen-mt-turbo is not prompt-driven (Section 4b.3) — `translation_options` in `extra_body` is the equivalent, and Promptfoo does not natively support `extra_body` testing. Use pytest for invariant CI instead.
 
 **Setup:**
+
 ```bash
-# Install and configure
+# Install Arize Phoenix and OpenTelemetry SDK
+uv add arize-phoenix opentelemetry-sdk opentelemetry-instrumentation-openai
+
+# Launch Phoenix UI (run once; keeps running in background)
+python -m phoenix.server.main &
+# UI available at http://localhost:6006
 ```
 
-**CI/CD Integration:**
-```bash
-# Command to run evals in CI/CD pipeline
+```python
+# backend/src/app/core/telemetry.py
+# Call setup_telemetry() at arq worker startup (in startup() hook) and
+# at FastAPI app startup (in lifespan context manager).
+import phoenix as px
+from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+from openinference.instrumentation.openai import OpenAIInstrumentor
+
+def setup_telemetry() -> None:
+    """
+    Wire OpenTelemetry -> Arize Phoenix.
+    Instruments all openai SDK calls automatically — no changes to translate_batch().
+    """
+    provider = TracerProvider()
+    # Phoenix default OTLP endpoint (local)
+    exporter = OTLPSpanExporter(endpoint="http://localhost:6006/v1/traces")
+    provider.add_span_processor(BatchSpanProcessor(exporter))
+    trace.set_tracer_provider(provider)
+    # Auto-instrument all AsyncOpenAI / OpenAI calls
+    OpenAIInstrumentor().instrument()
 ```
+
+**CI/CD Integration — deterministic invariant tests (CI-blocking, runs on every PR):**
+
+```makefile
+# Makefile targets
+.PHONY: test test-unit test-integration eval
+
+test-unit:
+	uv run pytest backend/tests/llm/ -m "not integration" \
+	  --cov=backend/src/app/llm \
+	  --cov-report=term-missing \
+	  --cov-fail-under=80 \
+	  -v
+
+test-integration:
+	# Requires DASHSCOPE_API_KEY env var — skipped in CI if not set
+	uv run pytest backend/tests/llm/ -m integration \
+	  --cov=backend/src/app/llm \
+	  --cov-report=term-missing \
+	  -v
+
+test: test-unit test-integration
+
+eval:
+	# Offline LLM-judge eval — on-demand, not CI-blocking
+	uv run python evals/run_llm_judge.py \
+	  --fixtures evals/fixtures/vn_en_gold_segments.yaml \
+	  --output evals/results/$(shell date +%Y%m%d_%H%M%S).jsonl
+```
+
+```yaml
+# .github/workflows/ci.yml (fragment)
+name: CI
+on: [pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - name: Install dependencies
+        run: uv sync --dev
+      - name: Run unit tests (CI-blocking invariants)
+        run: make test-unit
+      - name: Run integration tests (DashScope live — skipped if no key)
+        env:
+          DASHSCOPE_API_KEY: ${{ secrets.DASHSCOPE_API_KEY }}
+        run: |
+          if [ -n "$DASHSCOPE_API_KEY" ]; then
+            make test-integration
+          else
+            echo "DASHSCOPE_API_KEY not set — skipping integration tests"
+          fi
+```
+
+**Offline LLM-judge eval runner structure:**
+
+```
+evals/
+├── fixtures/
+│   ├── vn_en_gold_segments.yaml        # 20 VN→EN segment pairs with expected glossary hits
+│   ├── vn_ja_gold_segments.yaml        # 8 VN→JA segment pairs with locale/honorific expectations
+│   └── format_fidelity_golden_docx/    # 3 complex DOCX files with expected round-trip behavior
+│       ├── simple_body_text.docx       # ~5 paragraphs, body text only
+│       ├── table_heavy.docx            # 3+ tables, mixed cell formatting
+│       └── complex_structure.docx      # nested lists, hyperlinks, tracked-changes-free
+├── run_llm_judge.py                    # calls qwen-mt-turbo on gold set; calls judge model;
+│                                       # emits JSONL report with per-segment scores
+└── results/                            # gitignored; JSONL output of each eval run
+```
+
+---
 
 ### Reference Dataset
 
-**Size:** <!-- e.g., 20 examples to start -->
+**Size:** 20–30 segment pairs + 3 golden DOCX files. Sufficient for PoC calibration; scale to 100+ in Phase 5 demo hardening.
 
 **Composition:**
-<!-- What scenario types the dataset covers: critical paths, edge cases, failure modes -->
 
-**Labeling:**
-<!-- Who labels examples and how (domain expert, LLM judge with calibration, etc.) -->
+| Subset | Count | What it covers |
+|--------|-------|---------------|
+| VN→EN segments | 8–10 | Short bureaucratic sentences; numbers/dates; person and company names; glossary-injected terms (`{"phần mềm": "software"}`); untranslatable content (URLs, code snippets, version strings); multi-sentence business paragraphs; negation clauses ("không được phép") |
+| VN→JA segments | 6–8 | Locale-specific dates (dd/mm/yyyy source → 年月日 target); CJK punctuation conventions; honorific register (formal business letter → keigo); mixed-language content (VN body with English product names) |
+| EN→JA segments | 6–8 | Business document register; technical specification language; proper noun handling (brand names preserved vs. translated) |
+| Golden DOCX — simple | 1 | ~5 plain paragraphs; body text only; validates basic run-merge and paragraph completeness |
+| Golden DOCX — table-heavy | 1 | 3+ tables with mixed bold/italic cell content; validates cell-level segmentation and table structure preservation |
+| Golden DOCX — complex structure | 1 | Nested numbered lists, hyperlinks with display text, heading styles H1–H3; validates DOCX-01/02/03 across structural diversity |
+
+**Labeling approach:**
+- VN↔EN segments: labeled by Thu (bilingual reviewer); 5 segments pre-labeled at 1–5 MQM scale as the calibration anchor before trusting the LLM judge.
+- VN↔JA segments: labeled by Thu for VN side; one VNEXT colleague (JA-proficient) sanity-checks the JA side for locale conventions and register.
+- Golden DOCX: pass/fail labeled by Thu acting as localization engineer — opens each translated output in LibreOffice/Word and records which formatting attributes were preserved or lost per the DOCX-01/02/03 rubric.
+- LLM judge calibration target: judge scores agree with human scores within ±1 on >= 80% of the calibration set before the judge is used to score new outputs.
+
+**Creation timeline:** Build alongside implementation — start with 5 VN→EN segments when `translate_batch` is first runnable (Day 2–3 of implementation), expand to full 20–30 by the end of Phase 1. Do not defer dataset creation to Phase 5; it will not happen under demo pressure.
 
 ---
 
@@ -199,48 +994,150 @@ project/
 
 ### Online (Real-Time)
 
-| Guardrail | Trigger | Intervention |
-|-----------|---------|--------------|
-| | | Block / Escalate / Flag |
+Online guardrails run on every request or every batch. Each one adds latency — the list below is kept minimal, covering only failure modes that are catastrophic if not caught immediately.
+
+| Guardrail | Trigger | Intervention | Latency cost | Source |
+|-----------|---------|--------------|--------------|--------|
+| **File size limit** | Upload exceeds 25 MB (UPLD-01 ceiling) | Block upload immediately; return HTTP 413 with "File too large — maximum 25 MB for this PoC" | ~0 ms (checked before file read) | INFRA-03 / UPLD-01 |
+| **File type check** | Uploaded file is not DOCX (Phase 1 only) | Block; return HTTP 415 with "Only DOCX files are supported in Phase 1. PDF and PPTX support is coming in a future phase." | ~0 ms (magic-byte check, not MIME header) | UPLD-02 / D-15 |
+| **Segment count assertion** | `len(translated_lines) != len(input_segments)` for any batch | Fail the batch immediately; do not proceed to reassembly; surface error to user with "Translation failed — segment count mismatch on batch {n}. Retry the job or contact support." Retry up to `_MAX_RETRIES` before marking job failed. | ~0 ms (count check after API call returns) | CORE-03 |
+| **NFC output check** | Any output string from `translate_batch` fails `unicodedata.is_normalized("NFC", s)` | Fail-closed: raise `NormalizationError`, mark batch as failed; do not write un-normalized text to the segment store. Surface as "Translation output normalization error — retry the job." | ~0 ms (NFC check is a string operation) | CORE-04 |
+| **DashScope auth failure — actionable message** | `AuthenticationError` (HTTP 401) from any DashScope call | Block immediately; do not retry 401 (retrying will not help); surface exactly: "DashScope authentication failed. Ensure DASHSCOPE_API_KEY is the international key issued at dashscope-intl.aliyuncs.com — NOT the China console key. These keys are different." Log the key prefix (first 8 chars) at ERROR level for debugging. | ~0 ms | INFRA-01 / Failure Mode #3 |
+| **Retry cap enforcement** | A batch has been retried `_MAX_RETRIES` times on 429 or 5xx errors | Stop retrying; mark job `failed`; surface "Translation failed after {n} retries. DashScope may be temporarily unavailable. Please retry in a few minutes." Show retry_count in job status payload. Prevents worker slot starvation. | ~0 ms (counter check) | CORE-06 / Failure Mode #5 |
+| **Rate-limit backoff signal** | HTTP 429 `RateLimitError` from DashScope | Do not fail the batch immediately; enter exponential backoff (2s, 4s, 8s); emit SSE progress event `{ status: "running", last_message: "Translating more slowly — rate limit reached, retrying batch {n}..." }` so the user sees activity, not a hang. | Backoff adds 2–14s per batch cycle (bounded) | CORE-06 |
 
 ### Offline (Flywheel)
 
+Offline metrics run on sampled batches or daily aggregates. They feed the quality improvement loop without blocking individual requests.
+
 | Metric | Sampling Strategy | Action on Degradation |
 |--------|------------------|----------------------|
-| | | |
+| **Segment count failure rate** | 100% of jobs (logged by the CORE-03 guardrail above) | If > 2% of batches per day hit CORE-03 failures, investigate model response format changes — DashScope may have updated qwen-mt-turbo output formatting. |
+| **Translation quality drift (LLM judge)** | Weekly: run `make eval` against the 20–30 gold-segment reference dataset; emit JSONL results to `evals/results/` | If mean meaning-fidelity score drops > 0.5 points (on the 1–5 MQM scale) week-over-week, flag for human review — model may have been updated or `translation_options` serialization may have regressed. |
+| **Job failure rate by error class** | 100% of jobs (structlog JSON to stdout, aggregated by `error_class` field daily) | Spike in any single class (auth / rate-limit / segment-count / format / oversized-segment) triggers investigation of that class specifically rather than a generic alert. Target: < 5% overall job failure rate. |
+| **Cost per job vs. input token count** | 100% of jobs (read from `response.usage` per batch, summed per job, written to Postgres `jobs.total_tokens_in` / `jobs.total_tokens_out`) | If cost-per-1K-segments deviates > 20% from the 7-day rolling baseline (in either direction), investigate: upward deviation indicates runaway retries or oversized batches; downward deviation may indicate batching logic regression skipping segments. |
+| **Copy-through rate (untranslated-in-place)** | Daily sample — 1% of completed job batches checked for segments where `output_text == input_text` after NFC normalization | If copy-through rate exceeds 10% on any language pair (threshold from domain knowledge: normal for VN↔JA on technical content is 5–15%; above 15% warrants investigation), flag the language pair for human review of a sample. |
 
 ---
 
 ## 7. Production Monitoring
 
-**Tracing Tool:** <!-- e.g., Langfuse self-hosted -->
+**Tracing Tool: Arize Phoenix** (local, self-hosted)
+
+No external eval tooling is present in this repo (confirmed by grep scan). Phoenix is the GSD default — open-source, self-hostable, framework-agnostic via OpenTelemetry. The `OpenAIInstrumentor` auto-instruments every `AsyncOpenAI.chat.completions.create` call with zero changes to `translate_batch()`.
+
+**Instrumentation (arq worker startup + FastAPI lifespan):**
+
+```python
+# backend/src/app/core/telemetry.py  (see Section 5 for full module)
+# Call at two entry points:
+
+# 1. arq worker startup hook (workers/translate_worker.py)
+async def startup(ctx: dict) -> None:
+    setup_telemetry()                        # instrument openai SDK
+    ctx["llm_client"] = make_llm_client(settings)
+
+# 2. FastAPI lifespan (main.py)
+from contextlib import asynccontextmanager
+from app.core.telemetry import setup_telemetry
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    setup_telemetry()
+    yield
+```
+
+**Manual spans for job-level and batch-level traces:**
+
+```python
+# In translate_all_batches() — one root span per job, one child span per batch
+from opentelemetry import trace
+
+_tracer = trace.get_tracer("ai-translation.worker")
+
+async def translate_all_batches(ctx, batches, source_lang, target_lang, glossary, job_id):
+    with _tracer.start_as_current_span(
+        "translate_job",
+        attributes={
+            "job.id": job_id,
+            "job.source_lang": source_lang,
+            "job.target_lang": target_lang,
+            "job.batch_count": len(batches),
+            "job.has_glossary": glossary is not None,
+        },
+    ):
+        sem = asyncio.Semaphore(4)
+
+        async def _call(batch_id: int, batch: list[str]) -> list[str]:
+            with _tracer.start_as_current_span(
+                "translate_batch",
+                attributes={"batch.id": batch_id, "batch.segment_count": len(batch)},
+            ):
+                async with sem:
+                    return await translate_batch_with_retry(
+                        ctx=ctx, segments=batch, source_lang=source_lang,
+                        target_lang=target_lang, glossary=glossary,
+                        job_id=job_id, batch_id=batch_id,
+                    )
+
+        return list(await asyncio.gather(
+            *[_call(i, batch) for i, batch in enumerate(batches)]
+        ))
+```
+
+---
 
 **Key Metrics to Track:**
-<!-- 3-5 metrics that will be monitored in production -->
+
+| Metric | Source | What it tells you |
+|--------|--------|-------------------|
+| p50 / p95 / p99 per-job latency (wall clock) | Phoenix trace root span duration | Overall user-perceived wait time; baseline for Phase 5 demo rehearsal |
+| p50 / p95 / p99 per-batch latency | Phoenix trace child span duration (one per `translate_batch` call) | DashScope API responsiveness; detect slowdowns before they affect job latency |
+| Job failure rate by error class | structlog JSON aggregated by `error_class` field (auth / rate-limit / segment-count / format / oversized-segment / timeout) | Pinpoints which failure mode is spiking; drives targeted investigation |
+| Cost per job (input + output tokens) | `response.usage.prompt_tokens` + `response.usage.completion_tokens` summed per job; written to Postgres `jobs` row | Budget visibility; detects retry-driven cost spikes or batching regressions |
+| arq queue depth (jobs pending) | Redis `arq:default` list length; read via `arq.jobs.queued_count()` in the healthcheck script | Detects worker starvation — if depth grows, workers may be hung on retries or blocking I/O |
+
+---
 
 **Alert Thresholds:**
-<!-- When to page/alert -->
+
+| Condition | Threshold | Response |
+|-----------|-----------|----------|
+| Job failure rate | > 5% over any rolling 1-hour window | Investigate immediately — check structlog for dominant `error_class`; restart workers if stalled |
+| p99 per-batch latency | > 30 seconds | DashScope may be throttling or degraded; check DashScope status page; consider reducing `asyncio.Semaphore(4)` to 2 |
+| DashScope 401 error rate | > 0 in any 15-minute window | Immediate — indicates key rotation or region misconfiguration. Check `DASHSCOPE_API_KEY` is the international key. Do not retry 401. |
+| Cost per 1,000 segments | Deviates > 20% from 7-day rolling baseline | Investigate batching logic or retry behavior; upward spike suggests retries are inflating token counts |
+| arq queue depth | > 50 jobs pending for > 10 minutes | Workers may be stalled; check `docker logs worker` for blocked coroutines; restart worker processes if needed |
+
+---
 
 **Smart Sampling Strategy:**
-<!-- How to select interactions for human review — signal-based filters -->
+
+| Trigger | Sample rate | Purpose |
+|---------|-------------|---------|
+| Job failed (any error class) | 100% — capture full structlog + `errors.log` + Phoenix trace | Post-mortem: every failure is a learning opportunity during the PoC window |
+| Job succeeded, random | 1% | Background quality baseline without storage cost explosion |
+| Job used a glossary | 100% | Verify `terminology` parameter is consistently honored; glossary is a differentiator feature |
+| Job triggered > 3 retries on any batch | 100% | Indicates edge-case content (oversized segments, unusual Unicode, DashScope instability); warrants human review |
+| Job contains VN↔JA language pair | 10% | Higher copy-through and locale-regression risk on this pair (Section 1b Known Failure Modes); elevated scrutiny without capturing everything |
 
 ---
 
 ## Checklist
 
-- [ ] System type classified
-- [ ] Critical failure modes identified (≥ 3)
-- [ ] Domain context researched (Section 1b: vertical, stakes, expert criteria, failure modes)
-- [ ] Regulatory/compliance context identified or explicitly noted as none
-- [ ] Domain expert roles defined for evaluation involvement
-- [ ] Framework selected with rationale documented
-- [ ] Alternatives considered and ruled out
-- [ ] Framework quick reference written (install, imports, pattern, pitfalls)
-- [ ] AI systems best practices written (Section 4b: Pydantic, async, prompt discipline, context)
-- [ ] Evaluation dimensions grounded in domain rubric ingredients
-- [ ] Each eval dimension has a concrete rubric (Good/Bad in domain language)
-- [ ] Eval tooling selected — Arize Phoenix default confirmed or override noted
-- [ ] Reference dataset spec written (size ≥ 10, composition + labeling defined)
-- [ ] CI/CD eval integration specified
-- [ ] Online guardrails defined
-- [ ] Production monitoring configured (tracing tool + sampling strategy)
+- [x] System type classified
+- [x] Critical failure modes identified (≥ 3)
+- [x] Domain context researched (Section 1b: vertical, stakes, expert criteria, failure modes)
+- [x] Regulatory/compliance context identified or explicitly noted as none
+- [x] Domain expert roles defined for evaluation involvement
+- [x] Framework selected with rationale documented
+- [x] Alternatives considered and ruled out
+- [x] Framework quick reference written (install, imports, pattern, pitfalls)
+- [x] AI systems best practices written (Section 4b: Pydantic, async, prompt discipline, context)
+- [x] Evaluation dimensions grounded in domain rubric ingredients
+- [x] Each eval dimension has a concrete rubric (Good/Bad in domain language)
+- [x] Eval tooling selected — Arize Phoenix confirmed as default; alternatives documented
+- [x] Reference dataset spec written (size: 20–30 segments + 3 DOCX; composition + labeling defined)
+- [x] CI/CD eval integration specified (Makefile targets + GitHub Actions fragment)
+- [x] Online guardrails defined (7 guardrails: file size, file type, CORE-03, CORE-04, auth, retry cap, rate-limit backoff)
+- [x] Production monitoring configured (Phoenix tracing + 5 key metrics + alert thresholds + smart sampling)
