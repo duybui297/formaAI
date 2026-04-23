@@ -3,7 +3,9 @@ phase: 01-foundation-docx-pipeline
 plan: 09
 type: execute
 wave: 4
-depends_on: [01-07-frontend-shell-PLAN.md]
+depends_on:
+  - "07"
+  - "08"
 files_modified:
   - frontend/src/app/jobs/[id]/page.tsx
   - frontend/src/components/StageIndicator.tsx
@@ -11,8 +13,13 @@ files_modified:
   - frontend/src/components/JobMetaRow.tsx
   - frontend/src/components/ErrorDetails.tsx
   - frontend/src/hooks/useCounterAnimation.ts
+  - frontend/src/hooks/useCounterAnimation.test.ts
 autonomous: true
-requirements: [JOB-02, JOB-03, JOB-04, UPLD-05]
+requirements:
+  - JOB-02
+  - JOB-03
+  - JOB-04
+  - UPLD-05
 
 must_haves:
   truths:
@@ -130,6 +137,8 @@ export async function getJob(jobId: string): Promise<JobProgress>
 <!-- shadcn components used in this plan -->
 <!-- Progress, Alert, Collapsible, Badge, Button, Skeleton -->
 <!-- Add: npx shadcn@latest add progress alert collapsible badge button skeleton -->
+<!-- vitest runs via: cd frontend && npx vitest run -->
+<!-- vitest configured in Plan 07 (frontend/vitest.config.ts with jsdom + @testing-library/react) -->
 </context>
 
 <tasks>
@@ -137,9 +146,9 @@ export async function getJob(jobId: string): Promise<JobProgress>
 <task type="auto" tdd="true">
   <name>Task 1: useCounterAnimation hook + StageIndicator + ProgressBar components</name>
   <files>
-    frontend/src/hooks/useCounterAnimation.ts,
-    frontend/src/hooks/useCounterAnimation.test.ts,
-    frontend/src/components/StageIndicator.tsx,
+    frontend/src/hooks/useCounterAnimation.ts
+    frontend/src/hooks/useCounterAnimation.test.ts
+    frontend/src/components/StageIndicator.tsx
     frontend/src/components/ProgressBar.tsx
   </files>
   <behavior>
@@ -164,10 +173,11 @@ export async function getJob(jobId: string): Promise<JobProgress>
     1. Install shadcn components if not already present: `cd frontend && npx shadcn@latest add progress` (from the frontend/ dir).
 
     2. Create `frontend/src/hooks/useCounterAnimation.test.ts`:
-       - Test: initial render returns 0 when target is 100
+       Tests run via `cd frontend && npx vitest run` (vitest configured in Plan 07 with jsdom env).
+       - Test: initial render returns target when target is 100 (snaps on first render)
        - Test: duration=0 returns target immediately
        - Test: cleanup — no state updates after unmount (use fake timers)
-       - Use vitest (or jest if already configured in the project) with @testing-library/react renderHook.
+       - Use vitest with @testing-library/react renderHook.
 
     3. Implement `frontend/src/hooks/useCounterAnimation.ts`:
        ```typescript
@@ -310,21 +320,21 @@ export async function getJob(jobId: string): Promise<JobProgress>
        ```
   </action>
   <verify>
-    <automated>cd /home/thu/dev/projects/ai-translation/frontend && npx tsc --noEmit 2>&1 | head -30</automated>
+    <automated>cd /home/thu/dev/projects/ai-translation/frontend && npx vitest run src/hooks/useCounterAnimation.test.ts 2>&amp;1 | tail -10</automated>
   </verify>
   <done>
     - useCounterAnimation returns display value, animates toward target, snaps on duration=0
     - StageIndicator renders 4 stages with correct color/icon per state
     - ProgressBar wraps shadcn Progress with indigo-500 fill at 8px height
-    - TypeScript clean
+    - useCounterAnimation tests pass via `npx vitest run`
   </done>
 </task>
 
 <task type="auto">
   <name>Task 2: ErrorDetails component + JobMetaRow + job status page</name>
   <files>
-    frontend/src/components/ErrorDetails.tsx,
-    frontend/src/components/JobMetaRow.tsx,
+    frontend/src/components/ErrorDetails.tsx
+    frontend/src/components/JobMetaRow.tsx
     frontend/src/app/jobs/[id]/page.tsx
   </files>
   <action>
@@ -384,7 +394,6 @@ export async function getJob(jobId: string): Promise<JobProgress>
     3. Create `frontend/src/components/JobMetaRow.tsx` (filename, lang pair, format, time):
        ```typescript
        import { Badge } from '@/components/ui/badge'
-       import { formatDistanceToNow } from 'date-fns'  // use if available, else inline simple format
        import type { JobProgress } from '@/lib/types'
 
        interface JobMetaRowProps {
@@ -393,11 +402,13 @@ export async function getJob(jobId: string): Promise<JobProgress>
 
        function formatAge(isoString?: string): string {
          if (!isoString) return ''
-         try {
-           return formatDistanceToNow(new Date(isoString), { addSuffix: true })
-         } catch {
-           return ''
-         }
+         const diffMs = Date.now() - new Date(isoString).getTime()
+         const diffMin = Math.floor(diffMs / 60_000)
+         if (diffMin < 1) return 'just now'
+         if (diffMin < 60) return `${diffMin}m ago`
+         const diffH = Math.floor(diffMin / 60)
+         if (diffH < 24) return `${diffH}h ago`
+         return `${Math.floor(diffH / 24)}d ago`
        }
 
        export function JobMetaRow({ job }: JobMetaRowProps) {
@@ -407,8 +418,8 @@ export async function getJob(jobId: string): Promise<JobProgress>
              {job.source_lang && job.target_lang && (
                <span>{sourceLang} → {job.target_lang}</span>
              )}
-             {job.format && (
-               <Badge variant="outline" className="text-xs text-slate-700">{job.format.toUpperCase()}</Badge>
+             {job.input_format && (
+               <Badge variant="outline" className="text-xs text-slate-700">{job.input_format.toUpperCase()}</Badge>
              )}
              {job.created_at && <span>·</span>}
              {job.created_at && <span>{formatAge(job.created_at)}</span>}
@@ -416,7 +427,6 @@ export async function getJob(jobId: string): Promise<JobProgress>
          )
        }
        ```
-       NOTE: if date-fns is not in package.json, skip the import and write the formatAge inline using `Date` arithmetic (return "{N} min ago" pattern). Do not add new deps without checking package.json first.
 
     4. Create `frontend/src/app/jobs/[id]/page.tsx`:
        ```typescript
@@ -431,6 +441,7 @@ export async function getJob(jobId: string): Promise<JobProgress>
        import { ProgressBar } from '@/components/ProgressBar'
        import { ErrorDetails } from '@/components/ErrorDetails'
        import { JobMetaRow } from '@/components/JobMetaRow'
+       import { NavBar } from '@/components/NavBar'
        import { useJobProgress } from '@/hooks/useJobProgress'
        import { useCounterAnimation } from '@/hooks/useCounterAnimation'
        import type { JobStatus } from '@/lib/types'
@@ -450,21 +461,29 @@ export async function getJob(jobId: string): Promise<JobProgress>
 
          if (isLoading) {
            return (
-             <div className="space-y-4">
-               <Skeleton className="h-4 w-24" />
-               <Skeleton className="h-6 w-64" />
-               <Skeleton className="h-2 w-full" />
-               <Skeleton className="h-4 w-48" />
-             </div>
+             <>
+               <NavBar />
+               <main className="max-w-3xl mx-auto px-8 py-12 space-y-4">
+                 <Skeleton className="h-4 w-24" />
+                 <Skeleton className="h-6 w-64" />
+                 <Skeleton className="h-2 w-full" />
+                 <Skeleton className="h-4 w-48" />
+               </main>
+             </>
            )
          }
 
          if (!job) {
            return (
-             <div className="text-slate-500 text-sm">
-               Job not found.{' '}
-               <Link href="/jobs" className="underline">Back to jobs</Link>
-             </div>
+             <>
+               <NavBar />
+               <main className="max-w-3xl mx-auto px-8 py-12">
+                 <p className="text-slate-500 text-sm">
+                   Job not found.{' '}
+                   <Link href="/jobs" className="underline">Back to jobs</Link>
+                 </p>
+               </main>
+             </>
            )
          }
 
@@ -472,110 +491,105 @@ export async function getJob(jobId: string): Promise<JobProgress>
            ? Math.round((job.segments_done / job.segments_total) * 100)
            : (job.status === 'done' ? 100 : 0)
 
-         const STATUS_COLORS: Record<JobStatus, string> = {
-           queued: 'text-amber-500',
-           running: 'text-indigo-600',
-           needs_review: 'text-amber-600',
-           failed: 'text-red-600',
-           done: 'text-emerald-600',
-         }
-
          return (
-           <div className="space-y-6">
-             {/* Back link */}
-             <Link
-               href="/jobs"
-               className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-700"
-             >
-               <ArrowLeft className="h-4 w-4" />
-               All Jobs
-             </Link>
-
-             {/* Heading */}
-             <div>
-               <h1 className="text-xl font-semibold text-slate-900">{job.filename ?? jobId}</h1>
-               <JobMetaRow job={job} />
-             </div>
-
-             {/* Stage indicator */}
-             <StageIndicator stage={job.stage} />
-
-             {/* Progress section */}
-             <div className="space-y-2">
-               {job.status === 'queued' ? (
-                 <>
-                   <Skeleton className="h-2 w-full" />
-                   <p className="text-sm text-slate-500">Waiting for worker...</p>
-                 </>
-               ) : (
-                 <>
-                   <ProgressBar value={progressPct} />
-                   {job.segments_total > 0 && (
-                     <p className="text-sm text-slate-700">
-                       {displayCount} / {job.segments_total} segments translated
-                     </p>
-                   )}
-                   {/* Retry chip — D-12: slate-500, no red, no background */}
-                   {job.retry_count > 0 && job.status === 'running' && (
-                     <p className="text-xs text-slate-500 transition-opacity duration-150">
-                       Retrying batch {job.current_batch} ({job.retry_count}/3)
-                     </p>
-                   )}
-                   {/* Detected language badge — D-16 */}
-                   {job.detected_lang && job.source_lang === 'auto' && (
-                     <Badge className="bg-indigo-100 text-indigo-700 border-indigo-200">
-                       Detected: {job.detected_lang}
-                     </Badge>
-                   )}
-                 </>
-               )}
-             </div>
-
-             {/* Error section — D-11 */}
-             {job.status === 'failed' && job.error && (
-               <ErrorDetails error={job.error} lastMessage={job.last_message} />
-             )}
-
-             {/* Action section */}
-             {job.status === 'done' && (
-               <Button
-                 className="w-full bg-indigo-600 hover:bg-indigo-700 text-white"
-                 onClick={() => { window.location.href = `/api/jobs/${jobId}/download` }}
+           <>
+             <NavBar />
+             <main className="max-w-3xl mx-auto px-8 py-12 space-y-6">
+               {/* Back link */}
+               <Link
+                 href="/jobs"
+                 className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-700"
                >
-                 Download Translation
-               </Button>
-             )}
+                 <ArrowLeft className="h-4 w-4" />
+                 All Jobs
+               </Link>
 
-             {job.status === 'needs_review' && (
-               <div className="rounded-lg border border-slate-200 bg-white p-6 text-center space-y-3">
-                 <h2 className="text-base font-semibold text-slate-800">Review Required</h2>
-                 <p className="text-sm text-slate-500">
-                   Segment-level review will be available in the next release. You can still download the current output.
-                 </p>
+               {/* Heading */}
+               <div>
+                 <h1 className="text-xl font-semibold text-slate-900">{job.original_filename ?? jobId}</h1>
+                 <JobMetaRow job={job} />
+               </div>
+
+               {/* Stage indicator */}
+               {job.stage && <StageIndicator stage={job.stage} />}
+
+               {/* Progress section */}
+               <div className="space-y-2">
+                 {job.status === 'queued' ? (
+                   <>
+                     <Skeleton className="h-2 w-full" />
+                     <p className="text-sm text-slate-500">Waiting for worker...</p>
+                   </>
+                 ) : (
+                   <>
+                     <ProgressBar value={progressPct} />
+                     {job.segments_total > 0 && (
+                       <p className="text-sm text-slate-700">
+                         {displayCount} / {job.segments_total} segments translated
+                       </p>
+                     )}
+                     {/* Retry chip — D-12: slate-500, no red, no background */}
+                     {job.retry_count > 0 && job.status === 'running' && (
+                       <p className="text-xs text-slate-500 transition-opacity duration-150">
+                         Retrying batch {job.current_batch} ({job.retry_count}/3)
+                       </p>
+                     )}
+                     {/* Detected language badge — D-16 */}
+                     {job.detected_lang && job.source_lang === 'auto' && (
+                       <Badge className="bg-indigo-100 text-indigo-700 border-indigo-200">
+                         Detected: {job.detected_lang}
+                       </Badge>
+                     )}
+                   </>
+                 )}
+               </div>
+
+               {/* Error section — D-11 */}
+               {job.status === 'failed' && job.error && (
+                 <ErrorDetails error={job.error} lastMessage={job.last_message} />
+               )}
+
+               {/* Action section */}
+               {job.status === 'done' && (
                  <Button
-                   variant="outline"
-                   className="border-indigo-600 text-indigo-600 hover:bg-indigo-50"
+                   className="w-full bg-indigo-600 hover:bg-indigo-700 text-white"
                    onClick={() => { window.location.href = `/api/jobs/${jobId}/download` }}
                  >
-                   Download Current Output
+                   Download Translation
                  </Button>
-               </div>
-             )}
-           </div>
+               )}
+
+               {job.status === 'needs_review' && (
+                 <div className="rounded-lg border border-slate-200 bg-white p-6 text-center space-y-3">
+                   <h2 className="text-base font-semibold text-slate-800">Review Required</h2>
+                   <p className="text-sm text-slate-500">
+                     Segment-level review will be available in the next release. You can still download the current output.
+                   </p>
+                   <Button
+                     variant="outline"
+                     className="border-indigo-600 text-indigo-600 hover:bg-indigo-50"
+                     onClick={() => { window.location.href = `/api/jobs/${jobId}/download` }}
+                   >
+                     Download Current Output
+                   </Button>
+                 </div>
+               )}
+             </main>
+           </>
          )
        }
        ```
 
-    IMPORTANT: Next.js 16 `params` is a Promise — use `React.use(params)` to unwrap, NOT `params.id` directly (async params from day one per D-20). This is already shown in the code above.
+    IMPORTANT: Next.js 16 `params` is a Promise — use `React.use(params)` to unwrap, NOT `params.id` directly (async params from day one per D-20).
 
     IMPORTANT: Retry chip uses `text-slate-500`, NO background fill, NO `text-red-*` (per D-12).
   </action>
   <verify>
-    <automated>cd /home/thu/dev/projects/ai-translation/frontend && npx tsc --noEmit 2>&1 | head -30</automated>
+    <automated>cd /home/thu/dev/projects/ai-translation/frontend && npx tsc --noEmit 2>&amp;1 | head -30</automated>
   </verify>
   <done>
     - ErrorDetails: destructive Alert with shadcn Collapsible, no traceback, shows source_text of failing segments
-    - JobMetaRow: lang pair + format badge + age
+    - JobMetaRow: lang pair + format badge + age (uses input_format not format)
     - Job status page: queued=skeleton, running=progress+counter+retry chip, done=download button, failed=error banner, needs_review=placeholder card
     - Detected language badge appears when source_lang='auto' and detected_lang is set
     - Retry chip (slate-500, no red) appears only when retry_count > 0 and running
@@ -604,10 +618,11 @@ export async function getJob(jobId: string): Promise<JobProgress>
 
 <verification>
 1. TypeScript: `cd frontend && npx tsc --noEmit` — zero errors
-2. Visual: Start dev server, navigate to `/jobs/{id}` for a running job — stage indicator advances, progress bar fills, counter animates
-3. Retry chip: Manually set retry_count > 0 in TanStack DevTools — chip appears in slate-500, no red
-4. Failed state: Mock a job with status=failed — error banner with collapsible appears, no traceback visible
-5. Download button: Done job shows indigo Download button; click triggers browser download
+2. Vitest: `cd frontend && npx vitest run src/hooks/useCounterAnimation.test.ts` — tests pass
+3. Visual: Start dev server, navigate to `/jobs/{id}` for a running job — stage indicator advances, progress bar fills, counter animates
+4. Retry chip: Manually set retry_count > 0 in TanStack DevTools — chip appears in slate-500, no red
+5. Failed state: Mock a job with status=failed — error banner with collapsible appears, no traceback visible
+6. Download button: Done job shows indigo Download button; click triggers browser download
 </verification>
 
 <success_criteria>
@@ -617,6 +632,7 @@ export async function getJob(jobId: string): Promise<JobProgress>
 - Failed state: destructive Alert + Collapsible with segment source_text (no stack trace)
 - Done state: full-width indigo "Download Translation" button
 - needs_review state: placeholder card with "Download Current Output"
+- useCounterAnimation tests pass via `npx vitest run`
 - TypeScript strict pass
 </success_criteria>
 

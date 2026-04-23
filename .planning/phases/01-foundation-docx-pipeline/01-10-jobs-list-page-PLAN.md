@@ -3,12 +3,15 @@ phase: 01-foundation-docx-pipeline
 plan: 10
 type: execute
 wave: 4
-depends_on: [01-07-frontend-shell-PLAN.md]
+depends_on:
+  - "07"
 files_modified:
   - frontend/src/app/jobs/page.tsx
   - frontend/src/components/StatusBadge.tsx
 autonomous: true
-requirements: [JOB-01, JOB-02]
+requirements:
+  - JOB-01
+  - JOB-02
 
 must_haves:
   truths:
@@ -60,10 +63,10 @@ export type JobStatus = 'queued' | 'running' | 'needs_review' | 'failed' | 'done
 
 export interface JobSummary {
   id: string
-  filename: string
+  original_filename: string
   source_lang: string
   target_lang: string
-  format: string
+  input_format: string
   status: JobStatus
   created_at: string
 }
@@ -74,8 +77,6 @@ export interface JobSummary {
 export async function listJobs(): Promise<JobSummary[]>
 // GET /api/jobs — returns array of job summaries, newest-first
 ```
-
-<!-- NOTE: If JobSummary is not exported from types.ts yet, add it in this plan's Task 1 -->
 </interfaces>
 
 <!-- shadcn components: Table, Badge, Button -->
@@ -85,30 +86,15 @@ export async function listJobs(): Promise<JobSummary[]>
 <tasks>
 
 <task type="auto">
-  <name>Task 1: StatusBadge component + extend types + jobs list page</name>
+  <name>Task 1: StatusBadge component + jobs list page</name>
   <files>
-    frontend/src/lib/types.ts,
-    frontend/src/components/StatusBadge.tsx,
+    frontend/src/components/StatusBadge.tsx
     frontend/src/app/jobs/page.tsx
   </files>
   <action>
     1. Install shadcn Table if not already present: `cd frontend && npx shadcn@latest add table`.
 
-    2. Extend `frontend/src/lib/types.ts` — add `JobSummary` interface if not present:
-       ```typescript
-       export interface JobSummary {
-         id: string
-         filename: string
-         source_lang: string
-         target_lang: string
-         format: string
-         status: JobStatus
-         created_at: string
-       }
-       ```
-       Also extend `api.ts` `listJobs()` return type to `Promise<JobSummary[]>` if it currently returns `Promise<JobProgress[]>`.
-
-    3. Create `frontend/src/components/StatusBadge.tsx`:
+    2. Create `frontend/src/components/StatusBadge.tsx`:
        ```typescript
        import { Badge } from '@/components/ui/badge'
        import { cn } from '@/lib/utils'
@@ -147,7 +133,7 @@ export async function listJobs(): Promise<JobSummary[]>
        }
        ```
 
-    4. Create `frontend/src/app/jobs/page.tsx`:
+    3. Create `frontend/src/app/jobs/page.tsx`:
        ```typescript
        'use client'
        import Link from 'next/link'
@@ -159,6 +145,7 @@ export async function listJobs(): Promise<JobSummary[]>
        import { Button } from '@/components/ui/button'
        import { Badge } from '@/components/ui/badge'
        import { StatusBadge } from '@/components/StatusBadge'
+       import { NavBar } from '@/components/NavBar'
        import { listJobs } from '@/lib/api'
        import type { JobSummary } from '@/lib/types'
 
@@ -185,108 +172,117 @@ export async function listJobs(): Promise<JobSummary[]>
          })
 
          return (
-           <div className="space-y-6">
-             {/* Heading row */}
-             <div className="flex items-center justify-between">
-               <h1 className="text-xl font-semibold text-slate-900">Translation Jobs</h1>
-               <Button
-                 className="bg-indigo-600 hover:bg-indigo-700 text-white"
-                 onClick={() => router.push('/')}
-               >
-                 New Translation
-               </Button>
-             </div>
-
-             {/* Table */}
-             {isLoading ? (
-               <p className="text-sm text-slate-500">Loading jobs...</p>
-             ) : jobs.length === 0 ? (
-               /* Empty state */
-               <div className="text-center py-16 space-y-3">
-                 <p className="text-base font-semibold text-slate-700">No translations yet</p>
-                 <p className="text-sm text-slate-500">Upload a document to get started.</p>
+           <>
+             <NavBar />
+             <main className="max-w-3xl mx-auto px-8 py-12 space-y-6">
+               {/* Heading row */}
+               <div className="flex items-center justify-between">
+                 <h1 className="text-xl font-semibold text-slate-900">Translation Jobs</h1>
                  <Button
-                   variant="outline"
-                   className="border-indigo-600 text-indigo-600 hover:bg-indigo-50 mt-2"
+                   className="bg-indigo-600 hover:bg-indigo-700 text-white"
                    onClick={() => router.push('/')}
                  >
-                   Translate a Document
+                   New Translation
                  </Button>
                </div>
-             ) : (
-               <Table>
-                 <TableHeader>
-                   <TableRow>
-                     <TableHead className="w-8 text-xs">#</TableHead>
-                     <TableHead className="text-xs">Filename</TableHead>
-                     <TableHead className="text-xs">Languages</TableHead>
-                     <TableHead className="text-xs">Format</TableHead>
-                     <TableHead className="text-xs">Status</TableHead>
-                     <TableHead className="text-xs">Created</TableHead>
-                     <TableHead className="text-xs text-right">Actions</TableHead>
-                   </TableRow>
-                 </TableHeader>
-                 <TableBody>
-                   {jobs.map((job, idx) => (
-                     <TableRow key={job.id} className="hover:bg-slate-50 cursor-pointer" onClick={() => router.push(`/jobs/${job.id}`)}>
-                       <TableCell className="text-xs text-slate-400 font-mono">{idx + 1}</TableCell>
-                       <TableCell className="text-sm text-slate-800 max-w-[200px] truncate">
-                         {job.filename}
-                       </TableCell>
-                       <TableCell className="text-xs text-slate-600">
-                         {sourceLangDisplay(job)} → {job.target_lang}
-                       </TableCell>
-                       <TableCell>
-                         <Badge variant="outline" className="text-xs text-slate-700">
-                           {job.format.toUpperCase()}
-                         </Badge>
-                       </TableCell>
-                       <TableCell>
-                         <StatusBadge status={job.status} />
-                       </TableCell>
-                       <TableCell className="text-xs text-slate-500">
-                         {formatAge(job.created_at)}
-                       </TableCell>
-                       <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
-                         <div className="flex items-center justify-end gap-1">
-                           <Button
-                             variant="ghost"
-                             size="sm"
-                             className="h-7 px-2 text-xs"
-                             asChild
-                           >
-                             <Link href={`/jobs/${job.id}`}>View</Link>
-                           </Button>
-                           {job.status === 'done' && (
+
+               {/* Table */}
+               {isLoading ? (
+                 <p className="text-sm text-slate-500">Loading jobs...</p>
+               ) : jobs.length === 0 ? (
+                 /* Empty state */
+                 <div className="text-center py-16 space-y-3">
+                   <p className="text-base font-semibold text-slate-700">No translations yet</p>
+                   <p className="text-sm text-slate-500">Upload a document to get started.</p>
+                   <Button
+                     variant="outline"
+                     className="border-indigo-600 text-indigo-600 hover:bg-indigo-50 mt-2"
+                     onClick={() => router.push('/')}
+                   >
+                     Translate a Document
+                   </Button>
+                 </div>
+               ) : (
+                 <Table>
+                   <TableHeader>
+                     <TableRow>
+                       <TableHead className="w-8 text-xs">#</TableHead>
+                       <TableHead className="text-xs">Filename</TableHead>
+                       <TableHead className="text-xs">Languages</TableHead>
+                       <TableHead className="text-xs">Format</TableHead>
+                       <TableHead className="text-xs">Status</TableHead>
+                       <TableHead className="text-xs">Created</TableHead>
+                       <TableHead className="text-xs text-right">Actions</TableHead>
+                     </TableRow>
+                   </TableHeader>
+                   <TableBody>
+                     {jobs.map((job, idx) => (
+                       <TableRow
+                         key={job.id}
+                         className="hover:bg-slate-50 cursor-pointer"
+                         onClick={() => router.push(`/jobs/${job.id}`)}
+                       >
+                         <TableCell className="text-xs text-slate-400 font-mono">{idx + 1}</TableCell>
+                         <TableCell className="text-sm text-slate-800 max-w-[200px] truncate">
+                           {job.original_filename}
+                         </TableCell>
+                         <TableCell className="text-xs text-slate-600">
+                           {sourceLangDisplay(job)} → {job.target_lang}
+                         </TableCell>
+                         <TableCell>
+                           <Badge variant="outline" className="text-xs text-slate-700">
+                             {job.input_format.toUpperCase()}
+                           </Badge>
+                         </TableCell>
+                         <TableCell>
+                           <StatusBadge status={job.status} />
+                         </TableCell>
+                         <TableCell className="text-xs text-slate-500">
+                           {formatAge(job.created_at)}
+                         </TableCell>
+                         <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                           <div className="flex items-center justify-end gap-1">
                              <Button
                                variant="ghost"
                                size="sm"
-                               className="h-7 px-2 text-xs text-indigo-600 hover:text-indigo-700"
-                               onClick={() => { window.location.href = `/api/jobs/${job.id}/download` }}
+                               className="h-7 px-2 text-xs"
+                               asChild
                              >
-                               Download
+                               <Link href={`/jobs/${job.id}`}>View</Link>
                              </Button>
-                           )}
-                         </div>
-                       </TableCell>
-                     </TableRow>
-                   ))}
-                 </TableBody>
-               </Table>
-             )}
-           </div>
+                             {job.status === 'done' && (
+                               <Button
+                                 variant="ghost"
+                                 size="sm"
+                                 className="h-7 px-2 text-xs text-indigo-600 hover:text-indigo-700"
+                                 onClick={() => { window.location.href = `/api/jobs/${job.id}/download` }}
+                               >
+                                 Download
+                               </Button>
+                             )}
+                           </div>
+                         </TableCell>
+                       </TableRow>
+                     ))}
+                   </TableBody>
+                 </Table>
+               )}
+             </main>
+           </>
          )
        }
        ```
 
-    NOTE: Table rows are clickable (navigate to /jobs/{id}) but action column click uses stopPropagation to prevent row navigation when clicking View/Download directly.
+    NOTE: Uses `job.original_filename` and `job.input_format` — matching the JobSummary shape defined in Plan 07 types.ts (aligned with Plan 06a Job model fields).
 
-    NOTE: `refetchInterval: 5_000` on jobs list. No SSE needed here — this is a list view, not real-time.
+    NOTE: Table rows are clickable (navigate to /jobs/{id}) but action column click uses stopPropagation.
 
-    NOTE: Download in action column triggers `window.location.href` (browser download), same pattern as Plan 09.
+    NOTE: `refetchInterval: 5_000` on jobs list. No SSE needed here — this is a list view.
+
+    NOTE: Download in action column triggers `window.location.href` (browser download).
   </action>
   <verify>
-    <automated>cd /home/thu/dev/projects/ai-translation/frontend && npx tsc --noEmit 2>&1 | head -30</automated>
+    <automated>cd /home/thu/dev/projects/ai-translation/frontend && npx tsc --noEmit 2>&amp;1 | head -30</automated>
   </verify>
   <done>
     - /jobs page renders table with columns: #, Filename, Languages, Format, Status, Created, Actions
@@ -294,6 +290,7 @@ export async function listJobs(): Promise<JobSummary[]>
     - Empty state shows "No translations yet" with "Translate a Document" CTA
     - Polling every 5s via refetchInterval
     - Download button only visible for done status rows
+    - Uses original_filename and input_format field names (matching Plan 07 JobSummary + Plan 06a model)
     - TypeScript clean
   </done>
 </task>
@@ -326,7 +323,7 @@ export async function listJobs(): Promise<JobSummary[]>
 
 <success_criteria>
 - /jobs page renders full table with correct columns
-- StatusBadge exported and used on both /jobs and reusable in /jobs/[id] if needed
+- StatusBadge exported and used on /jobs; reusable in /jobs/[id] if needed
 - Empty state matches copywriting contract exactly
 - 5s polling active when page is open
 - TypeScript strict pass

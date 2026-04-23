@@ -11,24 +11,36 @@ files_modified:
   - frontend/src/components/UploadForm.tsx
   - frontend/src/components/LanguageSelect.tsx
   - frontend/src/components/NavBar.tsx
+  - frontend/src/lib/detectTrackedChanges.ts
 autonomous: true
 requirements:
   - UPLD-01
   - UPLD-02
   - UPLD-03
+  - UPLD-04
   - UPLD-05
   - LANG-01
   - LANG-02
+
+# NOTE — UPLD-04 glossary picker UI: deferred to Phase 2 per D-15.
+# terminology plumbing covered by Plan 03 (INFRA-02 coverage).
 
 must_haves:
   truths:
     - "Drop zone shows dashed border at rest, indigo border + bg on drag-hover, handles one file at a time"
     - "File rejected with toast if >25MB or unsupported format"
+    - "LanguageSelect uses language code as form value and display name as label text"
     - "LanguageSelect shows auto-detect as first source option, VN/EN/JA/ZH in Recommended group"
     - "Submit button is disabled until file selected AND target language selected"
-    - "Tracked-changes modal appears automatically when DOCX upload detects has_tracked_changes=true"
+    - "Client reads DOCX bytes with jszip before first POST to detect tracked changes (Option A)"
+    - "If tracked changes detected, modal shown BEFORE form submit — user picks before any upload"
+    - "Modal cancel resets file and closes without upload"
+    - "Modal Apply Selection sets tracked_changes_action then submits FormData with all fields"
     - "Form submit posts to /api/upload (Next.js route handler) → redirects to /jobs/[id]"
   artifacts:
+    - path: "frontend/src/lib/detectTrackedChanges.ts"
+      provides: "Client-side DOCX tracked-changes detector using jszip (Option A per B4)"
+      exports: ["detectTrackedChanges"]
     - path: "frontend/src/app/upload/page.tsx"
       provides: "Upload page with UploadForm component"
     - path: "frontend/src/app/api/upload/route.ts"
@@ -36,24 +48,36 @@ must_haves:
     - path: "frontend/src/components/UploadForm.tsx"
       provides: "Drop zone + LanguageSelect + tracked-changes modal + submit"
     - path: "frontend/src/components/LanguageSelect.tsx"
-      provides: "Source/target shadcn Select with Recommended group"
+      provides: "Source/target shadcn Select with Recommended group; uses code as value"
   key_links:
+    - from: "frontend/src/components/UploadForm.tsx file selection"
+      to: "frontend/src/lib/detectTrackedChanges.ts"
+      via: "detectTrackedChanges(file) called on file selection — modal before first POST"
     - from: "frontend/src/components/UploadForm.tsx"
       to: "frontend/src/app/api/upload/route.ts"
-      via: "fetch POST /api/upload with FormData"
+      via: "fetch POST /api/upload with FormData including tracked_changes_action"
     - from: "frontend/src/app/api/upload/route.ts"
       to: "FastAPI POST /upload"
       via: "fetch(backendUrl + '/upload', {body: backendForm})"
-    - from: "tracked-changes modal"
-      to: "tracked_changes_action form field"
-      via: "RadioGroup selection → appended to FormData before submit"
 ---
 
 <objective>
-Build the upload page: drag-and-drop zone, source/target language selectors, tracked-changes modal, and the Next.js proxy route handler. File selection, validation, and submission all work per UI-SPEC interaction contracts.
+Build the upload page: drag-and-drop zone, source/target language selectors (code-based values),
+client-side tracked-changes detection (Option A: jszip + XML check BEFORE submit), modal for user choice,
+and the Next.js proxy route handler.
 
-Purpose: The primary user-facing entry point. Without this, users cannot submit translation jobs.
-Output: /upload route fully functional: user can drag-drop a DOCX, pick languages, handle tracked changes, submit and be redirected to the job status page.
+B4 design choice — Option A (client-side detection):
+  - On file selection, client reads DOCX bytes with jszip and checks word/document.xml for <w:ins> / <w:del>.
+  - If found, modal shown BEFORE first POST. Once user picks strip/preserve/cancel, FormData is built
+    with tracked_changes_action appended and single POST fires.
+  - No two-phase upload, no dry_run endpoint needed. Self-contained in frontend.
+  - jszip added to frontend/package.json (already in Next.js ecosystem via docx-preview patterns).
+
+B5 note: LanguageSelect uses language code as the form value (e.g. "vi", "en") and displays name.
+The /api/upload route.ts forwards source_lang/target_lang as codes to FastAPI.
+
+Purpose: The primary user-facing entry point.
+Output: /upload route fully functional; tracked-changes flow works before upload occurs.
 </objective>
 
 <execution_context>
@@ -67,38 +91,29 @@ Output: /upload route fully functional: user can drag-drop a DOCX, pick language
 @.planning/phases/01-foundation-docx-pipeline/01-RESEARCH.md
 
 <interfaces>
-<!-- UI-SPEC exact interaction contracts and copy -->
+<!-- Drop zone states (UI-SPEC Interaction Contracts) -->
+<!--   Idle: dashed border-slate-300, cloud-upload icon, "Drop your DOCX, PDF, or PPTX here" -->
+<!--   Drag-hover (valid single file): border-indigo-500, bg-indigo-50, "Release to upload" -->
+<!--   Drag-hover (multi-file): border-red-400, bg-red-50, "One file at a time only" -->
+<!--   File selected: filename chip + format badge + size text, drop zone collapses to 40px -->
+<!--   Rejected-format: Toast "Unsupported file type. Upload a DOCX, PDF, or PPTX." -->
+<!--   Rejected-too-large: Toast "File too large — maximum is 25 MB." -->
+<!--   Rejected-multi: Toast "Upload one file at a time." -->
 
-Drop zone states (UI-SPEC Interaction Contracts):
-  Idle: dashed border-slate-300, cloud-upload icon, "Drop your DOCX, PDF, or PPTX here"
-  Drag-hover (valid single file): border-indigo-500, bg-indigo-50, "Release to upload"
-  Drag-hover (multi-file): border-red-400, bg-red-50, "One file at a time only"
-  File selected: filename chip + format badge + size text, drop zone collapses to 40px
-  Rejected-format: Toast "Unsupported file type. Upload a DOCX, PDF, or PPTX."
-  Rejected-too-large: Toast "File too large — maximum is 25 MB."
-  Rejected-multi: Toast "Upload one file at a time."
+<!-- Tracked-changes modal (D-13 / UI-SPEC) — shown BEFORE submit (Option A) -->
+<!--   Title: "Tracked Changes Detected" -->
+<!--   Body: "This document has unresolved tracked changes. How would you like to handle them?" -->
+<!--   RadioGroup options: strip / preserve / cancel -->
+<!--   Confirm CTA: "Apply Selection" -->
+<!--   Cancel: "Cancel Upload" → resets file, closes dialog -->
 
-Tracked-changes modal (D-13 / UI-SPEC):
-  Title: "Tracked Changes Detected"
-  Body: "This document has unresolved tracked changes. How would you like to handle them?"
-  RadioGroup options:
-    strip: "Remove tracked changes before translating"
-    preserve: "Preserve and translate both versions"
-    cancel: "Cancel — I'll clean up the document first"
-  Confirm CTA: "Apply Selection"
-  Cancel: "Cancel Upload" → resets file, closes dialog
+<!-- Language selectors (UI-SPEC) — B5: code as value, name as display -->
+<!--   Source: default "auto"; placeholder "Auto-detect" -->
+<!--   Target: no default, required; placeholder "Select target language" -->
+<!--   getLanguages() returns Language[] with code/name/qwen_code -->
+<!--   PRIORITY_CODES = ["vi", "en", "ja", "zh", "zh-tw"] -->
 
-Language selectors (UI-SPEC):
-  Source: default "Auto-detect"; grouped: [Auto-detect] then [Recommended: VN/EN/JA/ZH/ZH-TW] then [All Languages: A-Z]
-  Target: no default, required; placeholder "Select target language"; same groups, no Auto-detect
-  Swap button: ghost icon-only, ↔ icon, disabled when source=Auto-detect, tooltip "Swap languages"
-
-Page copy (UI-SPEC Copywriting):
-  heading: "Translate a Document"
-  subheading: "Upload a DOCX file — select languages — download the translated version."
-  CTA: "Translate Document"
-
-Next.js route handler pattern (RESEARCH.md §9):
+<!-- Next.js route handler pattern (RESEARCH.md §9) -->
 ```typescript
 export async function POST(request: Request) {
   const formData = await request.formData()
@@ -107,18 +122,47 @@ export async function POST(request: Request) {
   backendForm.append("file", formData.get("file") as File)
   backendForm.append("source_lang", formData.get("source_lang") as string)
   backendForm.append("target_lang", formData.get("target_lang") as string)
+  const trackedAction = formData.get("tracked_changes_action")
+  if (trackedAction) backendForm.append("tracked_changes_action", trackedAction as string)
   const response = await fetch(`${backendUrl}/upload`, { method: "POST", body: backendForm })
   return Response.json(await response.json(), { status: response.status })
 }
 ```
+
+<!-- detectTrackedChanges (Option A — jszip client-side detection) -->
+```typescript
+import JSZip from "jszip"
+
+export async function detectTrackedChanges(file: File): Promise<boolean> {
+  if (!file.name.toLowerCase().endsWith(".docx")) return false
+  try {
+    const arrayBuffer = await file.arrayBuffer()
+    const zip = await JSZip.loadAsync(arrayBuffer)
+    const docXml = await zip.file("word/document.xml")?.async("string")
+    if (!docXml) return false
+    return docXml.includes("<w:ins") || docXml.includes("<w:del")
+  } catch {
+    return false  // Malformed DOCX — server will handle
+  }
+}
+```
+
+<!-- B4 UploadForm flow -->
+<!-- 1. User drops/selects file → client-side size+extension check -->
+<!-- 2. If .docx: detectTrackedChanges(file) → sets hasTrackedChanges state -->
+<!-- 3. handleSubmit called: if hasTrackedChanges && trackedAction === null → show modal, return -->
+<!-- 4. Modal Apply Selection sets trackedAction (string), handleSubmit re-invoked with action set -->
+<!-- 5. FormData built with all fields including tracked_changes_action; single POST fires -->
+<!-- Key: trackedAction starts as null (not "strip") so guard is NOT dead -->
 </interfaces>
 </context>
 
 <tasks>
 
 <task type="auto">
-  <name>Task 1: Next.js Upload Proxy Route + NavBar + LanguageSelect</name>
+  <name>Task 1: detectTrackedChanges + Next.js Upload Proxy Route + NavBar + LanguageSelect</name>
   <files>
+    frontend/src/lib/detectTrackedChanges.ts
     frontend/src/app/api/upload/route.ts
     frontend/src/components/NavBar.tsx
     frontend/src/components/LanguageSelect.tsx
@@ -126,10 +170,38 @@ export async function POST(request: Request) {
   <read_first>
     .planning/phases/01-foundation-docx-pipeline/01-RESEARCH.md (Section 9: POST route.ts full excerpt)
     .planning/phases/01-foundation-docx-pipeline/01-UI-SPEC.md (Global Shell layout, Language Selectors interaction contract, Copywriting table)
-    frontend/src/lib/types.ts (LanguagesResponse type)
-    frontend/src/lib/api.ts (getLanguages function)
+    frontend/src/lib/types.ts (Language type — code/name/qwen_code)
+    frontend/src/lib/api.ts (getLanguages function — returns Language[])
   </read_first>
   <action>
+Install jszip: `cd frontend && npm install jszip` (B4 Option A dependency).
+
+Create `frontend/src/lib/detectTrackedChanges.ts` (B4 Option A — client-side detection before POST):
+```typescript
+import JSZip from "jszip"
+
+/**
+ * B4 Option A: Read DOCX bytes client-side and check word/document.xml
+ * for <w:ins> / <w:del> elements (tracked changes markers).
+ * Called on file selection — BEFORE any upload — so the modal can be shown
+ * before the first POST fires.
+ * Returns false for non-.docx files or malformed zip (server handles validation).
+ */
+export async function detectTrackedChanges(file: File): Promise<boolean> {
+  if (!file.name.toLowerCase().endsWith(".docx")) return false
+  try {
+    const arrayBuffer = await file.arrayBuffer()
+    const zip = await JSZip.loadAsync(arrayBuffer)
+    const docXml = await zip.file("word/document.xml")?.async("string")
+    if (!docXml) return false
+    return docXml.includes("<w:ins") || docXml.includes("<w:del")
+  } catch {
+    // Malformed DOCX or zip read error — let the server validate
+    return false
+  }
+}
+```
+
 Create `frontend/src/app/api/upload/route.ts` (RESEARCH.md §9 exact pattern):
 ```typescript
 export async function POST(request: Request) {
@@ -156,7 +228,7 @@ export async function POST(request: Request) {
     })
     const data = await response.json()
     return Response.json(data, { status: response.status })
-  } catch (err) {
+  } catch {
     return Response.json(
       { error: "Backend unavailable. Please try again." },
       { status: 503 }
@@ -173,8 +245,6 @@ import { usePathname } from "next/navigation"
 import { useQuery } from "@tanstack/react-query"
 
 function DashScopeHealthDot() {
-  // Poll /api/health every 30s to show DashScope reachability
-  // Simple implementation: green dot on success, amber on loading, red on error
   const { status } = useQuery({
     queryKey: ["health"],
     queryFn: () => fetch("/api/health").then(r => r.json()),
@@ -187,7 +257,7 @@ function DashScopeHealthDot() {
     : "bg-amber-500"
 
   const label = status === "success" ? "API: reachable"
-    : status === "error" ? "API: unreachable — check your connection or API key"
+    : status === "error" ? "API: unreachable"
     : "API: checking..."
 
   return (
@@ -199,7 +269,6 @@ function DashScopeHealthDot() {
 
 export function NavBar() {
   const pathname = usePathname()
-
   return (
     <header className="h-14 bg-white border-b border-slate-200 flex items-center px-8">
       <div className="max-w-3xl mx-auto w-full flex items-center justify-between">
@@ -225,7 +294,7 @@ export function NavBar() {
 }
 ```
 
-Create `frontend/src/components/LanguageSelect.tsx` (UI-SPEC language picker):
+Create `frontend/src/components/LanguageSelect.tsx` (B5 fix — code as value, name as display):
 ```typescript
 "use client"
 import { useQuery } from "@tanstack/react-query"
@@ -234,15 +303,14 @@ import {
   SelectLabel, SelectTrigger, SelectValue,
 } from "@/components/ui/select"
 import { getLanguages } from "@/lib/api"
+import type { Language } from "@/lib/types"
 
-const PRIORITY_LANGUAGES = [
-  "Vietnamese", "English", "Japanese",
-  "Chinese (Simplified)", "Chinese (Traditional)",
-]
+// B5: priority codes match SUPPORTED_LANGUAGES code keys in Plan 06a
+const PRIORITY_CODES = ["vi", "en", "ja", "zh", "zh-tw"]
 
 interface LanguageSelectProps {
-  value: string
-  onValueChange: (value: string) => void
+  value: string           // language code (e.g. "vi", "en", "auto")
+  onValueChange: (code: string) => void
   includeAutoDetect?: boolean
   placeholder?: string
   label: string
@@ -253,13 +321,16 @@ export function LanguageSelect({
   value, onValueChange, includeAutoDetect = false,
   placeholder, label, disabled,
 }: LanguageSelectProps) {
-  const { data: languages = [] } = useQuery({
+  const { data: languages = [] } = useQuery<Language[]>({
     queryKey: ["languages"],
     queryFn: getLanguages,
     staleTime: 24 * 60 * 60 * 1000,  // 24h — static per model version (UI-SPEC)
   })
 
-  const otherLanguages = languages.filter(l => !PRIORITY_LANGUAGES.includes(l))
+  // Exclude "auto" from the groupable list; it's rendered separately when includeAutoDetect=true
+  const nonAuto = languages.filter(l => l.code !== "auto")
+  const priorityLangs = nonAuto.filter(l => PRIORITY_CODES.includes(l.code))
+  const otherLangs = nonAuto.filter(l => !PRIORITY_CODES.includes(l.code))
 
   return (
     <div className="flex flex-col gap-1">
@@ -274,14 +345,14 @@ export function LanguageSelect({
           )}
           <SelectGroup>
             <SelectLabel>Recommended</SelectLabel>
-            {PRIORITY_LANGUAGES.map(lang => (
-              <SelectItem key={lang} value={lang}>{lang}</SelectItem>
+            {priorityLangs.map(lang => (
+              <SelectItem key={lang.code} value={lang.code}>{lang.name}</SelectItem>
             ))}
           </SelectGroup>
           <SelectGroup>
             <SelectLabel>All Languages</SelectLabel>
-            {otherLanguages.map(lang => (
-              <SelectItem key={lang} value={lang}>{lang}</SelectItem>
+            {otherLangs.map(lang => (
+              <SelectItem key={lang.code} value={lang.code}>{lang.name}</SelectItem>
             ))}
           </SelectGroup>
         </SelectContent>
@@ -293,23 +364,27 @@ export function LanguageSelect({
   </action>
   <verify>
     <automated>
+      grep -q "detectTrackedChanges" frontend/src/lib/detectTrackedChanges.ts &amp;&amp;
+      grep -q "JSZip" frontend/src/lib/detectTrackedChanges.ts &amp;&amp;
+      grep -q "w:ins" frontend/src/lib/detectTrackedChanges.ts &amp;&amp;
       grep -q "backendForm.append" frontend/src/app/api/upload/route.ts &amp;&amp;
       grep -q "BACKEND_URL" frontend/src/app/api/upload/route.ts &amp;&amp;
+      grep -q "lang.code" frontend/src/components/LanguageSelect.tsx &amp;&amp;
       grep -q "staleTime: 24" frontend/src/components/LanguageSelect.tsx &amp;&amp;
-      grep -q "PRIORITY_LANGUAGES" frontend/src/components/LanguageSelect.tsx &amp;&amp;
-      grep -q "Auto-detect" frontend/src/components/LanguageSelect.tsx
+      grep -q "PRIORITY_CODES" frontend/src/components/LanguageSelect.tsx
     </automated>
   </verify>
   <done>
+    detectTrackedChanges.ts reads DOCX bytes with JSZip, checks word/document.xml for w:ins/w:del (Option A per B4).
     route.ts forwards FormData (file + source_lang + target_lang + tracked_changes_action) to FastAPI.
-    LanguageSelect loads languages from /languages with 24h stale time, groups into Recommended + All Languages.
-    Priority languages: Vietnamese, English, Japanese, Chinese (Simplified), Chinese (Traditional).
+    LanguageSelect uses code as Select value and name as display text (B5 fix).
+    Priority codes: vi, en, ja, zh, zh-tw — rendered in Recommended group.
     NavBar has Upload + Jobs links with active state, DashScope health dot.
   </done>
 </task>
 
 <task type="auto">
-  <name>Task 2: UploadForm + Tracked-Changes Modal + Upload Page</name>
+  <name>Task 2: UploadForm + Tracked-Changes Modal (Option A flow) + Upload Page</name>
   <files>
     frontend/src/components/UploadForm.tsx
     frontend/src/app/upload/page.tsx
@@ -317,11 +392,21 @@ export function LanguageSelect({
   <read_first>
     .planning/phases/01-foundation-docx-pipeline/01-UI-SPEC.md (Upload Page component inventory, Interaction Contracts, Page Layout, Copywriting)
     .planning/phases/01-foundation-docx-pipeline/01-CONTEXT.md (D-13: tracked-changes modal 3 options)
-    frontend/src/components/LanguageSelect.tsx (LanguageSelectProps interface)
+    frontend/src/components/LanguageSelect.tsx (LanguageSelectProps interface — value is code)
     frontend/src/lib/types.ts (UploadResponse)
+    frontend/src/lib/detectTrackedChanges.ts (detectTrackedChanges signature)
   </read_first>
   <action>
-Create `frontend/src/components/UploadForm.tsx` implementing full UI-SPEC upload form:
+Create `frontend/src/components/UploadForm.tsx` with B4 Option A tracked-changes flow:
+
+Key B4 fixes in this implementation:
+1. `trackedAction` starts as `null` (NOT "strip") — guard `if (hasTrackedChanges && trackedAction === null)` is live
+2. `detectTrackedChanges(file)` is called on file selection, sets `hasTrackedChanges` state
+3. On submit: if hasTrackedChanges && trackedAction === null → show modal → RETURN (no POST yet)
+4. Modal "Apply Selection": sets trackedAction state, then calls `submitWithAction(trackedAction)` directly
+5. Modal "Cancel Upload": resets file + trackedAction to null, closes modal
+6. Only ONE POST fires — after user picks their action
+
 ```typescript
 "use client"
 import { useState, useRef, useCallback } from "react"
@@ -336,6 +421,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Label } from "@/components/ui/label"
 import { LanguageSelect } from "./LanguageSelect"
 import { CloudUpload } from "lucide-react"
+import { detectTrackedChanges } from "@/lib/detectTrackedChanges"
 
 const MAX_SIZE_BYTES = 25 * 1024 * 1024
 const ALLOWED_EXTS = new Set([".docx", ".pdf", ".pptx"])
@@ -358,12 +444,16 @@ export function UploadForm() {
   const [targetLang, setTargetLang] = useState("")
   const [submitting, setSubmitting] = useState(false)
 
-  // Tracked-changes modal (D-13)
+  // B4 Option A: client-side tracked-changes state
+  // hasTrackedChanges: set by detectTrackedChanges() on file selection
+  // trackedAction: null means user hasn't chosen yet; guard is live when null
+  const [hasTrackedChanges, setHasTrackedChanges] = useState(false)
   const [showTrackedModal, setShowTrackedModal] = useState(false)
-  const [trackedAction, setTrackedAction] = useState("strip")
-  const pendingFile = useRef<File | null>(null)
+  const [modalSelection, setModalSelection] = useState<"strip" | "preserve" | "cancel">("strip")
+  // trackedAction: null = not yet decided; "strip"/"preserve" = decided by modal
+  const [trackedAction, setTrackedAction] = useState<"strip" | "preserve" | null>(null)
 
-  const handleFile = useCallback((f: File) => {
+  const handleFile = useCallback(async (f: File) => {
     const ext = getExt(f.name)
     if (!ALLOWED_EXTS.has(ext)) {
       toast({ variant: "destructive", description: "Unsupported file type. Upload a DOCX, PDF, or PPTX." })
@@ -373,9 +463,13 @@ export function UploadForm() {
       toast({ variant: "destructive", description: "File too large — maximum is 25 MB." })
       return
     }
-    // Tracked-changes detection happens server-side on upload; show modal if backend says so.
-    // For now, set the file directly; after real upload, modal is shown if has_tracked_changes=true.
     setFile(f)
+    setTrackedAction(null)  // Reset decision for new file
+    setHasTrackedChanges(false)
+
+    // B4 Option A: detect tracked changes before any upload
+    const hasTC = await detectTrackedChanges(f)
+    setHasTrackedChanges(hasTC)
   }, [toast])
 
   const onDrop = useCallback((e: React.DragEvent) => {
@@ -396,18 +490,17 @@ export function UploadForm() {
 
   const canSubmit = !!file && !!targetLang && !submitting
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  // Core submit function — called with a resolved action (or null for non-DOCX)
+  const submitWithAction = useCallback(async (action: "strip" | "preserve" | null) => {
     if (!file || !targetLang) return
-
     setSubmitting(true)
     try {
       const formData = new FormData()
       formData.append("file", file)
       formData.append("source_lang", sourceLang)
       formData.append("target_lang", targetLang)
-      if (trackedAction && showTrackedModal === false) {
-        // Only append if user has made a tracked-changes choice
+      if (action) {
+        formData.append("tracked_changes_action", action)
       }
 
       const res = await fetch("/api/upload", { method: "POST", body: formData })
@@ -418,20 +511,24 @@ export function UploadForm() {
         setSubmitting(false)
         return
       }
-
-      // If backend signals tracked changes and we haven't shown the modal yet
-      if (data.has_tracked_changes && !trackedAction) {
-        pendingFile.current = file
-        setShowTrackedModal(true)
-        setSubmitting(false)
-        return
-      }
-
       router.push(`/jobs/${data.job_id}`)
     } catch {
       toast({ variant: "destructive", description: "Upload failed. Please check your connection." })
       setSubmitting(false)
     }
+  }, [file, targetLang, sourceLang, router, toast])
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!file || !targetLang) return
+
+    // B4 Option A: if tracked changes present and user hasn't decided yet → show modal
+    if (hasTrackedChanges && trackedAction === null) {
+      setShowTrackedModal(true)
+      return  // Do NOT submit yet
+    }
+
+    await submitWithAction(trackedAction)
   }
 
   const dropZoneClass = dragState === "valid"
@@ -460,9 +557,7 @@ export function UploadForm() {
             <div className="flex items-center gap-2 text-sm text-slate-700">
               <Badge variant="outline">{getExt(file.name).toUpperCase().slice(1)}</Badge>
               <span>{file.name}</span>
-              <span className={`text-xs ${file.size > MAX_SIZE_BYTES ? "text-red-500" : "text-slate-500"}`}>
-                {formatBytes(file.size)}
-              </span>
+              <span className="text-xs text-slate-500">{formatBytes(file.size)}</span>
             </div>
           ) : (
             <>
@@ -529,8 +624,19 @@ export function UploadForm() {
         </Button>
       </form>
 
-      {/* Tracked-changes modal (D-13) */}
-      <Dialog open={showTrackedModal} onOpenChange={open => { if (!open) { setFile(null); setShowTrackedModal(false) } }}>
+      {/* Tracked-changes modal (D-13) — shown BEFORE submit (B4 Option A) */}
+      <Dialog
+        open={showTrackedModal}
+        onOpenChange={open => {
+          if (!open) {
+            // Dialog dismissed without Apply → treat as cancel
+            setFile(null)
+            setTrackedAction(null)
+            setHasTrackedChanges(false)
+            setShowTrackedModal(false)
+          }
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Tracked Changes Detected</DialogTitle>
@@ -538,12 +644,16 @@ export function UploadForm() {
               This document has unresolved tracked changes. How would you like to handle them?
             </DialogDescription>
           </DialogHeader>
-          <RadioGroup value={trackedAction} onValueChange={setTrackedAction} className="flex flex-col gap-3 my-4">
+          <RadioGroup
+            value={modalSelection}
+            onValueChange={v => setModalSelection(v as "strip" | "preserve" | "cancel")}
+            className="flex flex-col gap-3 my-4"
+          >
             <div className="flex items-start gap-3">
               <RadioGroupItem value="strip" id="tc-strip" />
               <Label htmlFor="tc-strip" className="cursor-pointer">
                 <div className="font-medium">Remove tracked changes before translating</div>
-                <div className="text-sm text-slate-500">Tracked insertions and deletions will be stripped. The final accepted text will be translated.</div>
+                <div className="text-sm text-slate-500">Insertions and deletions will be stripped. The final accepted text will be translated.</div>
               </Label>
             </div>
             <div className="flex items-start gap-3">
@@ -562,14 +672,33 @@ export function UploadForm() {
             </div>
           </RadioGroup>
           <DialogFooter>
-            <Button variant="outline" onClick={() => { setFile(null); setShowTrackedModal(false) }}>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setFile(null)
+                setTrackedAction(null)
+                setHasTrackedChanges(false)
+                setShowTrackedModal(false)
+              }}
+            >
               Cancel Upload
             </Button>
-            <Button onClick={() => {
-              if (trackedAction === "cancel") { setFile(null); setShowTrackedModal(false); return }
-              setShowTrackedModal(false)
-              // Re-submit with trackedAction set
-            }}>
+            <Button
+              onClick={() => {
+                setShowTrackedModal(false)
+                if (modalSelection === "cancel") {
+                  // User chose to cancel — reset file
+                  setFile(null)
+                  setTrackedAction(null)
+                  setHasTrackedChanges(false)
+                  return
+                }
+                // Set the action and submit — single POST with action included
+                const action = modalSelection as "strip" | "preserve"
+                setTrackedAction(action)
+                submitWithAction(action)
+              }}
+            >
               Apply Selection
             </Button>
           </DialogFooter>
@@ -610,16 +739,22 @@ export default function UploadPage() {
       grep -q "border-indigo-500" frontend/src/components/UploadForm.tsx &amp;&amp;
       grep -q "Tracked Changes Detected" frontend/src/components/UploadForm.tsx &amp;&amp;
       grep -q "RadioGroup" frontend/src/components/UploadForm.tsx &amp;&amp;
+      grep -q "trackedAction === null" frontend/src/components/UploadForm.tsx &amp;&amp;
+      grep -q "detectTrackedChanges" frontend/src/components/UploadForm.tsx &amp;&amp;
+      grep -q "submitWithAction" frontend/src/components/UploadForm.tsx &amp;&amp;
       grep -q "Translate Document" frontend/src/components/UploadForm.tsx &amp;&amp;
       grep -q "Translate a Document" frontend/src/app/upload/page.tsx
     </automated>
   </verify>
   <done>
+    detectTrackedChanges called on file selection (not on submit) — sets hasTrackedChanges state.
+    trackedAction defaults to null (not "strip") — guard `if (hasTrackedChanges && trackedAction === null)` is live (B4 fixed).
+    Modal shown BEFORE first POST; Apply Selection calls submitWithAction(action) directly (B4 fixed).
+    Modal cancel resets file + trackedAction to null.
+    Single POST fires — FormData built with tracked_changes_action after user chooses.
+    LanguageSelect uses code as value (vi, en, auto) — UploadForm submits codes to API.
     Drop zone min-height 200px, dashed border-slate-300 at rest, border-indigo-500 + bg-indigo-50 on valid drag.
-    Multi-file drop shows "border-red-400" state and "Upload one file at a time" toast.
-    Submit button disabled until file AND targetLang both set.
-    Tracked-changes modal with three RadioGroup options and "Apply Selection" / "Cancel Upload" buttons.
-    Page heading "Translate a Document", subheading copy per UI-SPEC.
+    Submit disabled until file AND targetLang both set.
   </done>
 </task>
 
@@ -632,33 +767,38 @@ export default function UploadPage() {
 |----------|-------------|
 | browser → /api/upload route handler | File input from user; forwarded to FastAPI |
 | tracked_changes_action field | User-selected enum value; validated server-side |
+| jszip parsing → client memory | Untrusted DOCX zip parsed client-side for XML check |
 
 ## STRIDE Threat Register
 
 | Threat ID | Category | Component | Disposition | Mitigation Plan |
 |-----------|----------|-----------|-------------|-----------------|
 | T-08-01 | Tampering | FormData file upload | mitigate | Extension + size check in UploadForm (client-side) AND FastAPI upload endpoint (server-side defense in depth) |
-| T-08-02 | Tampering | tracked_changes_action value | mitigate | Backend validates enum membership; frontend only sends strip/preserve values |
-| T-08-03 | Information Disclosure | Backend error messages forwarded to frontend | accept | Internal PoC; detail messages from FastAPI HTTPException are informational, not sensitive |
+| T-08-02 | Tampering | tracked_changes_action value | mitigate | Backend validates enum membership; frontend only sends strip/preserve values (never "cancel") |
+| T-08-03 | Denial of Service | jszip parsing large DOCX in browser | mitigate | Runs only on file selection; 25MB limit already enforced before detectTrackedChanges is called |
+| T-08-04 | Information Disclosure | Backend error messages forwarded to frontend | accept | Internal PoC; detail messages from FastAPI HTTPException are informational, not sensitive |
 </threat_model>
 
 <verification>
 After all tasks complete:
 1. `cd frontend && npx tsc --noEmit` — no TypeScript errors in new files
-2. `grep -q "min-h-\[200px\]" frontend/src/components/UploadForm.tsx` — passes
-3. `grep -q "Tracked Changes Detected" frontend/src/components/UploadForm.tsx` — passes
-4. Browser: http://localhost:3000/upload shows upload form with drop zone and language selects
-5. Browser: dragging a DOCX onto the drop zone shows indigo highlight state
+2. `grep -q "trackedAction === null" frontend/src/components/UploadForm.tsx` — passes (B4 guard live)
+3. `grep -q "detectTrackedChanges" frontend/src/components/UploadForm.tsx` — passes (B4 Option A)
+4. `grep -q "lang.code" frontend/src/components/LanguageSelect.tsx` — passes (B5 code as value)
+5. Browser: http://localhost:3000/upload shows upload form with drop zone and language selects
+6. Browser: selecting a DOCX with tracked changes shows modal before any upload occurs
+7. Browser: modal Cancel resets drop zone to empty state
 </verification>
 
 <success_criteria>
+- detectTrackedChanges reads DOCX bytes with JSZip client-side, checks w:ins/w:del BEFORE POST
+- trackedAction defaults to null — guard is live; modal appears before first POST
+- Apply Selection triggers single POST with tracked_changes_action in FormData
+- Modal cancel resets file to null; no upload fires
+- LanguageSelect uses code as Select value (vi/en/auto) and name as label
 - Drop zone has 200px min-height, dashed border at rest, indigo border+bg on valid drag-hover
 - File > 25MB or wrong extension rejected with descriptive toast before any network call
-- Multi-file drop rejected with toast, no file set
-- Tracked-changes modal appears with 3 RadioGroup options; cancel resets file
 - Submit button disabled until file + target language both selected
-- Form submission POSTs to /api/upload (Next.js route) which forwards to FastAPI
-- Redirect to /jobs/[id] on successful upload
 </success_criteria>
 
 <output>
