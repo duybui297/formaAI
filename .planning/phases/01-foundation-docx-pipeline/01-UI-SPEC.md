@@ -1,10 +1,11 @@
 ---
 phase: 1
 slug: foundation-docx-pipeline
-status: draft
+status: approved
 shadcn_initialized: false
 preset: none
 created: 2026-04-23
+reviewed_at: 2026-04-23
 ---
 
 # Phase 1 — UI Design Contract
@@ -46,7 +47,7 @@ Declared values (all multiples of 4):
 
 Exceptions:
 - Upload drop zone minimum height: 200px (UX requirement, not a spacing token)
-- Touch/click targets minimum: 44px height (accessibility — applies to all interactive controls)
+- Touch/click targets minimum: 48px height (accessibility — applies to all interactive controls; meets WCAG 2.5.5 enhanced and matches Material Design touch target guidance)
 - Progress bar height: 8px (decorative, not a spacing token)
 
 ---
@@ -56,9 +57,9 @@ Exceptions:
 | Role | Size | Weight | Line Height | Usage |
 |------|------|--------|-------------|-------|
 | Body | 14px | 400 (regular) | 1.5 | Form labels, table cells, prose, status messages |
-| Label | 12px | 500 (medium) | 1.4 | Badge text, helper text, metadata chips (detected language, format) |
+| Label | 12px | 400 (regular) | 1.4 | Badge text, helper text, metadata chips (detected language, format) |
 | Heading | 20px | 600 (semibold) | 1.2 | Page titles, card section headers |
-| Display | 28px | 700 (bold) | 1.1 | App name in header only |
+| Display | 28px | 600 (semibold) | 1.1 | App name in header only |
 
 **Font family stack:**
 ```css
@@ -68,7 +69,7 @@ font-family: 'Inter', 'Noto Sans JP', 'Noto Sans SC', ui-sans-serif, system-ui, 
 - Noto Sans JP / SC: fallback for CJK characters in language labels and filename previews
 - Load Inter via `next/font/google`; load Noto CJK subsets via `next/font/google` with `subsets: ['latin']` and `variable` mode
 
-**Weight contract:** exactly 2 weights in use for component primitives — 400 (regular) and 600 (semibold). 500 and 700 are permitted only for badge labels and the display heading respectively.
+**Weight contract:** exactly 2 weights in use — 400 (regular) and 600 (semibold). No other weights are used anywhere in Phase 1.
 
 ---
 
@@ -130,8 +131,8 @@ Components required in Phase 1, drawn from shadcn/ui unless marked custom:
 | File size indicator | custom text | "2.4 MB" in 12px slate-500. Red text if >25MB. |
 | Source language select | shadcn Select | Default: "Auto-detect". Options: Auto-detect + qwen-mt-turbo supported languages. Label: "Source Language". |
 | Target language select | shadcn Select | No default (required). Placeholder: "Select target language". Red outline on submit-without-value. Label: "Target Language". |
-| Language pair swap button | shadcn Button (ghost, icon-only) | ↔ icon. Disabled when source is Auto-detect. 44px click target. Tooltip: "Swap languages". |
-| Tracked-changes modal | shadcn Dialog | Triggered automatically on DOCX upload with `<w:ins>`/`<w:del>` detected (per D-13). Title: "Tracked Changes Detected". Three shadcn RadioGroup options (see Copywriting). Confirm button: "Continue". Cancel closes dialog and resets file. |
+| Language pair swap button | shadcn Button (ghost, icon-only) | ↔ icon. Disabled when source is Auto-detect. 48px click target. Tooltip: "Swap languages". `aria-label="Swap source and target languages"`. |
+| Tracked-changes modal | shadcn Dialog | Triggered automatically on DOCX upload with `<w:ins>`/`<w:del>` detected (per D-13). Title: "Tracked Changes Detected". Three shadcn RadioGroup options (see Copywriting). Confirm button: "Apply Selection". Cancel closes dialog and resets file. |
 | Submit / Translate button | shadcn Button (default = filled indigo) | Label: "Translate Document". Disabled until: file selected + target language selected. Full-width on mobile breakpoint. |
 | Upload error toast | shadcn Toast (destructive) | Shown for: unsupported format, file >25MB, multi-file drop. |
 
@@ -187,7 +188,7 @@ Three `RadioGroup` options (exclusive):
 | `preserve` | "Preserve and translate both versions" | "Inserted and deleted text will both be translated and kept in the output document." |
 | `cancel` | "Cancel — I'll clean up the document first" | "The upload will be cancelled so you can accept or reject the changes in Word." |
 
-Confirm button label: "Continue". Cancel button closes dialog and resets file (same as `cancel` radio).
+Confirm button label: "Apply Selection". Cancel button closes dialog and resets file (same as `cancel` radio).
 
 ### Live Counter Animation (D-09 hybrid SSE)
 
@@ -288,7 +289,7 @@ Confirm button label: "Continue". Cancel button closes dialog and resets file (s
 | Error: no target language | "Please select a target language." |
 | Tracked-changes modal title | "Tracked Changes Detected" |
 | Tracked-changes modal body | "This document has unresolved tracked changes. How would you like to handle them?" |
-| Tracked-changes confirm CTA | "Continue" |
+| Tracked-changes confirm CTA | "Apply Selection" |
 | Tracked-changes cancel | "Cancel Upload" |
 | Job status page heading | "{filename}" |
 | Stage: parse | "Parse" |
