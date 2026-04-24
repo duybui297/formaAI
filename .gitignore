@@ -29,3 +29,34 @@ vendor/
 coverage/
 .cache/
 tmp/
+
+# ── AI Translation project-specific ──
+# Per-job file storage (D-04: .data/jobs/{job_id}/...)
+.data/
+
+# Backend
+backend/.venv/
+backend/dist/
+backend/*.egg-info/
+backend/.pytest_cache/
+backend/htmlcov/
+backend/.coverage
+*.py[cod]
+*.pyo
+
+# Frontend
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/.turbopack/
+
+# Testing
+.pytest_cache/
+htmlcov/
+.coverage
+nosetests.xml
+coverage.xml
+
+# Type checking
+.mypy_cache/
+.pyright/
