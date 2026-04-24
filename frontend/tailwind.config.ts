@@ -14,6 +14,8 @@ const config: Config = {
         sans: ["var(--font-inter)", ...fontFamily.sans],
       },
       colors: {
+        "paper-ink": "#111111",       // D-02-28: primary text/brand color
+        "paper-accent": "#8B5CF6",    // D-02-28: violet accent (reserved uses — see UI-SPEC)
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",
