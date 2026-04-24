@@ -28,9 +28,14 @@ def dashscope_settings():
     )
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="function")
 def llm_client(dashscope_settings):
-    """W10: make_llm_client(settings=settings) — correct Plan 03 signature."""
+    """Function-scoped: AsyncOpenAI's underlying httpx transport binds to the
+    event loop it's created in, and pytest-asyncio creates a fresh loop per
+    test. A module-scoped client from a stale loop triggers APIConnectionError
+    on subsequent tests. One client per test is ~30ms overhead, worth the
+    determinism.
+    """
     from app.llm.client import make_llm_client
 
     return make_llm_client(settings=dashscope_settings)
