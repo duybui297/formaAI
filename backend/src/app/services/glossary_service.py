@@ -101,6 +101,7 @@ async def update_glossary_name(
         return None
     g.name = name
     await session.commit()
+    await session.refresh(g)
     return g
 
 
