@@ -31,12 +31,14 @@ def _make_client(content: str | None) -> AsyncMock:
 
 @pytest.mark.asyncio
 async def test_translate_batch_returns_same_count():
-    """Happy path: 2 segments in → 2 translations out."""
+    """Happy path: 2 segments in → 2 translations out (one API call per segment)."""
     from app.llm.translator import translate_batch
 
-    client = _make_client("Bonjour monde\nCeci est un test")
+    client = _make_client("Bonjour monde")
     result = await translate_batch(client, ["Hello world", "This is a test"], "en", "fr")
     assert len(result) == 2
+    # Per-segment architecture: one call per input segment
+    assert client.chat.completions.create.await_count == 2
 
 
 @pytest.mark.asyncio
@@ -44,34 +46,41 @@ async def test_translate_batch_returns_list_of_strings():
     """Result must be a list of str values."""
     from app.llm.translator import translate_batch
 
-    client = _make_client("Hallo\nWelt")
+    client = _make_client("Hallo")
     result = await translate_batch(client, ["Hello", "World"], "en", "de")
     assert isinstance(result, list)
     assert all(isinstance(s, str) for s in result)
 
 
 # ---------------------------------------------------------------------------
-# CORE-03: segment count assertion
+# CORE-03: segment count invariant
+#
+# New per-segment architecture guarantees len(output) == len(input) by
+# construction (one coroutine per input segment, collected via asyncio.gather).
+# The prior newline-based impl could drift when the model added/merged lines
+# in a single batched response; those tests are obsolete.
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_translate_batch_core03_raises_on_mismatch():
-    """CORE-03: model returns 1 line for 2 segments → ValueError."""
+async def test_translate_batch_length_invariant_real_world():
+    """CORE-03: real-world mixed batch returns exactly one output per input."""
     from app.llm.translator import translate_batch
 
-    client = _make_client("Only one line")
-    with pytest.raises(ValueError, match="CORE-03 violation"):
-        await translate_batch(client, ["Hello", "World"], "en", "fr")
+    inputs = ["Hello", "World", "Third", "Fourth", "Fifth"]
+    # Model returns multi-line content; new impl ignores embedded newlines
+    client = _make_client("Translated\nline\nbreak")
+    result = await translate_batch(client, inputs, "en", "fr")
+    assert len(result) == len(inputs)
 
 
 @pytest.mark.asyncio
-async def test_translate_batch_none_content_triggers_core03():
-    """CORE-03: content=None means 0 lines for N segments → ValueError."""
+async def test_translate_batch_none_content_returns_empty_string():
+    """None content from the model surfaces as an empty string in the output, not a crash."""
     from app.llm.translator import translate_batch
 
     client = _make_client(None)
-    with pytest.raises(ValueError, match="CORE-03 violation"):
-        await translate_batch(client, ["Hello"], "en", "fr")
+    result = await translate_batch(client, ["Hello"], "en", "fr")
+    assert result == [""]
 
 
 # ---------------------------------------------------------------------------
@@ -125,65 +134,43 @@ async def test_translate_batch_core04_nfc_normalizes_input():
 
 @pytest.mark.asyncio
 async def test_translate_batch_core05_whitespace_passthrough():
-    """CORE-05: whitespace-only segment is returned as-is; model sees placeholder."""
+    """CORE-05: whitespace-only segment is returned as-is; model never called for it."""
     from app.llm.translator import translate_batch
 
-    call_args: list = []
-
-    async def capture(**kwargs):
-        call_args.append(kwargs["messages"][0]["content"])
-        # model receives the placeholder ⟦T0⟧ and returns it unchanged
-        response = MagicMock()
-        response.choices = [MagicMock()]
-        response.choices[0].message.content = "⟦T0⟧"
-        response.usage = MagicMock(prompt_tokens=2, completion_tokens=2, total_tokens=4)
-        return response
-
     client = AsyncMock()
-    client.chat.completions.create = AsyncMock(side_effect=capture)
+    client.chat.completions.create = AsyncMock()
 
     result = await translate_batch(client, ["   "], "en", "fr")
     assert result == ["   "]
-    # Model should receive a placeholder, not the raw whitespace
-    assert "⟦T" in call_args[0]
+    # Passthrough segments must NOT trigger a model call (cost + correctness)
+    client.chat.completions.create.assert_not_awaited()
 
 
 @pytest.mark.asyncio
 async def test_translate_batch_core05_digit_passthrough():
-    """CORE-05: digit-only segment is returned as-is."""
+    """CORE-05: digit-only segment is returned as-is; model never called."""
     from app.llm.translator import translate_batch
 
-    call_args: list = []
-
-    async def capture(**kwargs):
-        call_args.append(kwargs["messages"][0]["content"])
-        response = MagicMock()
-        response.choices = [MagicMock()]
-        response.choices[0].message.content = "⟦T0⟧"
-        response.usage = MagicMock(prompt_tokens=2, completion_tokens=2, total_tokens=4)
-        return response
-
     client = AsyncMock()
-    client.chat.completions.create = AsyncMock(side_effect=capture)
+    client.chat.completions.create = AsyncMock()
 
     result = await translate_batch(client, ["42"], "en", "fr")
     assert result == ["42"]
-    assert "⟦T" in call_args[0]
+    client.chat.completions.create.assert_not_awaited()
 
 
 @pytest.mark.asyncio
 async def test_translate_batch_core05_mixed_passthrough_and_real():
-    """CORE-05: mix of passthrough and real segments are handled correctly."""
+    """CORE-05: mix of passthrough and real — one API call for the real segment only."""
     from app.llm.translator import translate_batch
 
+    call_contents: list[str] = []
+
     async def capture(**kwargs):
-        content = kwargs["messages"][0]["content"]
-        # Content is "⟦T0⟧\nHello" — model returns placeholder + translation
-        lines = content.split("\n")
-        assert len(lines) == 2
+        call_contents.append(kwargs["messages"][0]["content"])
         response = MagicMock()
         response.choices = [MagicMock()]
-        response.choices[0].message.content = "⟦T0⟧\nBonjour"
+        response.choices[0].message.content = "Bonjour"
         response.usage = MagicMock(prompt_tokens=5, completion_tokens=5, total_tokens=10)
         return response
 
@@ -191,8 +178,10 @@ async def test_translate_batch_core05_mixed_passthrough_and_real():
     client.chat.completions.create = AsyncMock(side_effect=capture)
 
     result = await translate_batch(client, ["  ", "Hello"], "en", "fr")
-    assert result[0] == "  "   # passthrough unchanged
+    assert result[0] == "  "       # passthrough unchanged
     assert result[1] == "Bonjour"
+    # Only the "Hello" segment should have reached the model
+    assert call_contents == ["Hello"]
 
 
 # ---------------------------------------------------------------------------

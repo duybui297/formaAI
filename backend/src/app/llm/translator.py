@@ -1,30 +1,62 @@
 """
-Core translation batch function.
+Core translation function — one API call per segment.
 
-Enforces CORE-03/04/05 invariants. CORE-06 retry lives in translate_worker.
+Prior impl joined segments with '\\n' and sent one batched call, parsing the
+response by splitting on '\\n'. qwen-mt-turbo does not reliably preserve line
+count — real-world Japanese documents produced 151 output lines for 142 input
+segments (model inserted line breaks inside translations). That's an
+unfixable correctness gap for batched newline-delimited I/O.
+
+Switch to per-segment calls with bounded concurrency. Cost is negligible
+(~$0.003 extra per 10K-segment document at qwen-mt-turbo pricing) and
+correctness is guaranteed: each response maps 1:1 to its input.
 
 Pitfalls (AI-SPEC §3):
 - No system message (qwen-mt-turbo treats it as text to translate)
 - No temperature (not supported by MT models; may cause rejection)
-- Non-streaming (CORE-03 requires the full response to count lines)
-- Guard message.content with "or ''" in case model returns None
+- Non-streaming (simpler; each call is short)
+- Guard message.content in case model returns None
 """
 from __future__ import annotations
 
+import asyncio
+import logging
 import unicodedata
 from typing import Sequence
 
-from openai import AsyncOpenAI
+from openai import APIConnectionError, APIStatusError, AsyncOpenAI, RateLimitError
 
 from app.llm.terminology import glossary_to_terms
 
-_PLACEHOLDER_PREFIX = "⟦T"
-_PLACEHOLDER_SUFFIX = "⟧"
+logger = logging.getLogger(__name__)
+
+# Bounded concurrency inside translate_batch. DashScope intl free tier has a tight
+# QPS cap — empirically concurrency >= 2 triggers persistent HTTP 429 on 300+-segment
+# docs. Keep at 1 (serial) for the PoC; DashScope paid tier can bump this via env.
+_PER_CALL_CONCURRENCY = 1
+
+# Per-segment retry: transient 429 / 5xx / connection errors get retried in-place
+# without bubbling up to the worker's batch-level retry. This avoids losing the
+# 3/4 successful segments in a batch when one segment trips the rate limit.
+_PER_CALL_MAX_RETRIES = 6
+_PER_CALL_BACKOFF_BASE = 1.5  # 1.5s, 2.25s, 3.4s, 5s, 7.6s, 11.4s (~31s total)
+
+# Forced pacing between successful calls — DashScope intl free tier caps around 60 RPM.
+# Sleep 1.2s per call gives ~50 RPM steady-state, comfortably below the limit.
+# Set DASHSCOPE_PACE_SECONDS=0 in env to disable (for paid-tier accounts).
+import os as _os
+_PACE_SECONDS = float(_os.environ.get("DASHSCOPE_PACE_SECONDS", "1.2"))
 
 
 def _nfc(s: str) -> str:
     """CORE-04: NFC Unicode normalization."""
     return unicodedata.normalize("NFC", s)
+
+
+def _is_passthrough(seg: str) -> bool:
+    """CORE-05: skip non-translatable segments (whitespace-only, digit-only)."""
+    stripped = seg.strip()
+    return not stripped or stripped.isdigit()
 
 
 async def translate_batch(
@@ -36,13 +68,13 @@ async def translate_batch(
     model: str = "qwen-mt-turbo",
 ) -> list[str]:
     """
-    Translate a batch of text segments in a single qwen-mt-turbo call.
+    Translate a batch of text segments via one qwen-mt-turbo call per segment.
 
     Invariants enforced:
-    - CORE-03: len(translated_lines) must equal len(payload_segments); raises ValueError on mismatch
+    - CORE-03: returned list length == input length (guaranteed by per-segment calls,
+               no parsing step that could miscount)
     - CORE-04: NFC normalization applied to every input AND output string
-    - CORE-05: whitespace-only / digit-only segments are replaced with ⟦T{n}⟧ placeholders
-               and passed through unchanged (not sent to the model for translation)
+    - CORE-05: whitespace-only / digit-only segments are passed through unchanged
 
     Args:
         client: AsyncOpenAI instance pointed at DashScope intl endpoint
@@ -57,7 +89,6 @@ async def translate_batch(
 
     Raises:
         ValueError: if segments is empty
-        ValueError: if translated line count does not match segment count (CORE-03)
     """
     if not segments:
         raise ValueError("translate_batch: segments must be non-empty")
@@ -65,53 +96,58 @@ async def translate_batch(
     # CORE-04: NFC-normalize all input segments
     normalised = [_nfc(seg) for seg in segments]
 
-    # CORE-05: whitespace-only / digit-only → passthrough stubs
-    passthrough_indices: set[int] = set()
-    payload_segments: list[str] = []
-    for i, seg in enumerate(normalised):
-        stripped = seg.strip()
-        if not stripped or stripped.isdigit():
-            passthrough_indices.add(i)
-            payload_segments.append(f"{_PLACEHOLDER_PREFIX}{i}{_PLACEHOLDER_SUFFIX}")
-        else:
-            payload_segments.append(seg)
-
-    user_content = "\n".join(payload_segments)
-
     translation_options: dict = {"source_lang": source_lang, "target_lang": target_lang}
     if glossary:
         translation_options["terms"] = glossary_to_terms(glossary)
 
-    # NEVER pass temperature (AI-SPEC Pitfall #3 — not supported by MT models)
-    # NEVER add a system message (AI-SPEC Pitfall #2 — treated as text to translate)
-    # max_tokens=4096 required (AI-SPEC §4b.3)
-    response = await client.chat.completions.create(
-        model=model,
-        messages=[{"role": "user", "content": user_content}],
-        extra_body={"translation_options": translation_options},
-        max_tokens=4096,
-    )
+    sem = asyncio.Semaphore(_PER_CALL_CONCURRENCY)
 
-    raw_content = response.choices[0].message.content
-    # Guard: None content → treat as 0 lines so CORE-03 fires (not as 1 empty line)
-    if raw_content is None:
-        translated_lines: list[str] = []
-    else:
-        translated_lines = raw_content.split("\n")
+    async def _translate_one(text: str) -> str:
+        # CORE-05: passthrough — never send to the model
+        if _is_passthrough(text):
+            return text
 
-    # CORE-03: segment count assertion — raise immediately on mismatch
-    if len(translated_lines) != len(payload_segments):
-        raise ValueError(
-            f"CORE-03 violation: sent {len(payload_segments)} segments, "
-            f"received {len(translated_lines)} translated lines. "
-            f"model={model}, source_lang={source_lang}, target_lang={target_lang}"
-        )
+        last_exc: Exception | None = None
+        for attempt in range(_PER_CALL_MAX_RETRIES):
+            async with sem:
+                try:
+                    # NEVER pass temperature (AI-SPEC Pitfall #3 — not supported by MT models)
+                    # NEVER add a system message (AI-SPEC Pitfall #2 — treated as text to translate)
+                    # max_tokens=4096 required (AI-SPEC §4b.3)
+                    response = await client.chat.completions.create(
+                        model=model,
+                        messages=[{"role": "user", "content": text}],
+                        extra_body={"translation_options": translation_options},
+                        max_tokens=4096,
+                    )
+                    content = response.choices[0].message.content
+                    # Forced pacing — spaces out successful calls to stay under RPM cap
+                    if _PACE_SECONDS > 0:
+                        await asyncio.sleep(_PACE_SECONDS)
+                    return _nfc(content) if content is not None else ""
+                except RateLimitError as exc:
+                    last_exc = exc
+                except APIStatusError as exc:
+                    # 4xx (non-429): bad input — no point retrying
+                    if exc.status_code < 500:
+                        raise
+                    last_exc = exc
+                except APIConnectionError as exc:
+                    last_exc = exc
+            # Sleep OUTSIDE the semaphore so other concurrent calls can proceed
+            wait = _PER_CALL_BACKOFF_BASE ** (attempt + 1)
+            logger.warning(
+                "per_call_retry attempt=%d wait=%.1fs err=%s",
+                attempt + 1, wait, type(last_exc).__name__,
+            )
+            await asyncio.sleep(wait)
 
-    result: list[str] = []
-    for i, (orig, translated) in enumerate(zip(normalised, translated_lines)):
-        if i in passthrough_indices:
-            result.append(orig)
-        else:
-            result.append(_nfc(translated))  # CORE-04: NFC-normalize output
+        assert last_exc is not None
+        raise last_exc
 
-    return result
+    results = await asyncio.gather(*(_translate_one(seg) for seg in normalised))
+
+    # CORE-03 guarantee by construction — asyncio.gather preserves input order and
+    # length, and every coroutine returns exactly one str.
+    assert len(results) == len(normalised), "translate_batch length invariant violated"
+    return results

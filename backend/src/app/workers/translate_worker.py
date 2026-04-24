@@ -420,7 +420,11 @@ class WorkerSettings:
     functions = [translate_job]  # direct reference — NEVER use string
     on_startup = startup
     on_shutdown = shutdown
-    max_jobs = 10
+    # max_jobs=1: DashScope intl free tier has a tight QPS cap — running multiple
+    # translate_job coroutines concurrently collapses into 429 storms that never
+    # drain. One job at a time is the only reliable mode for large documents on
+    # the free tier. Bump on paid tier.
+    max_jobs = 1
     # Resolve Redis from Settings so worker connects to docker-compose `redis` host,
     # not arq's default localhost (which fails inside containers).
     redis_settings = RedisSettings.from_dsn(get_settings().redis_url)
