@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import json
 from functools import lru_cache
 
-from pydantic import SecretStr, field_validator
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -31,6 +32,17 @@ class Settings(BaseSettings):
 
     # Worker batch concurrency (D-17: 4 concurrent DashScope calls per job)
     worker_concurrency: int = 4
+
+    # D-02-12: expansion ratio thresholds per language pair (JSON string)
+    expansion_ratio_thresholds: str = Field(
+        default='{"en->vi": 1.3, "vi->en": 0.9, "ja->vi": 1.5, "vi->ja": 0.9, "vi->zh": 0.85, "en->ja": 1.6}',
+        description="JSON map of 'src->tgt' to float threshold. Tune empirically.",
+    )
+
+    @property
+    def expansion_thresholds_dict(self) -> dict[str, float]:
+        """Parse expansion_ratio_thresholds JSON string into a dict."""
+        return json.loads(self.expansion_ratio_thresholds)
 
     @field_validator("token_budget")
     @classmethod

@@ -4,7 +4,18 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Enum as SAEnum, ForeignKey, Integer, String, Text
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    Enum as SAEnum,
+    Float,
+    ForeignKey,
+    Integer,
+    JSON,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -32,6 +43,113 @@ class JobStage(str, enum.Enum):
 class TrackedChangesAction(str, enum.Enum):
     strip = "strip"
     preserve = "preserve"
+
+
+# ---------------------------------------------------------------------------
+# Phase 2: Glossary models
+# ---------------------------------------------------------------------------
+
+
+class Glossary(Base):
+    __tablename__ = "glossaries"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    source_lang: Mapped[str] = mapped_column(String(64), nullable=False)
+    target_lang: Mapped[str] = mapped_column(String(64), nullable=False)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    terms: Mapped[list[GlossaryTerm]] = relationship(
+        "GlossaryTerm", back_populates="glossary", lazy="selectin", cascade="all, delete-orphan"
+    )
+
+
+class GlossaryTerm(Base):
+    __tablename__ = "glossary_terms"
+    __table_args__ = (
+        UniqueConstraint("glossary_id", "source_term", name="uq_glossary_source_term"),
+    )
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    glossary_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("glossaries.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    source_term: Mapped[str] = mapped_column(Text, nullable=False)
+    target_term: Mapped[str] = mapped_column(Text, nullable=False)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    glossary: Mapped[Glossary] = relationship("Glossary", back_populates="terms")
+
+
+# ---------------------------------------------------------------------------
+# Phase 2: Segment flag models
+# ---------------------------------------------------------------------------
+
+
+class FlagType(str, enum.Enum):
+    overflow = "overflow"
+    glossary_violation = "glossary_violation"
+    placeholder_mismatch = "placeholder_mismatch"
+    llm_refusal = "llm_refusal"
+
+
+class FlagSeverity(str, enum.Enum):
+    info = "info"
+    warn = "warn"
+    block = "block"
+
+
+class SegmentFlag(Base):
+    __tablename__ = "segment_flags"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    segment_id: Mapped[str] = mapped_column(
+        String(16),
+        ForeignKey("segments.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    flag_type: Mapped[FlagType] = mapped_column(
+        SAEnum(FlagType, native_enum=False), nullable=False
+    )
+    severity: Mapped[FlagSeverity] = mapped_column(
+        SAEnum(FlagSeverity, native_enum=False), nullable=False
+    )
+    # JSON column — SQLite compat (not JSONB)
+    details: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    segment: Mapped[Segment] = relationship("Segment", back_populates="flags")
+
+
+# ---------------------------------------------------------------------------
+# Core models
+# ---------------------------------------------------------------------------
 
 
 class Job(Base):
@@ -74,6 +192,13 @@ class Job(Base):
         SAEnum(TrackedChangesAction), nullable=True
     )
 
+    # Phase 2: optional glossary locked at job submit (D-02-20)
+    glossary_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("glossaries.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -106,6 +231,11 @@ class Segment(Base):
     source_text: Mapped[str] = mapped_column(Text, nullable=False)
     translated_text: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # Phase 2: reviewer-edited text (null = no edit; export uses translated_text)
+    edited_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Phase 2: expansion ratio (translated / source char count)
+    expansion_ratio: Mapped[float | None] = mapped_column(Float, nullable=True)
+
     # D-05: encodes structural location (para index / table/row/cell / header / comment)
     structural_position: Mapped[str] = mapped_column(Text, nullable=False)
 
@@ -120,3 +250,6 @@ class Segment(Base):
     )
 
     job: Mapped[Job] = relationship("Job", back_populates="segments")
+    flags: Mapped[list[SegmentFlag]] = relationship(
+        "SegmentFlag", back_populates="segment", lazy="selectin", cascade="all, delete-orphan"
+    )
