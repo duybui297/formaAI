@@ -92,6 +92,100 @@ def _walk_element_paragraphs(
         yield (location_tag, Paragraph(p_elem, None))  # type: ignore[arg-type]
 
 
+def _run_format_key(run) -> tuple:  # type: ignore[type-arg]
+    """
+    Return a tuple that identifies run formatting for merge-group detection.
+
+    T-13-02: color access wrapped in try/except — a malformed <w:rPr> that raises
+    on .rgb access must not crash the extraction pipeline.
+    """
+    color = None
+    try:
+        if run.font.color and run.font.color.type is not None:
+            color = str(run.font.color.rgb)
+    except Exception:  # noqa: BLE001
+        pass
+    return (run.bold, run.italic, run.underline, color, run.font.name, run.font.size)
+
+
+def extract_run_segments(doc: Document, job_id: str) -> list[Segment]:
+    """
+    Like extract_segments() but splits at run-format boundaries within each paragraph.
+
+    Consecutive runs with identical formatting are merged into one Segment (cost
+    optimisation — reduces DashScope call volume for richly formatted docs).
+    Each Segment carries run_index (first run in the group) and run_group_size.
+
+    Falls back to paragraph-level extraction for paragraphs with no runs (run_index=None).
+
+    CORE-01/DOCX-01: uses the same walk_document() traversal as extract_segments().
+    CORE-04: NFC-normalises source_text at extraction time.
+    D-06: Segment ID is sha256(source_text + structural_position)[:16].
+
+    The job_id parameter is accepted for caller convenience but does not affect
+    segment IDs — they are job-independent by design (D-06).
+    """
+    segments: list[Segment] = []
+    seq = 0
+    para_seq = 0  # counts non-empty paragraphs visited (walk-order counter for reassembly)
+
+    for loc_tag, paragraph in walk_document(doc):
+        runs = paragraph.runs
+
+        if not runs:
+            # No runs — fall back to paragraph-level extraction
+            raw_text = paragraph.text
+            text = _nfc(raw_text)
+            if not text.strip():
+                para_seq += 1
+                continue
+            structural_position = f"{loc_tag}.{para_seq}"
+            segment = Segment.from_text(
+                source_text=text,
+                structural_position=structural_position,
+                seq_in_job=seq,
+                run_index=None,
+                run_group_size=1,
+            )
+            segments.append(segment)
+            seq += 1
+            para_seq += 1
+            continue
+
+        # Group consecutive runs by format key
+        groups: list[tuple[int, list]] = []  # (first_run_idx, [run, ...])
+        for run_idx, run in enumerate(runs):
+            if groups and _run_format_key(run) == _run_format_key(groups[-1][1][0]):
+                groups[-1][1].append(run)
+            else:
+                groups.append((run_idx, [run]))
+
+        # Emit one Segment per non-empty group
+        para_had_content = False
+        for first_run_idx, group_runs in groups:
+            group_text = _nfc("".join(r.text for r in group_runs))
+            if not group_text.strip():
+                continue
+            structural_position = f"{loc_tag}.{para_seq}.run{first_run_idx}"
+            segment = Segment.from_text(
+                source_text=group_text,
+                structural_position=structural_position,
+                seq_in_job=seq,
+                run_index=first_run_idx,
+                run_group_size=len(group_runs),
+            )
+            segments.append(segment)
+            seq += 1
+            para_had_content = True
+
+        if para_had_content or any(r.text.strip() for r in runs):
+            para_seq += 1
+        else:
+            para_seq += 1
+
+    return segments
+
+
 def extract_segments(doc: Document, job_id: str) -> list[Segment]:
     """
     Walk the document and build an ordered Segment list.

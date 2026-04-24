@@ -31,8 +31,8 @@ from app.db.models import JobStage
 from app.llm.client import make_llm_client
 from app.llm.token_budget import SegmentTooLargeError, pack_into_batches
 from app.llm.translator import translate_batch
-from app.pipeline.docx.extractor import extract_segments
-from app.pipeline.docx.reassembler import reassemble_docx
+from app.pipeline.docx.extractor import extract_run_segments, extract_segments
+from app.pipeline.docx.reassembler import reassemble_docx, reassemble_docx_runs
 from app.pipeline.docx.tracked import strip_tracked_changes
 from app.services.job_service import (
     append_error_log,
@@ -270,7 +270,7 @@ async def _run_translation(ctx: dict, session, job_id: str) -> None:
         if job.has_tracked_changes and job.tracked_changes_action == "strip":
             doc = strip_tracked_changes(doc)
 
-        segments = extract_segments(doc, job_id)
+        segments = extract_run_segments(doc, job_id)
 
         if not segments:
             # Empty document — mark done with empty output path
@@ -354,7 +354,7 @@ async def _run_translation(ctx: dict, session, job_id: str) -> None:
             "Reassembling document..."
         )
 
-        doc = reassemble_docx(doc, segments, translated_map)
+        doc = reassemble_docx_runs(doc, segments, translated_map)
 
         output_path = os.path.join(data_dir, "jobs", job_id, "output.docx")
         os.makedirs(os.path.dirname(output_path), exist_ok=True)

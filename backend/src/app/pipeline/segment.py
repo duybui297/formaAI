@@ -39,6 +39,8 @@ class Segment:
     is_inserted: bool = False  # D-13: tracked change — inserted text
     is_deleted: bool = False  # D-13: tracked change — deleted text
     translated_text: str | None = None
+    run_index: int | None = None  # run slot in paragraph (None = paragraph-level segment)
+    run_group_size: int = 1  # consecutive same-format runs merged into this segment
 
     @classmethod
     def from_text(
