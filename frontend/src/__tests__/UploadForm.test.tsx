@@ -389,6 +389,27 @@ describe("UploadForm tracked-changes reliability (G1 gap closure)", () => {
     expect(screen.getByText("tracked.docx")).toBeDefined()
   })
 
+  it("clears input.value after onChange so the SAME filename can be picked again", async () => {
+    // Real browsers skip onChange when the user picks a file whose name matches
+    // the input's current value — this broke "Escape modal → reselect same file"
+    // in UAT. The fix is to reset input.value = "" right after onChange processes
+    // the file, so the next native pick always fires onChange.
+    mockDetect.mockResolvedValue(true)
+    renderForm()
+
+    const docxFile = new File(["bytes"], "same.docx", {
+      type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    })
+
+    selectFile(docxFile)
+    await waitFor(() => {
+      expect(mockDetect).toHaveBeenCalledTimes(1)
+    })
+
+    const input = document.getElementById("file-input") as HTMLInputElement
+    expect(input.value).toBe("")
+  })
+
   it("Submit disabled while detecting", async () => {
     let resolveDetect!: (val: boolean) => void
     mockDetect.mockImplementationOnce(

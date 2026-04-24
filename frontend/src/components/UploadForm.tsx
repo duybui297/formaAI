@@ -196,7 +196,15 @@ export function UploadForm() {
           type="file"
           accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
           className="hidden"
-          onChange={e => e.target.files?.[0] && handleFile(e.target.files[0])}
+          onChange={e => {
+            const f = e.target.files?.[0]
+            if (f) handleFile(f)
+            // Clear the input value so selecting the SAME file again fires
+            // onChange. Without this, the browser skips onChange when the
+            // selected filename matches the previous selection — breaks the
+            // "Escape modal → reselect same file" flow.
+            e.target.value = ""
+          }}
         />
 
         {/* Language row */}
