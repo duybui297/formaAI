@@ -1,0 +1,88 @@
+"use client";
+import { useState } from "react";
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
+import { useToast } from "@/hooks/use-toast";
+import type { JobSummary } from "@/lib/types";
+
+interface ReviewPageHeaderProps {
+  job: JobSummary & { glossary_name?: string | null };
+}
+
+export function ReviewPageHeader({ job }: ReviewPageHeaderProps) {
+  const [exporting, setExporting] = useState(false);
+  const { toast } = useToast();
+
+  const canExport = job.status === "done" || job.status === "needs_review";
+
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      const res = await fetch(`/api/jobs/${job.id}/export`, {
+        method: "POST",
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: "Unknown error" }));
+        toast({
+          title: `Export failed — ${(err as { detail?: string }).detail ?? "Unknown error"}. Try again.`,
+          variant: "destructive",
+        });
+        return;
+      }
+      // Trigger browser download
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = job.original_filename.replace(/(\.\w+)?$/, "_translated.docx");
+      a.click();
+      URL.revokeObjectURL(url);
+      toast({ title: "Export ready — downloading." });
+    } catch {
+      toast({
+        title: "Export failed — network error. Try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  return (
+    <div className="sticky top-14 z-10 flex items-center gap-4 h-16 px-8 bg-white border-b border-slate-200">
+      <Link
+        href="/jobs"
+        className="text-sm text-slate-500 hover:text-slate-700 shrink-0"
+      >
+        ← All Jobs
+      </Link>
+
+      <div className="flex-1 min-w-0">
+        <h1
+          className="text-xl font-semibold truncate text-[#111111]"
+          style={{ fontFamily: "var(--font-montserrat, sans-serif)" }}
+        >
+          {job.original_filename}
+        </h1>
+        <p className="text-xs text-slate-400">
+          {job.source_lang} → {job.target_lang}
+          {job.glossary_name && (
+            <span className="ml-2 px-1.5 py-0.5 bg-violet-50 text-violet-700 rounded text-xs">
+              Glossary: {job.glossary_name}
+            </span>
+          )}
+        </p>
+      </div>
+
+      {canExport && (
+        <Button
+          disabled={exporting}
+          onClick={handleExport}
+          className="shrink-0 bg-violet-500 hover:bg-violet-600 text-white"
+        >
+          {exporting ? "Exporting…" : "Export Document"}
+        </Button>
+      )}
+    </div>
+  );
+}
