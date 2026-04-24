@@ -1,5 +1,14 @@
 from __future__ import annotations
 
+import os
+
+# Set test-mode env vars BEFORE any app import triggers Settings() validation.
+# Unit tests never hit real DashScope / real Postgres — values are placeholders.
+os.environ.setdefault("DASHSCOPE_API_KEY", "sk-test-placeholder")
+os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
+os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
+os.environ.setdefault("DATA_DIR", "/tmp")
+
 import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine

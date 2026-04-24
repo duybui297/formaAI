@@ -11,12 +11,12 @@ _settings = get_settings()
 # Module-level engine — created once at import time.
 # Workers call create_async_engine directly in startup() for their own pool;
 # this module-level engine is used by the FastAPI app and tests.
-engine = create_async_engine(
-    _settings.database_url.get_secret_value(),
-    pool_size=5,
-    max_overflow=10,
-    echo=False,
-)
+_db_url = _settings.database_url.get_secret_value()
+_engine_kwargs: dict = {"echo": False}
+if not _db_url.startswith("sqlite"):
+    _engine_kwargs["pool_size"] = 5
+    _engine_kwargs["max_overflow"] = 10
+engine = create_async_engine(_db_url, **_engine_kwargs)
 
 # expire_on_commit=False: prevents lazy-load errors after commit in async context
 SessionFactory = async_sessionmaker(engine, expire_on_commit=False)

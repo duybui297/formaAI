@@ -40,12 +40,14 @@ async def lifespan(app: FastAPI):
     configure_logging()
 
     app.state.settings = settings
-    app.state.engine = create_async_engine(
-        settings.database_url.get_secret_value(),
-        pool_size=5,
-        max_overflow=10,
-        echo=False,
-    )
+    db_url = settings.database_url.get_secret_value()
+    # SQLite uses StaticPool and rejects pool_size/max_overflow (tests use
+    # sqlite+aiosqlite:///:memory:). Only pass pool args for server DBs.
+    engine_kwargs: dict = {"echo": False}
+    if not db_url.startswith("sqlite"):
+        engine_kwargs["pool_size"] = 5
+        engine_kwargs["max_overflow"] = 10
+    app.state.engine = create_async_engine(db_url, **engine_kwargs)
     app.state.redis = Redis.from_url(settings.redis_url, decode_responses=True)
     # W11: arq pool created ONCE at startup — injected via get_arq_pool() dependency
     app.state.arq_pool = await arq.create_pool(
