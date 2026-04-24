@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.dependencies import get_arq_pool
 from app.api.routes.languages import _VALID_TARGET_CODES
 from app.db.session import get_session
+from app.services.glossary_service import get_glossary
 from app.services.job_service import create_job
 
 log = structlog.get_logger()
@@ -44,6 +45,7 @@ async def upload_document(
     source_lang: str = Form(...),
     target_lang: str = Form(...),
     tracked_changes_action: str | None = Form(None),
+    glossary_id: str | None = Form(None),
     session: AsyncSession = Depends(get_session),
     arq_pool=Depends(get_arq_pool),
 ) -> dict:
@@ -86,6 +88,17 @@ async def upload_document(
             status_code=422,
             detail=f"Unsupported target language: {target_lang!r}",
         )
+
+    # --- Glossary pair validation (D-02-25/26) ---
+    if glossary_id is not None:
+        g = await get_glossary(session, glossary_id)
+        if g is None:
+            raise HTTPException(status_code=422, detail="Glossary not found.")
+        if g.source_lang != source_lang or g.target_lang != target_lang:
+            raise HTTPException(
+                status_code=422,
+                detail="The selected glossary does not match the language pair.",
+            )
 
     # --- Streaming size guard (defence in depth against missing Content-Length) ---
     chunks: list[bytes] = []
@@ -132,6 +145,7 @@ async def upload_document(
         original_filename=filename,
         has_tracked_changes=has_tracked,
         tracked_changes_action=tracked_changes_action,
+        glossary_id=glossary_id,
     )
 
     # --- Persist file to per-job directory (D-04: .data/jobs/{job_id}/source.{ext}) ---

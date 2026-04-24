@@ -31,11 +31,13 @@ async def create_job(
     original_filename: str,
     has_tracked_changes: bool = False,
     tracked_changes_action: str | None = None,
+    glossary_id: str | None = None,
 ) -> Job:
     """
     Insert a new Job row with status=queued.
 
     Returns the persisted Job (with auto-generated ID and timestamps).
+    glossary_id: optional FK to glossaries.id (D-02-01); None if no glossary selected.
     """
     job = Job(
         source_lang=source_lang,
@@ -45,6 +47,7 @@ async def create_job(
         original_filename=original_filename,
         has_tracked_changes=has_tracked_changes,
         tracked_changes_action=tracked_changes_action,
+        glossary_id=glossary_id,
         status=JobStatus.queued,
     )
     session.add(job)
