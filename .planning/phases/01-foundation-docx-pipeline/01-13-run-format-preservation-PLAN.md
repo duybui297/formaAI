@@ -9,6 +9,7 @@ files_modified:
   - backend/src/app/pipeline/docx/extractor.py
   - backend/src/app/pipeline/docx/reassembler.py
   - backend/tests/pipeline/test_docx_extractor.py
+  - backend/src/app/workers/translate_worker.py
 autonomous: true
 gap_closure: true
 requirements:
@@ -53,6 +54,26 @@ Purpose: Every run in the translated DOCX carries its original `<w:rPr>` (bold/i
 
 Output: Updated `segment.py`, `extractor.py`, `reassembler.py`, expanded test file. Worker file updated to call `extract_run_segments` instead of `extract_segments` for DOCX jobs.
 </objective>
+
+## Cost Impact
+
+Per-run segmentation multiplies DashScope call volume relative to paragraph-level
+extraction. Documented bounds:
+
+- **Worst case:** every run has distinct formatting → one Segment per run. A doc with N runs
+  produces N Segments vs P paragraphs before (N >> P for richly formatted docs).
+- **Best case:** all runs in a paragraph share formatting → merged into one Segment (no
+  change from current behavior).
+- **Typical case (ICOM_Proposal_JP.docx):** 346 paragraph-level segments observed today.
+  Spot-check: most paragraphs have 1-3 uniform-format runs. Estimate ~400-500 run-level
+  segments after per-run extraction — 15-45% more calls.
+- **Mitigation:** the extractor merges consecutive runs with IDENTICAL formatting into
+  ONE Segment before emitting. Format-change boundaries are the only split points.
+- **Pace budget:** at DASHSCOPE_PACE_SECONDS=1.2 default, a 500-segment doc needs
+  ~10 min wall-clock (vs ~7 min today). Acceptable for PoC; paid-tier bumps pace to 0.2s
+  which recovers parity.
+
+Accepted trade-off per D-13 (format fidelity over raw throughput).
 
 <execution_context>
 @$HOME/.claire/get-shit-done/workflows/execute-plan.md
@@ -222,7 +243,33 @@ def _run_fmt(run) -> tuple:
 
     Safety check (T-13-01): if `seg.run_index >= len(paragraph.runs)`, log a warning and skip — do NOT raise. This handles the case where the document was modified between extraction and reassembly.
 
-    ## Step 5: Add reassemble_docx_runs() (reassembler.py)
+    ## Step 5: reassemble_docx_runs() — walk-order matching
+
+    Uses the SAME counter-walk pattern as existing reassemble_docx(). Do NOT parse
+    structural_position strings to group segments by paragraph — that fails on cell_para vs
+    para location tags, and the format isn't stable across nested structures.
+
+    Algorithm:
+
+    1. Group incoming `list[Segment]` by walk-order paragraph position. Segments emitted by
+       extract_run_segments() arrive in document order. Each Segment has `run_index` (the
+       first run it covers) and `run_group_size` (how many consecutive runs it spans).
+    2. Maintain a `para_seq` counter while walking document via walk_document() in the
+       SAME order as extract_run_segments().
+    3. For each non-empty paragraph visited, peek at the segments list head: if next
+       segment(s) belong to this paragraph (their walk position == current para_seq), pop
+       them all off into a paragraph_segments list, then call write_translated_run(paragraph,
+       paragraph_segments, translated_texts) once per paragraph.
+    4. write_translated_run() iterates the paragraph's runs: for each Segment in
+       paragraph_segments, write translated_text into runs[segment.run_index], then blank
+       runs[run_index+1 : run_index+run_group_size].
+    5. Never call paragraph.text setter (DOCX-02 anti-pattern). Always mutate specific run.text.
+
+    Bounds validation (threat model): before writing to runs[run_index], assert
+      0 <= run_index < len(paragraph.runs) AND
+      run_index + run_group_size <= len(paragraph.runs)
+    If fails, log warning and skip this segment (prevents IndexError crashing the worker on
+    malformed docs).
 
     New public function alongside existing `reassemble_docx()`:
     ```python
@@ -234,12 +281,9 @@ def _run_fmt(run) -> tuple:
         """
         Variant of reassemble_docx() that uses write_translated_run() to preserve
         per-run formatting. segments must have come from extract_run_segments().
+        Uses sequential walk-order counter matching, NOT structural_position string parsing.
         """
     ```
-
-    Uses the same walk_document() traversal. Needs to match segments to paragraphs:
-    - Build a mapping `{structural_position_prefix: [Segment]}` grouped by paragraph position
-    - For each paragraph visited, look up its segments and call write_translated_run() for each
 
     ## Step 6: Update translate_worker.py
 

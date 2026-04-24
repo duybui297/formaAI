@@ -8,9 +8,11 @@ files_modified:
   - frontend/src/components/UploadForm.tsx
   - frontend/src/app/api/upload/route.ts
   - backend/tests/api/test_upload.py
+  - backend/tests/api/test_upload_error_ux.py
 autonomous: true
 gap_closure: true
 requirements:
+  - UPLD-01
   - UPLD-02
   - LANG-01
 
@@ -24,8 +26,8 @@ must_haves:
       provides: "accept='.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document' on file input"
     - path: "frontend/src/app/api/upload/route.ts"
       provides: "backend status + body forwarded verbatim (no 500 swallow)"
-    - path: "backend/tests/api/test_upload.py"
-      provides: "integration test: POST /upload with .pdf → 415 with detail containing 'DOCX'"
+    - path: "backend/tests/api/test_upload_error_ux.py"
+      provides: "error detail shape tests: POST /upload with .txt → 415 with actionable detail; POST /upload with .pdf → 422 with actionable detail"
   key_links:
     - from: "frontend/src/components/UploadForm.tsx:submitWithAction"
       to: "frontend/src/components/UploadForm.tsx:error state"
@@ -274,74 +276,91 @@ Follow the exact test helper patterns from the existing test file (vi.hoisted fo
 </task>
 
 <task type="auto" tdd="true">
-  <name>Task 3: Add backend integration test — POST /upload with .pdf returns 415</name>
-  <files>backend/tests/api/test_upload.py</files>
+  <name>Task 3: Add error detail shape tests in new test file</name>
+  <files>backend/tests/api/test_upload_error_ux.py</files>
   <read_first>
-    - backend/tests/api/test_upload.py (full file — existing test patterns: ASGITransport, dependency_overrides, file upload fixtures)
-    - backend/src/app/api/routes/upload.py (the 415 and 422 code paths — extension check and Phase 1 format gate)
-    - .planning/phases/01-foundation-docx-pipeline/01-UAT.md (Gaps block, third gap — `missing` item: "integration test: POST /upload with a .pdf file → 415 with a descriptive detail field")
+    - backend/tests/api/test_upload.py (existing patterns: ASGITransport, app_and_tmp fixture — replicate exact pattern; existing tests already cover 415/.txt, 422/.pdf, 422/.pptx status codes)
+    - backend/src/app/api/routes/upload.py (the detail message strings for 415 and 422 responses)
+    - .planning/phases/01-foundation-docx-pipeline/01-UAT.md (Gaps block, third gap — missing: error detail payload shape tests)
   </read_first>
   <behavior>
-    Test: POST /upload with filename="report.pdf" → status 415, detail contains "Unsupported" or "DOCX"
-    Test: POST /upload with filename="slides.pptx" → status 422, detail contains "PPTX" (Phase 1 gate)
-    Test: POST /upload with filename="notes.txt" → status 415, detail contains "Unsupported"
+    Test: test_upload_txt_detail_mentions_docx — POST .txt → 415, detail non-empty and mentions "docx", "supported", or "phase 1"
+    Test: test_upload_pdf_phase1_gate_detail — POST .pdf → 422 (NOT 415 — .pdf is in ALLOWED_EXTENSIONS but blocked by Phase 1 gate), detail non-empty and mentions "pdf", "phase", "docx", or "supported"
+
+    NOTE: .pdf returns 422 (Phase 1 gate), NOT 415. The backend allows .pdf/.pptx as extensions
+    (ALLOWED_EXTENSIONS includes them) but rejects them with 422 via PHASE1_SUPPORTED_FORMATS gate.
+    .txt returns 415 because it is NOT in ALLOWED_EXTENSIONS. Existing test_upload.py tests
+    (test_upload_rejects_pdf_phase1, test_upload_rejects_pptx_phase1,
+    test_upload_rejects_unsupported_extension) already cover the status codes. This new file
+    covers the DETAIL PAYLOAD SHAPE the frontend consumes — do NOT duplicate status code assertions.
   </behavior>
   <action>
-Add 3 new test functions to `backend/tests/api/test_upload.py` following the existing test patterns exactly:
+Add `backend/tests/api/test_upload_error_ux.py` with these tests. Do NOT duplicate
+existing coverage in test_upload.py — this file is specifically about the error DETAIL
+payload shape the frontend consumes.
 
 ```python
-@pytest.mark.asyncio
-async def test_upload_pdf_returns_415(client):
-    """POST /upload with .pdf should return 415 (extension not DOCX)."""
-    response = await client.post(
-        "/upload",
-        data={"source_lang": "auto", "target_lang": "vi"},
-        files={"file": ("report.pdf", b"%PDF-1.4 fake content", "application/pdf")},
-    )
-    assert response.status_code == 415
-    body = response.json()
-    assert "detail" in body
-    # detail must be surfaceable to the frontend — must not be empty
-    assert len(body["detail"]) > 10
+"""
+Error detail payload shape tests for POST /upload.
+
+test_upload.py covers status codes (415, 422). This file covers the DETAIL field
+content that UploadForm.tsx surfaces to the user. Both layers must pass for the
+frontend error UX to work end-to-end.
+
+Existing status-code coverage in test_upload.py:
+  - test_upload_rejects_unsupported_extension → 415 for .txt
+  - test_upload_rejects_pdf_phase1 → 422 for .pdf (Phase 1 gate)
+  - test_upload_rejects_pptx_phase1 → 422 for .pptx (Phase 1 gate)
+"""
+from __future__ import annotations
+
+import pytest
+from httpx import ASGITransport, AsyncClient
+
 
 @pytest.mark.asyncio
-async def test_upload_pptx_returns_422_phase1_gate(client):
-    """POST /upload with .pptx should return 422 (Phase 1 gate — PPTX not yet supported)."""
-    response = await client.post(
-        "/upload",
-        data={"source_lang": "auto", "target_lang": "vi"},
-        files={"file": ("slides.pptx", b"PK fake pptx content", "application/vnd.openxmlformats-officedocument.presentationml.presentation")},
-    )
-    assert response.status_code == 422
-    body = response.json()
-    assert "detail" in body
-    assert "PPTX" in body["detail"] or "pptx" in body["detail"].lower()
+async def test_upload_txt_detail_mentions_docx(app_and_tmp):
+    """415 unsupported: detail field non-empty and mentions the expected format."""
+    app, _ = app_and_tmp
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        r = await c.post(
+            "/upload",
+            files={"file": ("note.txt", b"hello", "text/plain")},
+            data={"source_lang": "en", "target_lang": "vi"},
+        )
+    assert r.status_code == 415
+    body = r.json()
+    assert "detail" in body and body["detail"]
+    assert any(kw in body["detail"].lower() for kw in ("docx", "supported", "phase 1"))
+
 
 @pytest.mark.asyncio
-async def test_upload_txt_returns_415(client):
-    """POST /upload with .txt should return 415 (unsupported extension)."""
-    response = await client.post(
-        "/upload",
-        data={"source_lang": "auto", "target_lang": "vi"},
-        files={"file": ("notes.txt", b"hello world", "text/plain")},
-    )
-    assert response.status_code == 415
-    body = response.json()
-    assert "detail" in body
-    assert len(body["detail"]) > 10
+async def test_upload_pdf_phase1_gate_detail(app_and_tmp):
+    """Phase 1 gate: .pdf returns 422 with actionable detail (not 415).
+    .pdf is in ALLOWED_EXTENSIONS so extension check passes; Phase 1 gate rejects it.
+    """
+    app, _ = app_and_tmp
+    pdf_magic = b"%PDF-1.4\n%stub"
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        r = await c.post(
+            "/upload",
+            files={"file": ("doc.pdf", pdf_magic, "application/pdf")},
+            data={"source_lang": "en", "target_lang": "vi"},
+        )
+    assert r.status_code == 422
+    body = r.json()
+    assert "detail" in body and body["detail"]
+    assert any(kw in body["detail"].lower() for kw in ("pdf", "phase", "docx", "supported"))
 ```
-
-Use the same `client` fixture already defined in the test file (AsyncClient with app dependency_overrides). Do NOT add new fixtures.
-
-Note: test_upload.py already has a test for `.txt` returning 415 (`test_upload_unsupported_extension_returns_415`) — if that test exists, add a comment referencing the new test as "GAP G3 coverage" and verify the existing test covers the case. Only add the test if not already present with that exact assertion.
   </action>
   <verify>
-    <automated>cd /home/thu/dev/projects/ai-translation/backend && uv run pytest tests/api/test_upload.py -q 2>&1 | tail -15</automated>
+    <automated>cd /home/thu/dev/projects/ai-translation/backend && uv run pytest tests/api/test_upload_error_ux.py -q 2>&1 | tail -15</automated>
   </verify>
   <done>
-    - `grep -n "def test_upload_pdf_returns_415\|def test_upload_pptx_returns_422\|def test_upload_txt_returns_415" backend/tests/api/test_upload.py` shows the new test functions
-    - `uv run pytest tests/api/test_upload.py -q` exits 0 (all tests pass)
-    - Test coverage for upload.py: `uv run pytest tests/api/test_upload.py --cov=app.api.routes.upload --cov-report=term-missing -q 2>&1 | grep "upload.py"` shows ≥ 80%
+    - `backend/tests/api/test_upload_error_ux.py` exists with both test functions defined
+    - `uv run pytest tests/api/test_upload_error_ux.py -q` exits 0 (both tests pass)
+    - No changes to existing test_upload.py — existing 415/422 tests remain untouched
+    - `grep -n "setError" frontend/src/components/UploadForm.tsx` shows `setError(.*detail` call (frontend error branch reads body.detail)
   </done>
 </task>
 
@@ -396,8 +415,8 @@ grep -n "accept=" frontend/src/components/UploadForm.tsx
 # Proxy forwards status verbatim
 grep -n "response.status" frontend/src/app/api/upload/route.ts
 
-# Backend test functions present
-grep -n "def test_upload_pdf_returns_415\|def test_upload_pptx_returns_422" backend/tests/api/test_upload.py
+# New backend error-detail test file present
+grep -n "def test_upload_txt_detail_mentions_docx\|def test_upload_pdf_phase1_gate_detail" backend/tests/api/test_upload_error_ux.py
 ```
 </verification>
 
@@ -406,10 +425,12 @@ grep -n "def test_upload_pdf_returns_415\|def test_upload_pptx_returns_422" back
 - `UploadForm.tsx` file input `accept` attribute contains `.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document`
 - `setError(null)` is called on new file selection and at the start of each submission
 - `route.ts` returns `Response.json(data, { status: response.status })` (already present, verified)
-- Backend test `test_upload_pdf_returns_415` passes: POST with .pdf → HTTP 415 + `detail` field present
-- Backend test `test_upload_pptx_returns_422_phase1_gate` passes: POST with .pptx → HTTP 422 + `detail` contains "PPTX"
+- `backend/tests/api/test_upload_error_ux.py` exists with both tests defined
+- `test_upload_txt_detail_mentions_docx` passes: POST with .txt → HTTP 415 + `detail` mentions "docx"/"supported"
+- `test_upload_pdf_phase1_gate_detail` passes: POST with .pdf → HTTP 422 + `detail` mentions "pdf"/"phase"
 - Two new frontend tests pass: inline error display + error cleared on reselection
-- All existing backend test_upload.py and frontend UploadForm.test.tsx tests still pass
+- No changes to existing test_upload.py — existing 415/422 status-code tests remain untouched
+- `grep` in UploadForm.tsx for `setError(.*detail` confirms frontend reads body.detail
 </success_criteria>
 
 <output>
