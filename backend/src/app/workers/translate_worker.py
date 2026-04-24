@@ -19,6 +19,7 @@ import json
 import os
 
 import structlog
+from arq.connections import RedisSettings
 from docx import Document
 from openai import APIConnectionError, APIStatusError, RateLimitError
 from redis.asyncio import Redis
@@ -420,3 +421,6 @@ class WorkerSettings:
     on_startup = startup
     on_shutdown = shutdown
     max_jobs = 10
+    # Resolve Redis from Settings so worker connects to docker-compose `redis` host,
+    # not arq's default localhost (which fails inside containers).
+    redis_settings = RedisSettings.from_dsn(get_settings().redis_url)
