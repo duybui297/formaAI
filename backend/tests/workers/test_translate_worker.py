@@ -296,6 +296,7 @@ async def test_translate_job_happy_path(db_session, mock_redis, mock_llm_client)
              patch("app.workers.translate_worker.extract_run_segments", return_value=[fake_seg]), \
              patch("app.workers.translate_worker.pack_into_batches", return_value=[[fake_seg]]), \
              patch("app.workers.translate_worker.translate_batch", new_callable=AsyncMock, return_value=["Hello"]), \
+             patch("app.workers.translate_worker.run_post_check", new_callable=AsyncMock), \
              patch("app.workers.translate_worker.reassemble_docx_runs", return_value=mock_doc):
             mock_doc.save = MagicMock()
 
@@ -363,6 +364,7 @@ async def test_translate_job_marks_failed_on_error(db_session, mock_redis, mock_
              patch("app.workers.translate_worker.extract_run_segments", return_value=[fake_seg]), \
              patch("app.workers.translate_worker.pack_into_batches", return_value=[[fake_seg]]), \
              patch("app.workers.translate_worker.translate_batch", side_effect=_always_fail), \
+             patch("app.workers.translate_worker.run_post_check", new_callable=AsyncMock), \
              patch("asyncio.sleep", new_callable=AsyncMock):
 
             # The outer translate_job catches the re-raised exception
@@ -435,6 +437,7 @@ async def test_translate_job_strips_tracked_changes(db_session, mock_redis, mock
              patch("app.workers.translate_worker.extract_run_segments", return_value=[fake_seg]), \
              patch("app.workers.translate_worker.pack_into_batches", return_value=[[fake_seg]]), \
              patch("app.workers.translate_worker.translate_batch", new_callable=AsyncMock, return_value=["Translated"]), \
+             patch("app.workers.translate_worker.run_post_check", new_callable=AsyncMock), \
              patch("app.workers.translate_worker.reassemble_docx_runs", return_value=stripped_doc):
 
             await translate_job(ctx, job.id)
