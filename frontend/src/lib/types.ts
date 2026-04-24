@@ -51,3 +51,51 @@ export interface JobSummary {
   status: JobStatus
   created_at: string
 }
+
+// --- Phase 2 types ---
+export type FlagType = "overflow" | "glossary_violation" | "placeholder_mismatch" | "llm_refusal"
+export type FlagSeverity = "info" | "warn" | "block"
+
+export interface SegmentFlag {
+  id: string
+  segment_id: string
+  flag_type: FlagType
+  severity: FlagSeverity
+  details: Record<string, unknown>
+  created_at: string
+}
+
+export interface Segment {
+  id: string
+  job_id: string
+  seq_in_job: number
+  source_text: string
+  translated_text: string | null
+  edited_text: string | null
+  expansion_ratio: number | null
+  flags: SegmentFlag[]
+}
+
+export interface SegmentsResponse {
+  segments: Segment[]
+  total: number
+}
+
+export interface GlossaryTerm {
+  id: string
+  glossary_id: string
+  source_term: string
+  target_term: string
+  notes: string | null
+  created_at: string
+}
+
+export interface Glossary {
+  id: string
+  name: string
+  source_lang: string
+  target_lang: string
+  created_at: string
+  updated_at: string
+  terms?: GlossaryTerm[]
+}
