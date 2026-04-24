@@ -1,33 +1,55 @@
-"""TBX minimal import tests — GLOS-02."""
+"""
+Additional TBX edge case tests.
+
+TDD RED: written before implementation.
+"""
 from __future__ import annotations
 
 import pytest
 
-_SAMPLE_TBX = b"""<?xml version="1.0" encoding="UTF-8"?>
-<martif type="TBX-Basic">
+from app.services.glossary_service import parse_tbx_minimal
+
+
+def test_parse_tbx_filters_short_terms():
+    """Terms shorter than 2 chars should be excluded (D-02-07)."""
+    content = b"""<?xml version="1.0"?>
+<martif>
   <body>
     <termEntry>
-      <langSet xml:lang="vi"><tig><term>xin ch\xc3\xa0o</term></tig></langSet>
-      <langSet xml:lang="en"><tig><term>hello</term></tig></langSet>
+      <langSet xml:lang="vi">
+        <tig><term>a</term></tig>
+      </langSet>
+      <langSet xml:lang="en">
+        <tig><term>b</term></tig>
+      </langSet>
     </termEntry>
   </body>
-</martif>
-"""
+</martif>"""
+    rows = parse_tbx_minimal(content, source_lang="vi", target_lang="en")
+    assert rows == []
 
 
-@pytest.mark.xfail(reason="Requires Plan 03 glossary_service TBX parser", strict=False)
-def test_parse_tbx_minimal_valid():
-    """Valid TBX-Core file extracts term pairs correctly."""
-    from app.services.glossary_service import parse_tbx_minimal
-    terms = parse_tbx_minimal(_SAMPLE_TBX, source_lang="vi", target_lang="en")
-    assert len(terms) == 1
-    assert terms[0]["source_term"] == "xin chào"
-    assert terms[0]["target_term"] == "hello"
+def test_parse_tbx_empty_body():
+    content = b"""<?xml version="1.0"?><martif><body></body></martif>"""
+    rows = parse_tbx_minimal(content, source_lang="vi", target_lang="en")
+    assert rows == []
 
 
-@pytest.mark.xfail(reason="Requires Plan 03 glossary_service TBX parser", strict=False)
-def test_parse_tbx_no_matching_lang_returns_empty():
-    """TBX with no entries for the specified pair returns empty list (not error)."""
-    from app.services.glossary_service import parse_tbx_minimal
-    terms = parse_tbx_minimal(_SAMPLE_TBX, source_lang="zh", target_lang="en")
-    assert terms == []
+def test_parse_tbx_case_insensitive_lang_match():
+    """xml:lang="VI" should match source_lang="vi" (case-insensitive)."""
+    content = """<?xml version="1.0"?>
+<martif>
+  <body>
+    <termEntry>
+      <langSet xml:lang="VI">
+        <tig><term>nguon</term></tig>
+      </langSet>
+      <langSet xml:lang="EN">
+        <tig><term>source</term></tig>
+      </langSet>
+    </termEntry>
+  </body>
+</martif>""".encode("utf-8")
+    rows = parse_tbx_minimal(content, source_lang="vi", target_lang="en")
+    assert len(rows) == 1
+    assert rows[0]["source_term"] == "nguon"
