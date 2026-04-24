@@ -1,6 +1,7 @@
 ---
-status: diagnosed
+status: complete
 phase: 01-foundation-docx-pipeline
+round: 2
 source:
   - 01-01-SUMMARY.md
   - 01-02-SUMMARY.md
@@ -14,18 +15,16 @@ source:
   - 01-09-SUMMARY.md
   - 01-10-SUMMARY.md
   - 01-11-SUMMARY.md
+  - 01-12-SUMMARY.md
+  - 01-13-SUMMARY.md
+  - 01-14-SUMMARY.md
 started: 2026-04-24T14:10:00Z
-updated: 2026-04-24T14:10:00Z
+updated: 2026-04-24T10:30:00Z
 ---
 
 ## Current Test
-<!-- OVERWRITE each test - shows where we are -->
 
-number: 8
-name: Oversize file rejection
-expected: |
-  Upload a DOCX > 50 MB (MAX_UPLOAD_BYTES). Form rejects with a clear message (HTTP 413). No job created. Existing jobs list unchanged.
-awaiting: closed — skipped (deferred to phase that handles PDF)
+[testing complete]
 
 ## Tests
 
@@ -37,32 +36,39 @@ result: pass
 expected: On http://localhost:3000/upload, drag-and-drop (or browse to) `examples/ICOM_Proposal_JP.docx`. Select source=Auto-detect, target=Vietnamese. Click Submit. Page redirects to `/jobs/{job_id}` with live progress bar and stage indicator (parse → translate → reassemble → done).
 result: pass
 
-### 3. Tracked-changes modal appears
-expected: When uploading a DOCX with tracked changes (ICOM_Proposal_JP.docx qualifies), a modal appears BEFORE submission with "Strip tracked changes" / "Keep tracked changes" options. Picking one submits the job with that choice.
-result: issue
-reported: "earlier i saw that but then i didn't. also format of text (bold, italic, etc.) in .docx still not right. For example: If at the first paragraph, some characters is bold, then whole paragraph is bold, or text-embedding-ada-002 or equivalient need to underline and italic but translated document it became normal"
-severity: major
+### 3. Tracked-changes modal appears (round 2)
+expected: Re-upload a DOCX with tracked changes TWICE in a row (same file). Modal "Strip / Keep tracked changes" appears BOTH times before submit. Cancel first modal via Escape → re-select same file → modal appears again. Fix commits 2648fc9 + 223916f + 169f6b0 (input.value reset for same-file reselection).
+result: pass
 
 ### 4. Job status page SSE live progress
 expected: On `/jobs/{id}` during a running job, the progress counter animates smoothly from 0 → N/total as each batch completes. Stage indicator advances through parse → translate → reassemble → done. No page refresh needed.
 result: pass
 
-### 5. Download translated DOCX
-expected: When a job reaches `done` state, a Download button appears. Clicking it saves a DOCX. Opening it in Word/LibreOffice shows paragraphs + tables translated to the target language with original structure intact (same paragraph count, same table count, bold/italic runs preserved).
-result: issue
-reported: "no, as i told you — same run-merge format-collapse issue observed on the downloaded DOCX"
-severity: major
-refs_gap: "DOCX-02 run-merge collapse (already logged under Test 3)"
+### 5. Download translated DOCX — per-run format preserved (round 2)
+expected: |
+  Re-translate `examples/Tổng hợp đề xuất cải tiến hệ thống ICOM - Phase 4.docx` (vi→en).
+  Download output. Open in Word/LibreOffice. For the paragraph starting "Điểm nghẽn cũ" (paragraph 5):
+  - "The old bottleneck" — BOLD (run 0)
+  - ": " — plain (run 1)
+  - "text-embedding-ada-002" — ITALIC + UNDERLINE (run 2)
+  - " is gradually becoming outdated..." — plain (run 3)
+  Fix commits: f94e030/e68fdf6 (01-13 per-run extraction + slot write-back) + worker restarted at 16:49 to load new bytecode.
+result: pass
 
 ### 6. Jobs list page
 expected: At http://localhost:3000/jobs, a table lists all jobs with columns: filename, format, lang pair, status, progress, created-at. Row click navigates to `/jobs/{id}` detail page. Empty state shows "No translations yet" with CTA back to upload.
 result: pass
 
-### 7. Invalid format rejection
-expected: Upload a `.txt` or `.pdf` file. Form rejects with a clear message (HTTP 415). No job created. User can re-select a valid file without refreshing.
-result: issue
-reported: "nothing appeared, no message appeared when click Translate Document button"
-severity: major
+### 7. Invalid format rejection (round 2 — inline error)
+expected: |
+  Try to upload a `.pdf` or `.txt`. Expectations:
+  - Native file picker shows .docx only (accept attribute).
+  - If dragging/dropping a non-DOCX, see red toast: "Unsupported file type. Phase 1 accepts .docx only."
+  - If an upload DOES reach backend (e.g. .pdf drag), inline red error text appears below the Translate button (`role=alert`).
+  - Drop zone text: "Drop your DOCX here (PDF & PPTX coming soon)".
+  - Re-selecting a valid DOCX after error clears the error.
+  Fix commits: 279b304 + 432ea3f + 4a6cc6c (01-14) + 2b0d8b9 (DOCX-only allowlist alignment) + 91741f9 (Toaster mount + inline mirror).
+result: pass
 
 ### 8. Oversize file rejection
 expected: Upload a DOCX > 50 MB (MAX_UPLOAD_BYTES). Form rejects with a clear message (HTTP 413). No job created. Existing jobs list unchanged.
@@ -73,15 +79,17 @@ blocked_by: prior-phase
 ## Summary
 
 total: 8
-passed: 4
-issues: 3
+passed: 7
+issues: 0
 pending: 0
 skipped: 1
+round: 2
+round2_scope: "re-verify tests 3, 5, 7 after gap-closure plans 01-12/13/14 + worker restart + input.value reset + Toaster mount"
 
 ## Gaps
 
 - truth: "Tracked-changes detection in UploadForm reliably shows the strip/keep modal every time a DOCX with <w:ins>/<w:del> nodes is selected"
-  status: flaky
+  status: resolved
   reason: "User reported: 'earlier i saw that but then i didn't' — modal appears inconsistently across repeated uploads of the same file"
   severity: major
   test: 3
@@ -98,7 +106,7 @@ skipped: 1
     - integration test that exercises two back-to-back uploads of the same tracked-changes DOCX
 
 - truth: "DOCX-02 run-merge preserves per-run character formatting (bold/italic/underline/color/font) across the full translated paragraph — not just the first run's formatting"
-  status: broken
+  status: resolved
   reason: "User reported: 'If at the first paragraph, some characters is bold, then whole paragraph is bold' (run-merge collapses all runs into runs[0] formatting). Also: 'text-embedding-ada-002 or equivalent need to underline and italic but translated document it became normal' (multi-format runs after runs[0] lose their formatting entirely)"
   severity: major
   test: 3
@@ -124,7 +132,7 @@ skipped: 1
       pipeline, asserting each run's formatting survives
 
 - truth: "UploadForm surfaces a visible error message when the user clicks 'Translate Document' with an unsupported file type (.pdf/.pptx/.txt/etc), and does NOT enqueue a job"
-  status: broken
+  status: resolved
   reason: "User reported: 'nothing appeared, no message appeared when click Translate Document button' — button click silently swallows the failure response from the server. UX gap: user cannot tell whether something is happening or whether it was rejected."
   severity: major
   test: 7
