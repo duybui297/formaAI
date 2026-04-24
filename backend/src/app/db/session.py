@@ -1,0 +1,28 @@
+from __future__ import annotations
+
+from typing import AsyncGenerator
+
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+from app.core.config import get_settings
+
+_settings = get_settings()
+
+# Module-level engine — created once at import time.
+# Workers call create_async_engine directly in startup() for their own pool;
+# this module-level engine is used by the FastAPI app and tests.
+_db_url = _settings.database_url.get_secret_value()
+_engine_kwargs: dict = {"echo": False}
+if not _db_url.startswith("sqlite"):
+    _engine_kwargs["pool_size"] = 5
+    _engine_kwargs["max_overflow"] = 10
+engine = create_async_engine(_db_url, **_engine_kwargs)
+
+# expire_on_commit=False: prevents lazy-load errors after commit in async context
+SessionFactory = async_sessionmaker(engine, expire_on_commit=False)
+
+
+async def get_session() -> AsyncGenerator[AsyncSession, None]:
+    """FastAPI dependency: yields an AsyncSession, auto-closes after response."""
+    async with SessionFactory() as session:
+        yield session

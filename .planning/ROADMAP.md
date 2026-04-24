@@ -33,17 +33,17 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Plans**: 11 plans
 
 Plans:
-- [ ] 01-01-infra-prereqs-PLAN.md — Docker, docker-compose, pyproject.toml, frontend package.json, healthcheck script
-- [ ] 01-02-backend-core-PLAN.md — Settings/logging config, DB models (Job+Segment), SQLAlchemy session, Alembic init, test conftest
-- [ ] 01-03-llm-core-PLAN.md — LLM client, translate_batch with CORE-03/04/05/06, token budget, TDD
-- [ ] 01-04-docx-pipeline-PLAN.md — DOCX extractor + reassembler + placeholder protection, TDD
-- [ ] 01-05-job-worker-PLAN.md — arq worker, job service, progress publish, retry logic
+- [x] 01-01-infra-prereqs-PLAN.md — Docker, docker-compose, pyproject.toml, frontend package.json, healthcheck script
+- [x] 01-02-backend-core-PLAN.md — Settings/logging config, DB models (Job+Segment), SQLAlchemy session, Alembic init, test conftest
+- [x] 01-03-llm-core-PLAN.md — LLM client, translate_batch with CORE-03/04/05/06, token budget, TDD
+- [x] 01-04-docx-pipeline-PLAN.md — DOCX extractor + reassembler + placeholder protection, TDD
+- [x] 01-05-job-worker-PLAN.md — arq worker, job service, progress publish, retry logic
 - [ ] 01-06-fastapi-api-PLAN.md — FastAPI app, upload endpoint, job/SSE endpoints, languages endpoint
-- [ ] 01-07-frontend-shell-PLAN.md — Next.js shell, TypeScript types, useJobProgress hook, TanStack setup
-- [ ] 01-08-upload-page-PLAN.md — UploadForm, LanguageSelect, tracked-changes modal, upload proxy
-- [ ] 01-09-job-status-page-PLAN.md — Job status page, StageIndicator, ProgressBar, animated counter, ErrorDetails
-- [ ] 01-10-jobs-list-page-PLAN.md — Jobs list page, StatusBadge, polling table
-- [ ] 01-11-migrations-integration-tests-PLAN.md — Alembic first migration, DashScope integration tests, DOCX round-trip tests
+- [x] 01-07-frontend-shell-PLAN.md — Next.js shell, TypeScript types, useJobProgress hook, TanStack setup
+- [x] 01-08-upload-page-PLAN.md — UploadForm, LanguageSelect, tracked-changes modal, upload proxy
+- [x] 01-09-job-status-page-PLAN.md — Job status page, StageIndicator, ProgressBar, animated counter, ErrorDetails
+- [x] 01-10-jobs-list-page-PLAN.md — Jobs list page, StatusBadge, polling table
+- [x] 01-11-migrations-integration-tests-PLAN.md — Alembic first migration, DashScope integration tests, DOCX round-trip tests
 
 **UI hint**: yes
 
