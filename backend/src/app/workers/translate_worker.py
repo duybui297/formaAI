@@ -34,6 +34,7 @@ from app.llm.translator import translate_batch
 from app.pipeline.docx.extractor import extract_run_segments, extract_segments
 from app.pipeline.docx.reassembler import reassemble_docx, reassemble_docx_runs
 from app.pipeline.docx.tracked import strip_tracked_changes
+from app.services.glossary_service import load_glossary_terms_for_job, run_post_check
 from app.services.job_service import (
     append_error_log,
     get_job,
@@ -283,6 +284,14 @@ async def _run_translation(ctx: dict, session, job_id: str) -> None:
 
         segments_total = len(segments)
 
+        # GLOS-03: load glossary terms ONCE before translate loop
+        # Returns {source_term: target_term} dict or None if no glossary attached
+        glossary: dict[str, str] | None = await load_glossary_terms_for_job(
+            session, job.glossary_id
+        )
+        if glossary:
+            log.info("glossary_loaded", job_id=job_id, term_count=len(glossary))
+
         # ----------------------------------------------------------------
         # STAGE 2: Batch pack (D-07)
         # ----------------------------------------------------------------
@@ -320,13 +329,27 @@ async def _run_translation(ctx: dict, session, job_id: str) -> None:
                     segments=batch_texts,
                     source_lang=job.source_lang,
                     target_lang=job.target_lang,
-                    glossary=None,  # Phase 1: no glossary (D-15 deferred to Phase 2)
+                    glossary=glossary,  # GLOS-03: real glossary from DB (or None)
                     job_id=job_id,
                     batch_id=batch_id,
                 )
                 for seg, translated in zip(batch_segs, results):
                     translated_map[seg.id] = translated
                 segments_done += len(batch_texts)
+
+                # GLOS-04 + LAYOUT-01: post-translation check per batch
+                # run_post_check is imported from glossary_service (Plan 03)
+                # Writes overflow / glossary_violation / placeholder_mismatch / llm_refusal flags
+                # Also stores expansion_ratio on each segment
+                await run_post_check(
+                    session=session,
+                    batch_segs=batch_segs,
+                    translated_map={seg.id: translated_map[seg.id] for seg in batch_segs if seg.id in translated_map},
+                    glossary=glossary,
+                    source_lang=job.source_lang,
+                    target_lang=job.target_lang,
+                    expansion_thresholds=ctx["settings"].expansion_thresholds_dict,
+                )
 
                 await update_job_progress(
                     session, job_id,
