@@ -444,10 +444,15 @@ for r in runs[seg.run_index + 1 : end]:
 ```
 
 `reassemble_docx_runs(doc, segments, translated_texts)`:
-- Group segments by para_seq (extract para_seq from structural_position: split on '.' and take the numeric part before 'run')
-- Walk document in the same order as extract_run_segments():
-  - For each non-empty paragraph in walk order, collect its matching segments (same para_seq)
-  - For each segment, call write_translated_run() if translated_texts has a value for seg.id
+- Use a sequential `para_seq` counter while walking document via `walk_document()`
+  in the SAME order as `extract_run_segments()`. Do NOT parse `structural_position`
+  strings — same pattern as existing `reassemble_docx()` counter-walk.
+- For each non-empty paragraph visited, peek at the head of the segments list; pop
+  all segments whose walk-position matches the current `para_seq` into
+  `paragraph_segments`.
+- For each segment in `paragraph_segments`, call `write_translated_run()` if
+  `translated_texts` has a value for `seg.id`.
+- See Step 5 in the `<implementation>` block above for the governing algorithm.
 
 ### 4. translate_worker.py — update DOCX call site
 
