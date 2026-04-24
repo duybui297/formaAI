@@ -178,10 +178,9 @@ def extract_run_segments(doc: Document, job_id: str) -> list[Segment]:
             seq += 1
             para_had_content = True
 
-        if para_had_content or any(r.text.strip() for r in runs):
-            para_seq += 1
-        else:
-            para_seq += 1
+        # Always advance the paragraph counter so it matches the walk order
+        # consumed by reassembler.reassemble_docx_runs (CORE-03 pairing).
+        para_seq += 1
 
     return segments
 
