@@ -5,6 +5,7 @@ import { useToast } from "@/hooks/use-toast"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { LanguageSelect } from "./LanguageSelect"
+import { GlossarySelect } from "./GlossarySelect"
 import { TrackedChangesModal } from "./TrackedChangesModal"
 import { CloudUpload } from "lucide-react"
 import { detectTrackedChanges } from "@/lib/detectTrackedChanges"
@@ -31,6 +32,7 @@ export function UploadForm() {
   const [dragState, setDragState] = useState<"idle" | "valid" | "multi">("idle")
   const [sourceLang, setSourceLang] = useState("auto")
   const [targetLang, setTargetLang] = useState("")
+  const [glossaryId, setGlossaryId] = useState("")
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -106,6 +108,9 @@ export function UploadForm() {
         formData.append("target_lang", targetLang)
         if (action) {
           formData.append("tracked_changes_action", action)
+        }
+        if (glossaryId) {
+          formData.append("glossary_id", glossaryId)
         }
 
         const res = await fetch("/api/upload", { method: "POST", body: formData })
@@ -243,6 +248,14 @@ export function UploadForm() {
             />
           </div>
         </div>
+
+        {/* Glossary picker */}
+        <GlossarySelect
+          sourceLang={sourceLang === "auto" ? "" : sourceLang}
+          targetLang={targetLang}
+          value={glossaryId}
+          onChange={setGlossaryId}
+        />
 
         {/* Submit */}
         <Button
