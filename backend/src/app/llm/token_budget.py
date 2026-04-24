@@ -9,7 +9,11 @@ Never sentence-split — the DOCX pipeline invariant (DOCX-02) forbids splitting
 """
 from __future__ import annotations
 
+from typing import Sequence, TypeVar
+
 import tiktoken
+
+T = TypeVar("T")
 
 _ENC = tiktoken.get_encoding("cl100k_base")
 
@@ -49,13 +53,31 @@ def estimate_tokens(text: str) -> int:
     return len(_ENC.encode(text))
 
 
+def _coerce(item: T) -> tuple[str, str | None]:
+    """
+    Accept either a plain str or any object exposing ``.source_text`` + ``.id``
+    (e.g. ``pipeline.segment.Segment``). Returns (text, optional_id).
+    """
+    if isinstance(item, str):
+        return item, None
+    text = getattr(item, "source_text", None)
+    if text is None:
+        raise TypeError(
+            f"pack_into_batches expects str or Segment-like (with .source_text); got {type(item).__name__}"
+        )
+    return text, getattr(item, "id", None)
+
+
 def pack_into_batches(
-    segments: list[str],
+    segments: Sequence[T],
     budget_tokens: int = 3000,
     segment_ids: list[str] | None = None,
-) -> list[list[str]]:
+) -> list[list[T]]:
     """
     Pack segments into token-budgeted batches for qwen-mt-turbo.
+
+    Accepts either ``list[str]`` (unit-test shape) or ``list[Segment]`` (pipeline shape —
+    duck-typed via ``.source_text`` and ``.id``). Returns batches of the same element type.
 
     Rules:
     - A segment alone exceeding ``budget_tokens`` is placed in its own batch (no error).
@@ -63,12 +85,13 @@ def pack_into_batches(
     - Segments are never split — DOCX-02 invariant forbids mid-segment splitting.
 
     Args:
-        segments: list of text segments to batch
+        segments: list of str OR Segment-like objects (must expose ``.source_text``)
         budget_tokens: soft token budget per batch (default 3000 per D-07)
-        segment_ids: optional list of IDs parallel to segments (for error reporting)
+        segment_ids: optional list of IDs parallel to segments (for error reporting
+            when input is ``list[str]``; ignored when input is ``list[Segment]``)
 
     Returns:
-        list of batches, each batch being a list[str]; preserves original order
+        list of batches, each batch a list of the same element type as input
 
     Raises:
         SegmentTooLargeError: if any single segment exceeds the 7000-token hard limit
@@ -76,20 +99,21 @@ def pack_into_batches(
     if not segments:
         return []
 
-    batches: list[list[str]] = []
-    current_batch: list[str] = []
+    batches: list[list[T]] = []
+    current_batch: list[T] = []
     current_tokens: int = 0
 
     for i, seg in enumerate(segments):
-        seg_tokens = estimate_tokens(seg)
-        seg_id = (segment_ids[i] if segment_ids else None) or f"seg_{i}"
+        text, inferred_id = _coerce(seg)
+        seg_tokens = estimate_tokens(text)
+        seg_id = inferred_id or (segment_ids[i] if segment_ids else None) or f"seg_{i}"
 
         # D-08: hard limit — raise immediately, never send oversized segment
         if seg_tokens > _HARD_LIMIT:
             raise SegmentTooLargeError(
                 segment_id=seg_id,
                 token_count=seg_tokens,
-                source_text_excerpt=seg,
+                source_text_excerpt=text,
             )
 
         if current_batch and (current_tokens + seg_tokens > budget_tokens):
