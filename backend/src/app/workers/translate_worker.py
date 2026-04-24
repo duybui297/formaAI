@@ -425,6 +425,10 @@ class WorkerSettings:
     # drain. One job at a time is the only reliable mode for large documents on
     # the free tier. Bump on paid tier.
     max_jobs = 1
+    # job_timeout=1800s (30 min): JP doc with 346 segments at 1.2s pacing takes
+    # ~8 min. Default arq timeout is 300s which kills large jobs mid-flight. Size
+    # the cap for the biggest realistic document; actual runtime scales with pacing.
+    job_timeout = 1800
     # Resolve Redis from Settings so worker connects to docker-compose `redis` host,
     # not arq's default localhost (which fails inside containers).
     redis_settings = RedisSettings.from_dsn(get_settings().redis_url)
