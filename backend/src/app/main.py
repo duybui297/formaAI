@@ -20,9 +20,10 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.api.middleware.cors import add_cors_middleware
-from app.api.routes import glossaries, health, jobs, languages, sse, upload
+from app.api.routes import export, glossaries, health, jobs, languages, segments, sse, upload
 from app.core.config import get_settings
 from app.core.logging import configure_logging
+from app.llm.client import make_llm_client
 
 log = structlog.get_logger()
 
@@ -53,6 +54,8 @@ async def lifespan(app: FastAPI):
     app.state.arq_pool = await arq.create_pool(
         RedisSettings.from_dsn(settings.redis_url)
     )
+    # Phase 2: shared LLM client for synchronous regenerate endpoint (REV-04)
+    app.state.llm_client = make_llm_client(settings)
     log.info("app_started")
 
     yield
@@ -78,4 +81,6 @@ app.include_router(upload.router)
 app.include_router(languages.router)
 app.include_router(glossaries.router)
 app.include_router(jobs.router)
+app.include_router(segments.router)
+app.include_router(export.router)
 app.include_router(sse.router)
