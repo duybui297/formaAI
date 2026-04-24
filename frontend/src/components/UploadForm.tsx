@@ -10,7 +10,10 @@ import { CloudUpload } from "lucide-react"
 import { detectTrackedChanges } from "@/lib/detectTrackedChanges"
 
 const MAX_SIZE_BYTES = 25 * 1024 * 1024
-const ALLOWED_EXTS = new Set([".docx", ".pdf", ".pptx"])
+// Phase 1 scope: DOCX only. PDF + PPTX pipelines land in later phases and
+// the backend rejects them with 422, so the client-side allowlist stays in
+// sync to avoid the "silently accept, server rejects" UX that WR-02 flagged.
+const ALLOWED_EXTS = new Set([".docx"])
 
 function getExt(filename: string): string {
   return filename.slice(filename.lastIndexOf(".")).toLowerCase()
@@ -46,7 +49,7 @@ export function UploadForm() {
     if (!ALLOWED_EXTS.has(ext)) {
       toast({
         variant: "destructive",
-        description: "Unsupported file type. Upload a DOCX, PDF, or PPTX.",
+        description: "Unsupported file type. Phase 1 accepts .docx only.",
       })
       return
     }
@@ -157,7 +160,7 @@ export function UploadForm() {
       ? "Release to upload"
       : dragState === "multi"
       ? "One file at a time only"
-      : "Drop your DOCX, PDF, or PPTX here"
+      : "Drop your DOCX here (PDF & PPTX coming soon)"
 
   return (
     <>

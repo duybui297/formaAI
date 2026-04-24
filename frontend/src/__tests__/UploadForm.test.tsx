@@ -68,7 +68,9 @@ describe("UploadForm rendering", () => {
 
   it("renders the drop zone with idle text", () => {
     renderForm()
-    expect(screen.getByText("Drop your DOCX, PDF, or PPTX here")).toBeDefined()
+    expect(
+      screen.getByText("Drop your DOCX here (PDF & PPTX coming soon)")
+    ).toBeDefined()
     expect(screen.getByText(/or click to choose a file/)).toBeDefined()
   })
 
@@ -150,14 +152,21 @@ describe("UploadForm file validation", () => {
     })
   })
 
-  it("calls detectTrackedChanges for a PDF file (returns false for non-.docx)", async () => {
+  it("rejects a PDF file client-side and does NOT call detectTrackedChanges", async () => {
     renderForm()
     const pdfFile = new File(["pdf-bytes"], "test.pdf", { type: "application/pdf" })
     selectFile(pdfFile)
 
     await waitFor(() => {
-      expect(mockDetect).toHaveBeenCalledWith(pdfFile)
+      expect(mockToast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          variant: "destructive",
+          description: expect.stringContaining(".docx only"),
+        })
+      )
     })
+    // Phase 1 is DOCX-only; PDFs never reach the tracked-changes detector.
+    expect(mockDetect).not.toHaveBeenCalled()
   })
 
   it("shows filename after a valid DOCX is selected", async () => {
