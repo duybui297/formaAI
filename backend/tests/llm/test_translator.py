@@ -289,3 +289,132 @@ async def test_translate_batch_max_tokens_set():
 
     call_kwargs = client.chat.completions.create.call_args
     assert call_kwargs.kwargs.get("max_tokens") == 4096
+
+
+# ---------------------------------------------------------------------------
+# CORE-05: placeholder masking (URLs / emails / template vars / dates / versions)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_translate_batch_core05_masks_url_before_model_call():
+    """URLs must be masked with ⟦T{n}⟧ markers before reaching the model."""
+    from app.llm.translator import translate_batch
+
+    captured: list[str] = []
+
+    async def capture(**kwargs):
+        captured.append(kwargs["messages"][0]["content"])
+        response = MagicMock()
+        response.choices = [MagicMock()]
+        # Model echoes markers unchanged
+        response.choices[0].message.content = captured[-1].replace(
+            "Visit", "Truy cập"
+        )
+        response.usage = MagicMock(prompt_tokens=5, completion_tokens=5, total_tokens=10)
+        return response
+
+    client = AsyncMock()
+    client.chat.completions.create = AsyncMock(side_effect=capture)
+
+    result = await translate_batch(
+        client,
+        ["Visit https://example.com/path?q=1 today"],
+        "en",
+        "vi",
+    )
+
+    # Model never saw the raw URL
+    assert "https://example.com" not in captured[0]
+    assert "⟦T0⟧" in captured[0]
+    # Output has the URL restored verbatim
+    assert "https://example.com/path?q=1" in result[0]
+
+
+@pytest.mark.asyncio
+async def test_translate_batch_core05_masks_email_and_template_var():
+    """Emails and {{template_vars}} are masked and restored."""
+    from app.llm.translator import translate_batch
+
+    captured: list[str] = []
+
+    async def capture(**kwargs):
+        captured.append(kwargs["messages"][0]["content"])
+        response = MagicMock()
+        response.choices = [MagicMock()]
+        response.choices[0].message.content = captured[-1]  # echo
+        response.usage = MagicMock(prompt_tokens=5, completion_tokens=5, total_tokens=10)
+        return response
+
+    client = AsyncMock()
+    client.chat.completions.create = AsyncMock(side_effect=capture)
+
+    result = await translate_batch(
+        client,
+        ["Contact support@example.com or {{user_name}}"],
+        "en",
+        "vi",
+    )
+
+    # Neither email nor template var reached the model
+    assert "support@example.com" not in captured[0]
+    assert "{{user_name}}" not in captured[0]
+    # Both are restored in the output
+    assert "support@example.com" in result[0]
+    assert "{{user_name}}" in result[0]
+
+
+@pytest.mark.asyncio
+async def test_translate_batch_core05_masks_iso_date_and_version():
+    """ISO dates and version strings (v2.3.1) are masked and restored."""
+    from app.llm.translator import translate_batch
+
+    captured: list[str] = []
+
+    async def capture(**kwargs):
+        captured.append(kwargs["messages"][0]["content"])
+        response = MagicMock()
+        response.choices = [MagicMock()]
+        response.choices[0].message.content = captured[-1]
+        response.usage = MagicMock(prompt_tokens=5, completion_tokens=5, total_tokens=10)
+        return response
+
+    client = AsyncMock()
+    client.chat.completions.create = AsyncMock(side_effect=capture)
+
+    result = await translate_batch(
+        client,
+        ["Released v2.3.1 on 2026-04-24"],
+        "en",
+        "vi",
+    )
+
+    assert "v2.3.1" not in captured[0]
+    assert "2026-04-24" not in captured[0]
+    assert "v2.3.1" in result[0]
+    assert "2026-04-24" in result[0]
+
+
+@pytest.mark.asyncio
+async def test_translate_batch_core05_segment_without_placeholders_unchanged():
+    """Segments with no protected tokens pass through masking as no-ops."""
+    from app.llm.translator import translate_batch
+
+    captured: list[str] = []
+
+    async def capture(**kwargs):
+        captured.append(kwargs["messages"][0]["content"])
+        response = MagicMock()
+        response.choices = [MagicMock()]
+        response.choices[0].message.content = "Xin chào"
+        response.usage = MagicMock(prompt_tokens=5, completion_tokens=5, total_tokens=10)
+        return response
+
+    client = AsyncMock()
+    client.chat.completions.create = AsyncMock(side_effect=capture)
+
+    result = await translate_batch(client, ["Hello world"], "en", "vi")
+
+    # No markers introduced; content sent verbatim (after NFC)
+    assert "⟦T" not in captured[0]
+    assert captured[0] == "Hello world"
+    assert result == ["Xin chào"]

@@ -27,6 +27,7 @@ from typing import Sequence
 from openai import APIConnectionError, APIStatusError, AsyncOpenAI, RateLimitError
 
 from app.llm.terminology import glossary_to_terms
+from app.pipeline.placeholder import extract_placeholders, restore_placeholders
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +75,10 @@ async def translate_batch(
     - CORE-03: returned list length == input length (guaranteed by per-segment calls,
                no parsing step that could miscount)
     - CORE-04: NFC normalization applied to every input AND output string
-    - CORE-05: whitespace-only / digit-only segments are passed through unchanged
+    - CORE-05: whitespace-only / digit-only segments are passed through unchanged;
+               URLs, emails, {{template_vars}}, ${vars}, ISO dates, and version
+               strings are masked with ⟦T{n}⟧ markers before the model call and
+               restored afterwards so they never get translated or hallucinated
 
     Args:
         client: AsyncOpenAI instance pointed at DashScope intl endpoint
@@ -107,6 +111,9 @@ async def translate_batch(
         if _is_passthrough(text):
             return text
 
+        # CORE-05: mask URLs/emails/template vars/dates/versions before the model call
+        masked, tokens = extract_placeholders(text)
+
         last_exc: Exception | None = None
         for attempt in range(_PER_CALL_MAX_RETRIES):
             async with sem:
@@ -116,7 +123,7 @@ async def translate_batch(
                     # max_tokens=4096 required (AI-SPEC §4b.3)
                     response = await client.chat.completions.create(
                         model=model,
-                        messages=[{"role": "user", "content": text}],
+                        messages=[{"role": "user", "content": masked}],
                         extra_body={"translation_options": translation_options},
                         max_tokens=4096,
                     )
@@ -124,7 +131,10 @@ async def translate_batch(
                     # Forced pacing — spaces out successful calls to stay under RPM cap
                     if _PACE_SECONDS > 0:
                         await asyncio.sleep(_PACE_SECONDS)
-                    return _nfc(content) if content is not None else ""
+                    if content is None:
+                        return ""
+                    # CORE-05: restore original tokens into the translated output
+                    return restore_placeholders(_nfc(content), tokens)
                 except RateLimitError as exc:
                     last_exc = exc
                 except APIStatusError as exc:
