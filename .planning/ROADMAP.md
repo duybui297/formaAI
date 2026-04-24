@@ -60,10 +60,10 @@ Plans:
 **Plans**: 7 plans
 
 Plans:
-- [ ] 02-01-deps-test-scaffolding-PLAN.md — npm deps install, shadcn adds, test stub scaffolding
-- [ ] 02-02-db-migration-models-PLAN.md — Alembic migration 0002, SQLAlchemy model extensions
-- [ ] 02-03-glossary-backend-PLAN.md — Glossary CRUD service + REST endpoints + CSV/TBX import
-- [ ] 02-04-segment-export-backend-PLAN.md — Segment routes, export service, worker extension
+- [x] 02-01-deps-test-scaffolding-PLAN.md — npm deps install, shadcn adds, test stub scaffolding
+- [x] 02-02-db-migration-models-PLAN.md — Alembic migration 0002, SQLAlchemy model extensions
+- [x] 02-03-glossary-backend-PLAN.md — Glossary CRUD service + REST endpoints + CSV/TBX import
+- [x] 02-04-segment-export-backend-PLAN.md — Segment routes, export service, worker extension
 - [ ] 02-05-glossary-frontend-PLAN.md — Types, paper fonts, FlagBadge, GlossarySelect, glossary pages
 - [ ] 02-06-review-frontend-PLAN.md — useSegments, SegmentTable, SegmentRow, review page, keyboard nav
 - [ ] 02-07-integration-docs-PLAN.md — E2E test, planning artifact updates, VALIDATION.md completion
