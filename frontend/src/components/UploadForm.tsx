@@ -47,17 +47,15 @@ export function UploadForm() {
   const handleFile = useCallback(async (f: File) => {
     const ext = getExt(f.name)
     if (!ALLOWED_EXTS.has(ext)) {
-      toast({
-        variant: "destructive",
-        description: "Unsupported file type. Phase 1 accepts .docx only.",
-      })
+      const msg = "Unsupported file type. Phase 1 accepts .docx only."
+      setError(msg)
+      toast({ variant: "destructive", description: msg })
       return
     }
     if (f.size > MAX_SIZE_BYTES) {
-      toast({
-        variant: "destructive",
-        description: "File too large — maximum is 25 MB.",
-      })
+      const msg = "File too large — maximum is 25 MB."
+      setError(msg)
+      toast({ variant: "destructive", description: msg })
       return
     }
     setError(null)
