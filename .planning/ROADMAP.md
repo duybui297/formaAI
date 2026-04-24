@@ -64,8 +64,8 @@ Plans:
 - [x] 02-02-db-migration-models-PLAN.md — Alembic migration 0002, SQLAlchemy model extensions
 - [x] 02-03-glossary-backend-PLAN.md — Glossary CRUD service + REST endpoints + CSV/TBX import
 - [x] 02-04-segment-export-backend-PLAN.md — Segment routes, export service, worker extension
-- [ ] 02-05-glossary-frontend-PLAN.md — Types, paper fonts, FlagBadge, GlossarySelect, glossary pages
-- [ ] 02-06-review-frontend-PLAN.md — useSegments, SegmentTable, SegmentRow, review page, keyboard nav
+- [x] 02-05-glossary-frontend-PLAN.md — Types, paper fonts, FlagBadge, GlossarySelect, glossary pages
+- [x] 02-06-review-frontend-PLAN.md — useSegments, SegmentTable, SegmentRow, review page, keyboard nav
 - [ ] 02-07-integration-docs-PLAN.md — E2E test, planning artifact updates, VALIDATION.md completion
 
 **UI hint**: yes
