@@ -87,8 +87,9 @@ Requirements for the 2–3 week demo for the AICore team (an AI-native startup).
 ### Smart Layout (differentiator)
 
 - [ ] **LAYOUT-01**: Text-expansion ratio is calculated per segment (`len(target) / len(source)`) and surfaced in review for any segment above a configurable threshold
-- [ ] **LAYOUT-02**: Format-specific overflow detectors run post-translation (PPTX text-box height, PDF bbox width) and set flags on the segment
-- [ ] **LAYOUT-03**: Auto-fit strategies are applied conservatively (PPTX text-to-fit-shape; PDF font scaling within ±2pt) and recorded as "auto-adjusted" in the segment metadata
+<!-- LAYOUT-02 and LAYOUT-03 are Phase 3 scope (D-02-13: deferred from Phase 2 per 02-CONTEXT.md) -->
+- [ ] **LAYOUT-02**: Format-specific overflow detectors run post-translation (PPTX text-box height, PDF bbox width) and set flags on the segment (Phase 3)
+- [ ] **LAYOUT-03**: Auto-fit strategies are applied conservatively (PPTX text-to-fit-shape; PDF font scaling within ±2pt) and recorded as "auto-adjusted" in the segment metadata (Phase 3)
 
 ### Multi-lingual Support
 
@@ -200,8 +201,8 @@ Each v1 requirement maps to exactly one phase.
 | REV-05 | Phase 2 | Pending |
 | REV-06 | Phase 2 | Pending |
 | LAYOUT-01 | Phase 2 | Pending |
-| LAYOUT-02 | Phase 2 | Pending |
-| LAYOUT-03 | Phase 2 | Pending |
+| LAYOUT-02 | Phase 3 | Pending |
+| LAYOUT-03 | Phase 3 | Pending |
 | PPTX-01 | Phase 3 | Pending |
 | PPTX-02 | Phase 3 | Pending |
 | PPTX-03 | Phase 3 | Pending |
@@ -226,8 +227,8 @@ Each v1 requirement maps to exactly one phase.
 | Phase | Requirements | Count |
 |-------|-------------|-------|
 | Phase 1: Foundation + DOCX Pipeline | INFRA-01–05, UPLD-01–05, CORE-01–06, JOB-01–04, DOCX-01–04, LANG-01–02 | 26 |
-| Phase 2: Review UX + Glossary | GLOS-01–05, REV-01–06, LAYOUT-01–03 | 14 |
-| Phase 3: PPTX + Native PDF | PPTX-01–04, PDF-01–04 | 8 |
+| Phase 2: Review UX + Glossary | GLOS-01–05, REV-01–06, LAYOUT-01 | 12 |
+| Phase 3: PPTX + Native PDF | PPTX-01–04, PDF-01–04, LAYOUT-02–03 | 10 |
 | Phase 4: Scanned PDF (OCR) | OCR-01–04 | 4 |
 | Phase 5: Demo Hardening | DEMO-01–03 | 3 |
 | **Total** | | **55** |

@@ -226,7 +226,11 @@ A web-based AI document translation PoC that takes office documents (DOCX, PDF, 
 <!-- GSD:conventions-start source:CONVENTIONS.md -->
 ## Conventions
 
-Conventions not yet established. Will populate as patterns emerge during development.
+### Frontend
+
+**CAT-tool segment table pattern (Phase 2, D-02-14):** Review UI uses shadcn Table + Textarea per row (NOT Monaco DiffEditor). react-virtuoso handles variable-height virtualization. TanStack Query v5 optimistic mutations with `onMutate → cancelQueries → setQueryData → onError rollback` for segment PATCH. Monaco DiffEditor remains in package.json but is not used for the review view; re-evaluate removal after Phase 3.
+
+**Paper skill fonts (Phase 2, D-02-27):** Roboto (body), Montserrat (headings), PT Mono (source cells). Loaded via `next/font/google` in `frontend/src/app/layout.tsx` with CSS variables `--font-roboto`, `--font-montserrat`, `--font-pt-mono`. Apply to new Phase 2+ screens first; Phase 1 screens opportunistically.
 <!-- GSD:conventions-end -->
 
 <!-- GSD:architecture-start source:ARCHITECTURE.md -->
