@@ -36,7 +36,7 @@ describe("useCounterAnimation", () => {
   })
 
   it("starts at previous value and animates toward new target", () => {
-    // Mock requestAnimationFrame
+    // Mock requestAnimationFrame — capture the last scheduled callback
     let rafCallback: ((time: number) => void) | null = null
     const rafSpy = vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation((cb) => {
       rafCallback = cb
@@ -51,22 +51,27 @@ describe("useCounterAnimation", () => {
 
     expect(result.current).toBe(0)
 
-    // Change target to 100 — should start animation
+    // Change target to 100 — should schedule RAF
     rerender({ target: 100 })
 
-    // At start of animation, display is still near 0
     expect(rafSpy).toHaveBeenCalled()
     expect(rafCallback).not.toBeNull()
 
-    // Simulate RAF at t=150ms (50% progress)
+    // First RAF call at t=0 sets startRef, progress=0, reschedules
     act(() => {
-      rafCallback!(150)
+      rafCallback!(0)
+    })
+    expect(result.current).toBe(0) // progress=0 at start
+
+    // Second RAF call at t=150ms (50% progress)
+    act(() => {
+      if (rafCallback) rafCallback(150)
     })
     // Should be around 50 at 50% progress
     expect(result.current).toBeGreaterThanOrEqual(40)
     expect(result.current).toBeLessThanOrEqual(60)
 
-    // Simulate RAF at t=300ms (100% progress — done)
+    // Final RAF call at t=300ms (100% progress — done)
     act(() => {
       if (rafCallback) rafCallback(300)
     })
