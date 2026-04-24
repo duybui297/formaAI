@@ -3,7 +3,7 @@ phase: 02-review-ux-glossary
 plan: "04"
 type: execute
 wave: 1
-depends_on: ["02-02"]
+depends_on: ["02-02", "02-03"]
 files_modified:
   - backend/src/app/services/export_service.py
   - backend/src/app/api/routes/segments.py
@@ -34,9 +34,11 @@ must_haves:
     - "Expansion ratio stored as segments.expansion_ratio per segment"
     - "Export advisory lock prevents concurrent corrupt-write"
     - "Export does NOT mutate segment rows"
+    - "Export write is atomic: tmp file written then os.replace to prevent readers seeing partial writes"
+    - "PATCH /segments/{id} validates job status is done or needs_review before update"
   artifacts:
     - path: "backend/src/app/services/export_service.py"
-      provides: "Idempotent DOCX export with advisory lock"
+      provides: "Idempotent DOCX export with advisory lock and atomic write"
       exports: ["export_job"]
     - path: "backend/src/app/api/routes/segments.py"
       provides: "Segment PATCH + GET list + regenerate endpoints"
@@ -66,9 +68,9 @@ must_haves:
 ---
 
 <objective>
-Implement the segment and export backend: segments.py route (GET list with flags, PATCH edit, POST regenerate), export_service.py (advisory lock + idempotent reassembly), export.py route, and translate_worker.py extension (glossary injection + post-check call + expansion ratio).
+Implement the segment and export backend: segments.py route (GET list with flags, PATCH edit with job-state gate, POST regenerate), export_service.py (advisory lock + idempotent atomic reassembly), export.py route, and translate_worker.py extension (glossary injection + post-check call + expansion ratio).
 
-Purpose: This plan delivers REV-01..06, GLOS-03/04, LAYOUT-01 on the backend. Frontend review page (Plan 06) depends on these endpoints. Can run in parallel with Plan 03 (zero file overlap). run_post_check is implemented in Plan 03 (glossary_service.py) and imported here — no race condition.
+Purpose: This plan delivers REV-01..06, GLOS-03/04, LAYOUT-01 on the backend. Frontend review page (Plan 06) depends on these endpoints. Depends on Plan 03 (depends_on: ["02-02", "02-03"]) — Plan 04 imports run_post_check and load_glossary_terms_for_job from glossary_service.py which Plan 03 implements. The depends_on includes "02-03" to prevent parallel execution before glossary_service.py exists.
 Output: Full segment management REST surface + export endpoint + worker augmented with glossary injection and post-check.
 </objective>
 
@@ -108,7 +110,7 @@ class SegmentFlag(Base):
 class Job(Base):
     id, status, source_lang, target_lang, input_path, output_path, original_filename
     glossary_id: Mapped[str | None]  # NEW Phase 2
-    status: Mapped[JobStatus]  # done / needs_review = exportable states
+    status: Mapped[JobStatus]  # done / needs_review = reviewable/exportable states
 
 class JobStatus(str, enum.Enum): queued/running/needs_review/failed/done
 ```
@@ -156,7 +158,7 @@ async def run_post_check(
 <tasks>
 
 <task type="auto" tdd="true">
-  <name>Task 1: Implement export_service.py with advisory lock</name>
+  <name>Task 1: Implement export_service.py with advisory lock and atomic write</name>
   <files>
     backend/src/app/services/export_service.py
   </files>
@@ -173,7 +175,8 @@ async def run_post_check(
     - Raises ValueError if job not in done/needs_review state
     - Builds translated_map using: `edited_text if edited_text is not None else translated_text or ""`
     - Does NOT mutate any Segment row during export
-    - Writes to {data_dir}/jobs/{job_id}/output.docx (overwrite, idempotent)
+    - Writes atomically: doc.save(tmp_path) then os.replace(tmp_path, output_path) — prevents partial reads
+    - output_path is {data_dir}/jobs/{job_id}/output.docx
     - get_export_lock uses WeakValueDictionary to avoid memory leak
     - Concurrent exports on same job_id: second waits, then produces same output (idempotent)
   </behavior>
@@ -182,7 +185,7 @@ Create `backend/src/app/services/export_service.py`:
 
 ```python
 """
-Export service: idempotent DOCX reassembly with advisory lock.
+Export service: idempotent DOCX reassembly with advisory lock and atomic write.
 
 REV-05: Export reassembles using edited_text ?? translated_text.
 REV-06: Export is idempotent — re-exporting produces same output; does not mutate segments.
@@ -191,6 +194,10 @@ Advisory lock design (D-02-22):
 - asyncio.Lock per job_id stored in WeakValueDictionary
 - In-process lock is sufficient for single-uvicorn-process PoC
 - TODO(v2): upgrade to pg_advisory_lock if deploying multiple API workers
+
+Atomic write: doc.save(tmp_path) then os.replace(tmp_path, output_path)
+- Prevents a concurrent reader from seeing a half-written file during reassembly
+- os.replace is atomic on POSIX filesystems when src/dst are on same volume
 """
 from __future__ import annotations
 
@@ -235,7 +242,7 @@ async def export_job(
     """REV-05/06: Idempotent DOCX reassembly.
 
     Acquires per-job advisory lock, reads a snapshot of segment state,
-    reassembles using edited_text ?? translated_text, writes output.docx.
+    reassembles using edited_text ?? translated_text, writes output.docx atomically.
     Does NOT mutate any segment rows.
 
     Returns the output file path as a string.
@@ -280,10 +287,13 @@ async def export_job(
         doc = Document(job.input_path)
         doc = reassemble_docx_runs(doc, segments, translated_map)
 
-        # Write to per-job output path (overwrite — idempotent per D-02-22)
+        # Atomic write: tmp file → os.replace → output_path
+        # Prevents concurrent reader seeing a half-written file (os.replace is atomic on POSIX)
         output_path = str(Path(data_dir) / "jobs" / job_id / "output.docx")
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
-        doc.save(output_path)
+        tmp_path = output_path + ".tmp"
+        doc.save(tmp_path)
+        os.replace(tmp_path, output_path)
 
         log.info(
             "export_complete",
@@ -303,11 +313,12 @@ async def export_job(
     - `export_job` raises ValueError for job in 'queued' state
     - Concurrent exports on same job_id do not corrupt output (advisory lock)
     - segment.edited_text="" (empty string) produces "" in output, not translated_text (Pitfall 5)
+    - Atomic write pattern: `tmp_path = output_path + ".tmp"` + `os.replace` visible in file
   </done>
 </task>
 
 <task type="auto" tdd="true">
-  <name>Task 2: Implement segments.py route (GET list, PATCH, POST regenerate) and export.py route</name>
+  <name>Task 2: Implement segments.py route (GET list, PATCH with job-state gate, POST regenerate) and export.py route</name>
   <files>
     backend/src/app/api/routes/segments.py
     backend/src/app/api/routes/export.py
@@ -323,12 +334,13 @@ async def export_job(
   </read_first>
   <behavior>
     - GET /jobs/{id}/segments → list of segments with flags embedded (REV-01)
-    - PATCH /segments/{id} → update edited_text (max 10000 chars), return {segment_id, edited_text} (REV-02)
+    - PATCH /segments/{id} → validates job status is done/needs_review (409 if not); update edited_text (max 10000 chars), return {segment_id, edited_text} (REV-02)
     - PATCH /segments/{id} with edited_text=null → clears edit; export will use translated_text (D-02-20)
     - POST /segments/{id}/regenerate → re-translate synchronously; overwrite translated_text; return new translated_text (REV-04)
     - POST /jobs/{id}/export → call export_service.export_job; return FileResponse (REV-05/06)
     - GET /jobs/{id}/segments loads flags via selectinload (flags are on Segment relationship)
     - Segment list response bundles flag_counts per flag_type (one GROUP BY query per RESEARCH Section 5)
+    - PATCH must check job.status in _REVIEWABLE_STATUSES before update; 409 on worker race
   </behavior>
   <action>
 **Create `backend/src/app/api/routes/segments.py`:**
@@ -338,7 +350,7 @@ async def export_job(
 Segment endpoints — REV-01, REV-02, REV-04.
 
 GET  /jobs/{id}/segments            — list with flags (REV-01)
-PATCH /segments/{id}                — persist edited_text (REV-02)
+PATCH /segments/{id}                — persist edited_text (REV-02); 409 if job not reviewable
 POST  /segments/{id}/regenerate     — sync re-translate, overwrite translated_text (REV-04)
 """
 from __future__ import annotations
@@ -444,13 +456,25 @@ async def patch_segment(
     body: SegmentPatchRequest,
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    """REV-02: Persist edited_text. edited_text=null clears the edit (reverts to translated_text on export)."""
+    """REV-02: Persist edited_text. edited_text=null clears the edit.
+
+    409 if job is not in done/needs_review state — prevents editing during active worker run.
+    """
     seg_result = await session.execute(
         select(Segment).where(Segment.id == segment_id)
     )
     seg = seg_result.scalar_one_or_none()
     if seg is None:
         raise HTTPException(status_code=404, detail="Segment not found")
+
+    # Gate: prevent editing while worker is still running (worker race guard)
+    job_result = await session.execute(select(Job).where(Job.id == seg.job_id))
+    job = job_result.scalar_one_or_none()
+    if job is None or job.status not in _REVIEWABLE_STATUSES:
+        raise HTTPException(
+            status_code=409,
+            detail="Job is not in a reviewable state (done or needs_review). Edits are only allowed after translation completes.",
+        )
 
     await session.execute(
         update(Segment)
@@ -546,6 +570,7 @@ async def export_document(
     """REV-05/06: Idempotent DOCX export using edited_text ?? translated_text.
 
     Advisory lock prevents concurrent corrupt-write (D-02-22).
+    Atomic write (tmp + os.replace) prevents partial-read race.
     Export does NOT mutate segment rows (REV-06).
     Returns FileResponse for browser download.
     """
@@ -585,6 +610,7 @@ Check backend/src/app/main.py for the exact import style used and match it.
     - test_segments.py xfail tests pass
     - GET /jobs/{id}/segments returns segments with flags (tested against SQLite)
     - PATCH /segments/{id} updates edited_text and returns 200
+    - PATCH /segments/{id} returns 409 when job is in 'queued' or 'running' state
     - POST /jobs/{id}/export returns 409 for non-exportable job state
   </done>
 </task>
@@ -688,9 +714,9 @@ Read the full worker file first to find the exact variable names (`batch_segs`, 
 
 | Boundary | Description |
 |----------|-------------|
-| client → PATCH /segments/{id} | edited_text is user-supplied; max 10,000 chars |
+| client → PATCH /segments/{id} | edited_text is user-supplied; max 10,000 chars; job-state gated |
 | client → POST /segments/{id}/regenerate | Triggers LLM call; must validate job state |
-| client → POST /jobs/{id}/export | Triggers file reassembly; advisory lock prevents race |
+| client → POST /jobs/{id}/export | Triggers file reassembly; advisory lock + atomic write prevents race |
 
 ## STRIDE Threat Register
 
@@ -699,8 +725,9 @@ Read the full worker file first to find the exact variable names (`batch_segs`, 
 | T-02-04-01 | DoS | PATCH /segments/{id} | mitigate | `edited_text` max_length=10,000 enforced by Pydantic Field; exceeding returns 422. |
 | T-02-04-02 | DoS | POST /segments/{id}/regenerate | mitigate | Validates job status is done/needs_review before calling LLM; 409 on invalid state. Single segment ~1-3s; acceptable for PoC. |
 | T-02-04-03 | Tampering | Export file path | accept | output_path is server-computed from job.input_path; not user-supplied. os.makedirs used with job_id from DB, not from request. |
-| T-02-04-04 | Integrity | Concurrent exports | mitigate | asyncio.Lock per job_id (WeakValueDictionary); second export waits, then produces identical output. In-process lock sufficient for single-process PoC. |
+| T-02-04-04 | Integrity | Concurrent exports | mitigate | asyncio.Lock per job_id (WeakValueDictionary) + atomic os.replace write; second export waits, then produces identical output. In-process lock sufficient for single-process PoC. |
 | T-02-04-05 | Tampering | Segment text in DOCX reassembly | accept | edited_text stored as TEXT; reassembler writes it as python-docx run text, auto-escaped by OOXML. No HTML injection vector. |
+| T-02-04-06 | Integrity | PATCH during active worker run | mitigate | PATCH /segments/{id} checks job.status in _REVIEWABLE_STATUSES; returns 409 if job is queued/running, preventing stale-write race with worker. |
 </threat_model>
 
 <verification>
@@ -712,12 +739,14 @@ After all tasks in this plan:
 4. `grep -n "glossary=glossary" backend/src/app/workers/translate_worker.py` — shows the wired line
 5. `grep -n "run_post_check" backend/src/app/workers/translate_worker.py` — shows import + call, NOT definition
 6. `grep "def run_post_check" backend/src/app/workers/translate_worker.py` — empty (not defined here)
-7. `uv run pytest backend/tests/ -m "not integration" -x -q` — all tests green
+7. `grep -n "os.replace" backend/src/app/services/export_service.py` — atomic write present
+8. `grep -n "_REVIEWABLE_STATUSES" backend/src/app/api/routes/segments.py` — job-state gate present in PATCH
+9. `uv run pytest backend/tests/ -m "not integration" -x -q` — all tests green
 </verification>
 
 <success_criteria>
-- export_service.py: idempotent, advisory-locked DOCX export
-- segments.py route: GET list with flags, PATCH, POST regenerate
+- export_service.py: idempotent, advisory-locked DOCX export with atomic write (tmp + os.replace)
+- segments.py route: GET list with flags, PATCH with job-state gate (409 when not done/needs_review), POST regenerate
 - export.py route: POST with FileResponse
 - translate_worker.py: glossary loaded, passed to translate_batch, run_post_check imported from glossary_service and called per batch
 - run_post_check NOT defined in translate_worker.py (import-only from Plan 03)

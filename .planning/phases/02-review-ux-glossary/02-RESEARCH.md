@@ -1237,6 +1237,11 @@ export function FlagBadge({ flagType }: { flagType: FlagType }) {
    - Recommendation: Bundle. `selectinload(Segment.flags)` is one extra JOIN. Avoids a second round-trip and simplifies frontend state. Re-evaluate if benchmark shows more than 2s load time.
    - **RESOLVED:** Plan 04 Task 2 — flag_counts bundled in GET /jobs/{id}/segments response as a GROUP BY sub-query. Returns `{"segments": [...], "flag_counts": {"overflow": N, ...}, "total": N}`. No second round-trip.
 
+
+4. **llm_refusal heuristic: false positives on short terms**
+   - What we know: The original heuristic flagged `llm_refusal` when `translated == source OR len(translated) < 3`. This caused false positives on short valid translations like "AI" → "AI" (correct: acronym stays as-is).
+   - What was unclear: Where to set the length threshold to distinguish "acronym preserved correctly" from "LLM refused to translate".
+   - **RESOLVED (cross-AI review):** Plan 03 Task 1 — heuristic changed to `len(source_stripped) > 8 AND translated_stripped == source_stripped`. Removes the `len < 3` branch entirely. Only flags identical output when the source is longer than 8 characters, which excludes acronyms (AI, OK, etc.) and short proper nouns while still catching genuine refusals on normal-length sentences. Documented in Plan 03 action and test_post_check.py::test_llm_refusal_flag_written (source "Hello world" = 11 chars > 8 threshold).
 ---
 
 ## Environment Availability

@@ -24,6 +24,7 @@ must_haves:
     - "POST /glossaries creates a new glossary row with name, source_lang, target_lang"
     - "GET /glossaries/{id}/terms returns all terms for the glossary"
     - "POST /glossaries/{id}/terms creates a new term (source_term, target_term, notes)"
+    - "PATCH /glossaries/{id}/terms/{term_id} updates source_term, target_term, or notes"
     - "POST /glossaries/{id}/terms/import accepts CSV and TBX files and bulk-inserts terms"
     - "DELETE /glossaries/{id} removes glossary and cascades to terms"
     - "POST /upload accepts optional glossary_id Form field; 422 if pair mismatches"
@@ -34,9 +35,9 @@ must_haves:
   artifacts:
     - path: "backend/src/app/services/glossary_service.py"
       provides: "Glossary CRUD + CSV/TBX parsers + load_glossary_terms_for_job + run_post_check"
-      exports: ["create_glossary", "get_glossary", "list_glossaries", "update_glossary_name", "delete_glossary", "create_term", "delete_term", "import_csv_terms", "parse_csv_glossary", "parse_tbx_minimal", "load_glossary_terms_for_job", "run_post_check"]
+      exports: ["create_glossary", "get_glossary", "list_glossaries", "update_glossary_name", "delete_glossary", "create_term", "update_term", "delete_term", "import_csv_terms", "parse_csv_glossary", "parse_tbx_minimal", "load_glossary_terms_for_job", "run_post_check"]
     - path: "backend/src/app/api/routes/glossaries.py"
-      provides: "Full glossary REST surface (replaces Phase 1 stub)"
+      provides: "Full glossary REST surface (replaces Phase 1 stub) including PATCH term endpoint"
       exports: ["router"]
     - path: "backend/src/app/api/routes/upload.py"
       provides: "upload endpoint extended with glossary_id Form field"
@@ -56,9 +57,9 @@ must_haves:
 ---
 
 <objective>
-Implement the full glossary backend: glossary_service.py (CRUD helpers + CSV/TBX parsers + glossary term loader + run_post_check with all 4 flag detectors), glossaries.py route (replaces Phase 1 stub), upload.py extension (glossary_id Form field + pair validation), job_service.py extension (persist glossary_id on job creation).
+Implement the full glossary backend: glossary_service.py (CRUD helpers + CSV/TBX parsers + glossary term loader + run_post_check with all 4 flag detectors), glossaries.py route (replaces Phase 1 stub with full 10-endpoint surface including PATCH term), upload.py extension (glossary_id Form field + pair validation), job_service.py extension (persist glossary_id on job creation).
 
-Purpose: This plan delivers GLOS-01, GLOS-02, GLOS-03 (prep — worker wired in Plan 04), GLOS-04 (run_post_check implementation), GLOS-05. All glossary CRUD endpoints are live after this plan. Plan 04 Task 3 imports run_post_check from this module — no file conflict.
+Purpose: This plan delivers GLOS-01, GLOS-02, GLOS-03 (prep — worker wired in Plan 04), GLOS-04 (run_post_check implementation), GLOS-05. All glossary CRUD endpoints are live after this plan. Plan 04 Task 3 imports run_post_check from this module — no file conflict. Plan 05 TermsTable.tsx calls PATCH /glossaries/{id}/terms/{term_id} — that endpoint is implemented here.
 Output: Full REST surface for glossary management plus post-check logic. Frontend glossary pages (Plan 05) and worker glossary injection (Plan 04) depend on these endpoints and service functions.
 </objective>
 
@@ -171,15 +172,17 @@ async def create_job(
     - update_glossary_name(session, glossary_id, name) → Glossary | None
     - delete_glossary(session, glossary_id) → bool (True if deleted, False if not found)
     - create_term(session, glossary_id, source_term, target_term, notes) → GlossaryTerm; raises IntegrityError on duplicate source_term
+    - update_term(session, term_id, *, source_term=None, target_term=None, notes=None) → GlossaryTerm | None
     - delete_term(session, term_id) → bool
     - import_csv_terms(session, glossary, content, ext) → {"imported": N, "skipped_duplicates": M}
     - parse_csv_glossary(content: bytes, encoding="utf-8-sig") → list[dict]; raises ValueError on missing headers or short terms
     - parse_tbx_minimal(content: bytes, source_lang: str, target_lang: str) → list[dict]
     - load_glossary_terms_for_job(session, glossary_id: str | None) → dict[str, str] | None
-    - run_post_check: overflow flag if expansion_ratio > threshold (lang-pair keyed)
-    - run_post_check: glossary_violation flag if target term absent from translation (case-insensitive, min 2 chars per D-02-07)
-    - run_post_check: placeholder_mismatch flag if ⟦T{n}⟧ token present in source but absent from translation (Phase 1 CORE-05)
-    - run_post_check: llm_refusal flag if translated.strip() == source.strip() OR len(translated.strip()) < 3
+    - run_post_check: overflow flag if expansion_ratio > threshold (lang-pair keyed) → severity warn
+    - run_post_check: glossary_violation flag if target term absent from translation (case-insensitive, min 2 chars per D-02-07) → severity warn
+    - run_post_check: placeholder_mismatch flag if ⟦T{n}⟧ token present in source but absent from translation (Phase 1 CORE-05) → severity warn
+    - run_post_check: llm_refusal flag ONLY if len(source_stripped) > 8 AND translated_stripped == source_stripped → severity warn
+    - All Phase 2 flag severities use FlagSeverity.warn per D-02-09 (Claude's Discretion note: "warn for all Phase 2 flag types")
   </behavior>
   <action>
 Create `backend/src/app/services/glossary_service.py`:
@@ -316,6 +319,47 @@ async def create_term(
         notes=notes,
     )
     session.add(t)
+    try:
+        await session.commit()
+    except IntegrityError:
+        await session.rollback()
+        raise
+    await session.refresh(t)
+    return t
+
+
+async def update_term(
+    session: AsyncSession,
+    term_id: str,
+    *,
+    source_term: str | None = None,
+    target_term: str | None = None,
+    notes: str | None = None,
+) -> GlossaryTerm | None:
+    """GLOS-01: Update source_term, target_term, and/or notes on a glossary term.
+
+    Returns None if term not found.
+    Raises ValueError if updated term would be shorter than 2 chars (D-02-07).
+    Raises IntegrityError if updated source_term creates a duplicate (D-02-03).
+    """
+    result = await session.execute(
+        select(GlossaryTerm).where(GlossaryTerm.id == term_id)
+    )
+    t = result.scalar_one_or_none()
+    if t is None:
+        return None
+
+    if source_term is not None:
+        if len(source_term.strip()) < 2:
+            raise ValueError("source_term must be at least 2 characters (D-02-07)")
+        t.source_term = source_term.strip()
+    if target_term is not None:
+        if len(target_term.strip()) < 2:
+            raise ValueError("target_term must be at least 2 characters (D-02-07)")
+        t.target_term = target_term.strip()
+    if notes is not None:
+        t.notes = notes
+
     try:
         await session.commit()
     except IntegrityError:
@@ -527,9 +571,11 @@ async def run_post_check(
     For each translated segment, runs 4 detectors in order:
     1. overflow: expansion_ratio > lang-pair threshold → FlagType.overflow (warn)
     2. glossary_violation: target term absent from translation (case-insensitive, min 2 chars per D-02-07) → FlagType.glossary_violation (warn)
-    3. placeholder_mismatch: ⟦T{n}⟧ token in source absent from translation (Phase 1 CORE-05) → FlagType.placeholder_mismatch (block)
-    4. llm_refusal: translated.strip() == source.strip() OR len(translated.strip()) < 3 → FlagType.llm_refusal (block)
+    3. placeholder_mismatch: ⟦T{n}⟧ token in source absent from translation (Phase 1 CORE-05) → FlagType.placeholder_mismatch (warn)
+    4. llm_refusal: ONLY when len(source_stripped) > 8 AND translated_stripped == source_stripped → FlagType.llm_refusal (warn)
+       Short tokens like "AI", "OK", "v2" are excluded to avoid false positives on acronyms/proper nouns.
 
+    All flags use FlagSeverity.warn per D-02-09 (Claude's Discretion: "warn for all Phase 2 flag types").
     Writes expansion_ratio to segments table.
     Writes all flags in a single add_all + flush per batch.
     """
@@ -591,20 +637,23 @@ async def run_post_check(
                     SegmentFlag(
                         segment_id=seg.id,
                         flag_type=FlagType.placeholder_mismatch,
-                        severity=FlagSeverity.block,
+                        severity=FlagSeverity.warn,
                         details={"missing_tokens": sorted(missing_tokens)},
                     )
                 )
 
-        # --- 4. llm_refusal: output identical to input OR too short ---
+        # --- 4. llm_refusal: output identical to input (only for non-trivial sources) ---
+        # Only flag when source is substantive (>8 chars) to avoid false positives on
+        # short acronyms ("AI", "OK"), version strings ("v2"), proper nouns that are
+        # intentionally unchanged. len < 3 check removed — too aggressive.
         translated_stripped = translated.strip()
         source_stripped = source.strip()
-        if translated_stripped == source_stripped or len(translated_stripped) < 3:
+        if len(source_stripped) > 8 and translated_stripped == source_stripped:
             flags_to_insert.append(
                 SegmentFlag(
                     segment_id=seg.id,
                     flag_type=FlagType.llm_refusal,
-                    severity=FlagSeverity.block,
+                    severity=FlagSeverity.warn,
                     details={"translated_len": len(translated_stripped), "source_len": len(source_stripped)},
                 )
             )
@@ -631,20 +680,21 @@ skipped = len(rows) - imported
   </verify>
   <done>
     - glossary_service.py exists and all functions import cleanly
-    - All 12 functions exported including run_post_check
+    - All 13 functions exported including update_term and run_post_check
     - test_glossary_service.py, test_csv_import.py, test_tbx_import.py xfail tests pass
-    - test_post_check.py: all 5 stubs pass (overflow, glossary_violation, placeholder_mismatch, llm_refusal, short term skip)
+    - test_post_check.py: all stubs pass (overflow, glossary_violation, placeholder_mismatch, llm_refusal, short term skip)
     - CSV: standard headers, BOM stripping, alias headers all parse correctly
     - TBX: TBX-Core format parses correctly; wrong-language pair returns []
     - load_glossary_terms_for_job returns None for None glossary_id
     - run_post_check writes glossary_violation only when source_term appears in source text
-    - run_post_check placeholder_mismatch: ⟦T1⟧ in source but not translated → flag written
-    - run_post_check llm_refusal: translated identical to source → flag written
+    - run_post_check placeholder_mismatch: ⟦T1⟧ in source but not translated → flag written (severity=warn)
+    - run_post_check llm_refusal: source > 8 chars AND identical → flag written (severity=warn); NOT fired on short strings like "AI" or "OK"
+    - All flags use FlagSeverity.warn (not block)
   </done>
 </task>
 
 <task type="auto" tdd="true">
-  <name>Task 2: Replace glossaries.py stub with full CRUD route</name>
+  <name>Task 2: Replace glossaries.py stub with full CRUD route (10 endpoints incl. PATCH term)</name>
   <files>
     backend/src/app/api/routes/glossaries.py
   </files>
@@ -663,6 +713,7 @@ skipped = len(rows) - imported
     - DELETE /glossaries/{id} → delete or 404 (204)
     - GET /glossaries/{id}/terms → list terms for glossary
     - POST /glossaries/{id}/terms → add term (201); 409 on duplicate source_term
+    - PATCH /glossaries/{id}/terms/{term_id} → update term fields (source_term, target_term, notes); 404 if not found; 409 on duplicate
     - DELETE /glossaries/{id}/terms/{term_id} → delete term (204)
     - POST /glossaries/{id}/terms/import → CSV/TBX import (200 with {imported, skipped_duplicates})
     - List response shape: {"glossaries": [GlossaryDict, ...]} — wrapped, matching Phase 1 /jobs pattern
@@ -674,15 +725,16 @@ Replace the entire content of `backend/src/app/api/routes/glossaries.py`:
 """
 Glossary CRUD routes — GLOS-01, GLOS-02, GLOS-05.
 
-GET    /glossaries                         — list all (filterable by lang pair)
-POST   /glossaries                         — create glossary
-GET    /glossaries/{id}                    — get glossary + term list
-PATCH  /glossaries/{id}                    — rename glossary
-DELETE /glossaries/{id}                    — delete glossary (cascades to terms)
-GET    /glossaries/{id}/terms              — list terms
-POST   /glossaries/{id}/terms              — add term
-DELETE /glossaries/{id}/terms/{term_id}    — delete term
-POST   /glossaries/{id}/terms/import       — bulk import CSV or TBX
+GET    /glossaries                              — list all (filterable by lang pair)
+POST   /glossaries                              — create glossary
+GET    /glossaries/{id}                         — get glossary + term list
+PATCH  /glossaries/{id}                         — rename glossary
+DELETE /glossaries/{id}                         — delete glossary (cascades to terms)
+GET    /glossaries/{id}/terms                   — list terms
+POST   /glossaries/{id}/terms                   — add term
+PATCH  /glossaries/{id}/terms/{term_id}         — update term (source_term, target_term, notes)
+DELETE /glossaries/{id}/terms/{term_id}         — delete term
+POST   /glossaries/{id}/terms/import            — bulk import CSV or TBX
 """
 from __future__ import annotations
 
@@ -705,6 +757,7 @@ from app.services.glossary_service import (
     import_csv_terms,
     list_glossaries,
     update_glossary_name,
+    update_term,
 )
 
 log = structlog.get_logger()
@@ -728,6 +781,12 @@ class RenameGlossaryRequest(BaseModel, frozen=True):
 class CreateTermRequest(BaseModel, frozen=True):
     source_term: str = Field(..., min_length=2, max_length=500)
     target_term: str = Field(..., min_length=2, max_length=500)
+    notes: str | None = Field(default=None, max_length=1000)
+
+
+class UpdateTermRequest(BaseModel, frozen=True):
+    source_term: str | None = Field(default=None, min_length=2, max_length=500)
+    target_term: str | None = Field(default=None, min_length=2, max_length=500)
     notes: str | None = Field(default=None, max_length=1000)
 
 
@@ -874,6 +933,42 @@ async def add_term_endpoint(
     return _term_to_dict(t)
 
 
+@router.patch("/glossaries/{glossary_id}/terms/{term_id}", status_code=200)
+async def update_term_endpoint(
+    glossary_id: str,
+    term_id: str,
+    body: UpdateTermRequest,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """GLOS-01: Update source_term, target_term, or notes on an existing term.
+
+    glossary_id is validated (404 if glossary not found).
+    Returns updated term dict.
+    409 if updated source_term creates a duplicate (D-02-03).
+    """
+    g = await get_glossary(session, glossary_id)
+    if g is None:
+        raise HTTPException(status_code=404, detail="Glossary not found")
+    try:
+        t = await update_term(
+            session,
+            term_id,
+            source_term=body.source_term,
+            target_term=body.target_term,
+            notes=body.notes,
+        )
+    except IntegrityError:
+        raise HTTPException(
+            status_code=409,
+            detail="A term with that source_term already exists in this glossary",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    if t is None:
+        raise HTTPException(status_code=404, detail="Term not found")
+    return _term_to_dict(t)
+
+
 @router.delete("/glossaries/{glossary_id}/terms/{term_id}", status_code=204)
 async def delete_term_endpoint(
     glossary_id: str,
@@ -933,6 +1028,7 @@ After creating the route, register it in `backend/src/app/api/__init__.py` (or `
     - GET /glossaries/{id} 404 for unknown id
     - DELETE /glossaries/{id} 204 for known id; 404 for unknown
     - GET /glossaries?source_lang=vi&target_lang=en filters correctly
+    - PATCH /glossaries/{id}/terms/{term_id} updates term; 404 for unknown term_id; 409 on duplicate source_term
   </done>
 </task>
 
@@ -1012,6 +1108,7 @@ Do NOT change any other behavior of upload.py or job_service.py. Do not touch er
 |----------|-------------|
 | client → POST /glossaries | Name field is user-supplied string |
 | client → POST /glossaries/{id}/terms/import | File content is user-supplied; may be malformed CSV/TBX |
+| client → PATCH /glossaries/{id}/terms/{term_id} | source_term/target_term/notes are user-supplied strings |
 | client → POST /upload with glossary_id | FK value is user-supplied; must validate pair match |
 
 ## STRIDE Threat Register
@@ -1028,19 +1125,21 @@ Do NOT change any other behavior of upload.py or job_service.py. Do not touch er
 After all tasks in this plan:
 
 1. `uv run pytest backend/tests/services/test_glossary_service.py backend/tests/services/test_csv_import.py backend/tests/services/test_tbx_import.py -x -q` — xfail tests pass
-2. `uv run pytest backend/tests/services/test_post_check.py -x -q` — all 5 stubs pass (overflow, glossary_violation, placeholder_mismatch, llm_refusal, short-term skip)
+2. `uv run pytest backend/tests/services/test_post_check.py -x -q` — all stubs pass (overflow, glossary_violation, placeholder_mismatch, llm_refusal, short-term skip)
 3. `uv run pytest backend/tests/api/test_glossaries.py -x -q` — tests pass
 4. `uv run pytest backend/tests/api/test_upload.py -x -q` — existing upload tests still pass
 5. `grep -q "glossary_id" backend/src/app/services/job_service.py` — exits 0
-6. `uv run pytest backend/tests/ -m "not integration" -x -q` — all tests green
+6. `grep -q "PATCH.*terms.*term_id" backend/src/app/api/routes/glossaries.py` — exits 0 (PATCH term endpoint present)
+7. `uv run pytest backend/tests/ -m "not integration" -x -q` — all tests green
 </verification>
 
 <success_criteria>
-- glossary_service.py implements all CRUD + CSV/TBX parsers + load_glossary_terms_for_job + run_post_check (all 4 flag types)
-- glossaries.py route has all 9 endpoints; GET /glossaries returns {"glossaries": [...]} (wrapped)
+- glossary_service.py implements all CRUD (including update_term) + CSV/TBX parsers + load_glossary_terms_for_job + run_post_check (all 4 flag types, all severity=warn)
+- glossaries.py route has all 10 endpoints including PATCH /glossaries/{id}/terms/{term_id}; GET /glossaries returns {"glossaries": [...]} (wrapped)
 - upload.py accepts glossary_id Form field; validates pair match (422 on mismatch)
 - job_service.py persists glossary_id on job creation
-- run_post_check writes overflow, glossary_violation, placeholder_mismatch, llm_refusal flags
+- run_post_check: llm_refusal only fires when len(source_stripped) > 8 AND identical (no false positives on "AI", "OK", "v2")
+- run_post_check: all flags use severity=warn (not block)
 - All 131+ existing unit tests still pass
 </success_criteria>
 

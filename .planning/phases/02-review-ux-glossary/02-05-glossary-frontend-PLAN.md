@@ -120,6 +120,16 @@ const FLAG_CONFIG: Record<FlagType, { label: string; className: string }> = {
   llm_refusal:           { label: "Refusal",     className: "text-red-700 bg-red-50 border-red-200" },
 };
 ```
+
+<!-- Radix UI SelectItem runtime constraint (CRITICAL) -->
+<!-- SelectItem value="" throws at runtime: "A <Select.Item /> must have a value prop that is not an empty string." -->
+<!-- Use sentinel value="__none__" and map back to "" in onChange handler -->
+<!-- Pattern:
+  value={value || "__none__"}
+  onValueChange={(v) => onChange(v === "__none__" ? "" : v)}
+  ...
+  <SelectItem value="__none__">None</SelectItem>
+-->
 </interfaces>
 </context>
 
@@ -226,7 +236,7 @@ The className addition merges with any existing className on html. Use template 
 </task>
 
 <task type="auto" tdd="true">
-  <name>Task 2: Create FlagBadge, GlossarySelect, extend NavBar</name>
+  <name>Task 2: Create FlagBadge, GlossarySelect (with __none__ sentinel), extend NavBar</name>
   <files>
     frontend/src/components/FlagBadge.tsx
     frontend/src/components/GlossarySelect.tsx
@@ -234,6 +244,8 @@ The className addition merges with any existing className on html. Use template 
   </files>
   <behavior>
     - FlagBadge renders correct semantic color per flag type per UI-SPEC color table
+    - GlossarySelect uses value="__none__" sentinel for the "None" option — Radix throws on value=""
+    - GlossarySelect maps __none__ back to "" in onValueChange before calling parent onChange
     - GlossarySelect renders "No glossary" empty state when no glossaries match lang pair
     - GlossarySelect passes selected glossary_id to parent via onChange callback
     - GlossarySelect extracts .glossaries from API response (response shape: {"glossaries": Glossary[]})
@@ -274,7 +286,10 @@ export function FlagBadge({ flagType, className }: FlagBadgeProps) {
 
 **GlossarySelect.tsx** — analog: `src/components/LanguageSelect.tsx`. Uses shadcn Select. Fetches `GET /api/glossaries?source_lang=X&target_lang=Y` via TanStack Query.
 
-CRITICAL: The API returns `{"glossaries": Glossary[]}` (wrapped object). Extract `.glossaries` from the response — do NOT use `res.json()` directly as `Glossary[]`.
+CRITICAL: The API returns `{"glossaries": Glossary[]}` (wrapped object). Extract `.glossaries` from the response.
+
+CRITICAL: Radix UI `<SelectItem>` throws at runtime when `value=""`.
+Use sentinel `value="__none__"` for the "None" option and map it back to `""` in `onValueChange`.
 
 ```tsx
 "use client";
@@ -284,10 +299,12 @@ import {
 } from "@/components/ui/select";
 import type { Glossary } from "@/lib/types";
 
+const NONE_SENTINEL = "__none__";
+
 interface GlossarySelectProps {
   sourceLang: string;
   targetLang: string;
-  value: string;          // glossary_id or ""
+  value: string;          // glossary_id or "" (empty = none selected)
   onChange: (id: string) => void;
 }
 
@@ -305,12 +322,15 @@ export function GlossarySelect({ sourceLang, targetLang, value, onChange }: Glos
     enabled,
   });
 
+  // Map "" → NONE_SENTINEL for Radix (value="" throws at runtime)
+  const selectValue = value || NONE_SENTINEL;
+
   return (
     <div className="flex flex-col gap-1">
       <label className="text-xs text-slate-500 font-roboto">Glossary (optional)</label>
       <Select
-        value={value}
-        onValueChange={onChange}
+        value={selectValue}
+        onValueChange={(v) => onChange(v === NONE_SENTINEL ? "" : v)}
         disabled={!enabled || isLoading}
       >
         <SelectTrigger className="w-full">
@@ -322,7 +342,8 @@ export function GlossarySelect({ sourceLang, targetLang, value, onChange }: Glos
           } />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="">None</SelectItem>
+          {/* Use NONE_SENTINEL — Radix throws on value="" */}
+          <SelectItem value={NONE_SENTINEL}>None</SelectItem>
           {glossaries.map((g) => (
             <SelectItem key={g.id} value={g.id}>
               {g.name}
@@ -346,7 +367,14 @@ export function GlossarySelect({ sourceLang, targetLang, value, onChange }: Glos
   <verify>
     <automated>cd /home/thu/dev/projects/ai-translation/frontend && npx tsc --noEmit 2>&1 | head -30</automated>
   </verify>
-  <done>FlagBadge.tsx, GlossarySelect.tsx, NavBar.tsx exist. TypeScript clean. FlagBadge renders correct colors per UI-SPEC. GlossarySelect extracts `.glossaries` from API response. NavBar has Glossaries link.</done>
+  <done>
+    FlagBadge.tsx, GlossarySelect.tsx, NavBar.tsx exist. TypeScript clean.
+    FlagBadge renders correct colors per UI-SPEC.
+    GlossarySelect uses value="__none__" for None option (not value="") — no Radix runtime throw.
+    GlossarySelect onValueChange maps __none__ → "" before calling parent onChange.
+    GlossarySelect extracts `.glossaries` from API response.
+    NavBar has Glossaries link.
+  </done>
 </task>
 
 <task type="auto">
@@ -548,6 +576,7 @@ Import `GlossarySelect` from `"@/components/GlossarySelect"`. Do NOT remove or b
     /glossaries/[id] page renders TermsTable + CSVUploadButton.
     UploadForm includes GlossarySelect after language fields.
     No existing UploadForm logic broken.
+    GlossarySelect uses value="__none__" sentinel — no Radix runtime throw on "None" item.
   </done>
 </task>
 
@@ -579,16 +608,19 @@ After all tasks complete:
 3. Font variables present in html element className (inspect DOM or check layout.tsx)
 4. FlagBadge renders amber/violet/orange/red per flag type (manual or snapshot test)
 5. GlossarySelect disabled when languages not selected; shows filtered list when selected
-6. /glossaries page loads and renders "Create Glossary" button
-7. /glossaries/[id] page renders TermsTable with term rows
-8. UploadForm includes glossary picker after language fields
-9. CSVUploadButton visible on glossary detail page
+6. GlossarySelect "None" SelectItem has value="__none__" (not value="") — no Radix runtime throw
+7. /glossaries page loads and renders "Create Glossary" button
+8. /glossaries/[id] page renders TermsTable with term rows
+9. UploadForm includes glossary picker after language fields
+10. CSVUploadButton visible on glossary detail page
 </verification>
 
 <success_criteria>
 - All 12 files created/modified with zero TypeScript errors
 - FlagBadge: exactly 4 color configs matching UI-SPEC semantic flag colors
 - GlossarySelect: queryFn extracts `.glossaries` from `{"glossaries": Glossary[]}` response (not bare array)
+- GlossarySelect: SelectItem for "None" uses value="__none__" sentinel (NOT value="") — Radix runtime safe
+- GlossarySelect: onValueChange maps "__none__" → "" before calling parent onChange
 - GlossarySelect: disabled when source/target lang empty; shows empty state with link to /glossaries when no matches
 - NavBar: "Glossaries" link present, navigates to /glossaries
 - /glossaries: queryFn extracts `.glossaries` from response; lists glossaries, opens create dialog, supports delete

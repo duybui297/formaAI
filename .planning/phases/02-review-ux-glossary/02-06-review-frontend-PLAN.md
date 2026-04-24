@@ -366,7 +366,7 @@ export function useReviewKeyboard({
 </task>
 
 <task type="auto">
-  <name>Task 2: Create SegmentTable, SegmentRow, ReviewFilterBar, ReviewPageHeader, KeyboardHelpPanel</name>
+  <name>Task 2: Create SegmentTable, SegmentRow (with onError saveState reset), ReviewFilterBar, ReviewPageHeader, KeyboardHelpPanel (Fragment key fix)</name>
   <files>
     frontend/src/components/SegmentTable.tsx
     frontend/src/components/SegmentRow.tsx
@@ -443,12 +443,10 @@ export const SegmentTable = forwardRef<SegmentTableHandle, SegmentTableProps>(
 
 **SegmentRow.tsx** — single row: index | source | target (debounced) | flags.
 
-Key states per UI-SPEC interaction contracts:
-- Default: `bg-white`
-- Hovered: `hover:bg-slate-50`
-- Focused: `ring-1 ring-violet-200`
-- TargetCell saving: dashed ring + "Saving…" footer text
-- TargetCell saved: "Saved" + Check icon, fades after 1.5s
+CRITICAL: `handleChange` sets `setSaveState("saving")` — the `patchMutation` `onError` callback
+in useSegmentPatch (hook level) handles cache rollback and toast, but SegmentRow's local `saveState`
+must also be reset to `"idle"` in the per-call `onError` option passed to `mutate()`. Otherwise
+the UI gets stuck showing "Saving…" permanently after a PATCH error.
 
 ```tsx
 "use client";
@@ -504,6 +502,11 @@ export function SegmentRow({ segment, isFocused, jobId, onFocus, textareaRef }: 
           onSuccess: () => {
             setSaveState("saved");
             savedTimerRef.current = setTimeout(() => setSaveState("idle"), 1500);
+          },
+          // CRITICAL: reset saveState on error so UI doesn't get stuck on "Saving…"
+          // The hook-level onError handles cache rollback + toast; this resets local UI state.
+          onError: () => {
+            setSaveState("idle");
           },
         }
       );
@@ -792,8 +795,14 @@ export function ReviewPageHeader({ job }: ReviewPageHeaderProps) {
 
 **KeyboardHelpPanel.tsx** — popover/panel with cheatsheet. Shown when `open=true`.
 
+CRITICAL: The `.map()` over SHORTCUTS returns a Fragment containing two sibling elements.
+React requires the `key` prop on the top-level element returned from `.map()` — i.e., on the
+`<Fragment>` itself, NOT on the children. Use the named `Fragment` import from React so you can
+set `key` on it. Using `<>` shorthand syntax does not support the `key` prop.
+
 ```tsx
 "use client";
+import { Fragment } from "react";
 import { Button } from "@/components/ui/button";
 import { X } from "lucide-react";
 
@@ -828,17 +837,18 @@ export function KeyboardHelpPanel({ open, onClose }: KeyboardHelpPanelProps) {
       </div>
       <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5">
         {SHORTCUTS.map(({ key, action }) => (
-          <>
+          // CRITICAL: key must be on the Fragment (top-level element from .map),
+          // NOT on the children. Use named Fragment import — <> shorthand doesn't support key.
+          <Fragment key={key}>
             <kbd
-              key={`key-${key}`}
               className="px-1.5 py-0.5 text-xs font-mono bg-slate-100 border border-slate-300 rounded justify-self-start"
             >
               {key}
             </kbd>
-            <span key={`action-${key}`} className="text-xs text-slate-600">
+            <span className="text-xs text-slate-600">
               {action}
             </span>
-          </>
+          </Fragment>
         ))}
       </div>
     </div>
@@ -852,10 +862,11 @@ export function KeyboardHelpPanel({ open, onClose }: KeyboardHelpPanelProps) {
   <done>
     All 5 component files created. TypeScript compiles clean.
     SegmentTable uses VirtuosoHandle ref with scrollIntoView.
-    SegmentRow has debounce 500ms, optimistic save state, discard edit button shown only when edited_text is not null (explicit check per Pitfall 5).
+    SegmentRow handleChange: patchMutation.mutate called with per-call onError that resets saveState to "idle" — UI never stuck on "Saving…" after PATCH failure.
+    SegmentRow has debounce 500ms, discard edit button shown only when edited_text is not null (explicit check per Pitfall 5).
     ReviewFilterBar shows 5 chips (All + 4 flag types) with counts.
     ReviewPageHeader has export button visible only on done/needs_review state.
-    KeyboardHelpPanel renders 7 shortcuts cheatsheet.
+    KeyboardHelpPanel: SHORTCUTS.map uses named Fragment with key on the Fragment (not on children) — no React key warning.
   </done>
 </task>
 
@@ -1047,11 +1058,13 @@ After all tasks complete:
 2. Review page loads at /jobs/{id}/review (requires valid job with segments)
 3. Segment table renders virtualized rows with source text (PT Mono) and textarea
 4. Typing in textarea → 500ms debounce → PATCH /api/segments/{id}
-5. Optimistic update visible immediately; rollback on network error with toast
-6. Filter chips update visible segments; counts show per-type counts
-7. Export Document button visible only on done/needs_review; triggers download
-8. Keyboard j/k navigates rows; e focuses textarea; ? toggles help panel
-9. jobs/[id]/page has "Review Translation" link on done/needs_review states
+5. PATCH error: toast shown AND saveState resets to "idle" (not stuck on "Saving…")
+6. Optimistic update visible immediately; cache rollback on network error with toast
+7. Filter chips update visible segments; counts show per-type counts
+8. Export Document button visible only on done/needs_review; triggers download
+9. Keyboard j/k navigates rows; e focuses textarea; ? toggles help panel
+10. KeyboardHelpPanel: no React "key" prop warning — Fragment key on outer element, not children
+11. jobs/[id]/page has "Review Translation" link on done/needs_review states
 </verification>
 
 <success_criteria>
@@ -1060,9 +1073,10 @@ After all tasks complete:
 - useReviewKeyboard: 7 shortcuts bound per D-02-17 (j/k/n/e/r/shift+?/escape)
 - SegmentTable: react-virtuoso Virtuoso with calc(100vh - 168px) height, scrollIntoView on j/k
 - SegmentRow: source cell PT Mono + target Textarea 500ms debounce + FlagBadge per flag + DiscardEdit button shown only when edited_text is not null (explicit null check per Pitfall 5)
+- SegmentRow: handleChange calls patchMutation.mutate with per-call onError that resets saveState to "idle" — no "Saving…" stuck state after PATCH failure
 - ReviewFilterBar: All chip + 4 flag chips with live counts; Shortcuts toggle
 - ReviewPageHeader: filename, lang pair, glossary name chip (if set), Export button on done/needs_review
-- KeyboardHelpPanel: 7-row cheatsheet, close button, fixed position top-right
+- KeyboardHelpPanel: SHORTCUTS.map uses named Fragment import with key on Fragment (not children) — no React warning
 - review/page.tsx: assembles all components, keyboard hook connected to table scroll
 - jobs/[id]/page.tsx: "Review Translation" link shown on done/needs_review, not shown otherwise
 </success_criteria>

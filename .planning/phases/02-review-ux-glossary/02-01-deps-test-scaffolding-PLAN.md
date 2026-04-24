@@ -240,7 +240,12 @@ Append to `backend/tests/conftest.py` (after existing fixtures, no changes to ex
 
 @pytest.fixture
 def make_glossary(db_session):
-    """Factory: create a Glossary row in the test DB."""
+    """Factory: create a Glossary row in the test DB.
+
+    IMPORTANT: Uses commit() (not flush()) so rows are visible to the HTTP
+    test client which runs in a separate session. flush() only makes rows
+    visible within the same session; API-level tests need committed rows.
+    """
     import uuid
     from app.db.models import Glossary
 
@@ -256,7 +261,8 @@ def make_glossary(db_session):
             target_lang=target_lang,
         )
         db_session.add(g)
-        await db_session.flush()
+        await db_session.commit()
+        await db_session.refresh(g)
         return g
 
     return _make
@@ -264,7 +270,11 @@ def make_glossary(db_session):
 
 @pytest.fixture
 def make_glossary_term(db_session):
-    """Factory: create a GlossaryTerm row in the test DB."""
+    """Factory: create a GlossaryTerm row in the test DB.
+
+    IMPORTANT: Uses commit() (not flush()) — same reason as make_glossary.
+    API-level tests use a separate session and cannot see uncommitted rows.
+    """
     import uuid
     from app.db.models import GlossaryTerm
 
@@ -282,7 +292,8 @@ def make_glossary_term(db_session):
             notes=notes,
         )
         db_session.add(t)
-        await db_session.flush()
+        await db_session.commit()
+        await db_session.refresh(t)
         return t
 
     return _make
@@ -317,11 +328,12 @@ def make_segment_flag(db_session):
 Important: These fixtures use late imports (`from app.db.models import ...`) inside the factory function, so conftest.py can be loaded without error before Plan 02 adds the models. The test files that use them will only run successfully after Plan 02 executes.
   </action>
   <verify>
-    <automated>cd /home/thu/dev/projects/ai-translation && uv run --directory backend pytest backend/tests/conftest.py --collect-only -q 2>&1 | grep -q "no tests ran\|0 errors" && echo "PASS"</automated>
+    <automated>cd /home/thu/dev/projects/ai-translation && uv run --directory backend pytest backend/tests/conftest.py --collect-only -q 2>&1; echo "exit:$?"</automated>
   </verify>
   <done>
-    - conftest.py loads without ImportError
+    - conftest.py loads without ImportError (pytest --collect-only exits 0)
     - Three new fixtures visible: make_glossary, make_glossary_term, make_segment_flag
+    - make_glossary and make_glossary_term use commit() + refresh() — not flush()
     - Existing fixtures (test_engine, db_session, mock_redis, mock_llm_client, mock_arq_ctx) unchanged
   </done>
 </task>
@@ -452,7 +464,7 @@ async def test_regenerate(client):
     assert "translated_text" in data
 ```
 
-**`backend/tests/services/test_glossary_service.py`** (covers GLOS-01 service layer):
+**`backend/tests/services/test_glossary_service.py`** (covers GLOS-01 service layer + update_term):
 ```python
 """Glossary service CRUD tests — GLOS-01 service layer.
 
@@ -491,6 +503,27 @@ async def test_load_glossary_terms_for_job_none(db_session):
     """load_glossary_terms_for_job returns None when glossary_id is None."""
     from app.services.glossary_service import load_glossary_terms_for_job
     result = await load_glossary_terms_for_job(db_session, glossary_id=None)
+    assert result is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.xfail(reason="Requires Plan 03 update_term implementation", strict=False)
+async def test_update_term(db_session, make_glossary, make_glossary_term):
+    """update_term patches target_term in place; returns updated GlossaryTerm."""
+    from app.services.glossary_service import update_term
+    g = await make_glossary()
+    t = await make_glossary_term(g.id, source_term="AICore", target_term="AICore")
+    updated = await update_term(db_session, t.id, target_term="AICore Inc.")
+    assert updated is not None
+    assert updated.target_term == "AICore Inc."
+
+
+@pytest.mark.asyncio
+@pytest.mark.xfail(reason="Requires Plan 03 update_term implementation", strict=False)
+async def test_update_term_not_found_returns_none(db_session):
+    """update_term returns None for unknown term_id (not 404 at service layer)."""
+    from app.services.glossary_service import update_term
+    result = await update_term(db_session, "nonexistent-id", target_term="anything")
     assert result is None
 ```
 
@@ -598,6 +631,10 @@ def test_parse_tbx_no_matching_lang_returns_empty():
 
 Stubs: will pass after Plan 03 implements run_post_check in glossary_service.py.
 Note: run_post_check is in glossary_service.py (not translate_worker.py).
+
+IMPORTANT: test_expansion_ratio_overflow_flag uses a real Segment DB row (not just
+FakeSeg) so that run_post_check can write expansion_ratio back to the DB and the
+test can assert the SegmentFlag was persisted via a DB query.
 """
 from __future__ import annotations
 
@@ -670,19 +707,34 @@ async def test_short_term_skipped(db_session):
 @pytest.mark.asyncio
 @pytest.mark.xfail(reason="Requires Plan 03 run_post_check implementation", strict=False)
 async def test_expansion_ratio_overflow_flag(db_session):
-    """run_post_check emits overflow flag when ratio exceeds threshold — LAYOUT-01."""
+    """run_post_check emits overflow flag when ratio exceeds threshold — LAYOUT-01.
+
+    Uses a real Segment DB row (not just FakeSeg) so that:
+    - run_post_check can write expansion_ratio via UPDATE Segment WHERE id = seg.id
+    - The SegmentFlag INSERT has a valid FK to segments.id (no FK violation)
+    - We can assert the flag was persisted via a real DB query
+    """
+    import uuid
+    from app.db.models import Segment, SegmentFlag, FlagType
     from app.services.glossary_service import run_post_check
-    from app.db.models import SegmentFlag, FlagType
     from sqlalchemy import select
 
-    class FakeSeg:
-        id = "seg003"
-        source_text = "ab"  # 2 chars
+    # Insert a real Segment row — run_post_check writes expansion_ratio back to it
+    seg_id = str(uuid.uuid4())
+    seg = Segment(
+        id=seg_id,
+        job_id="fake-job-id",  # FK not enforced in SQLite test DB
+        seq_in_job=0,
+        source_text="ab",  # 2 chars
+        translated_text="abcdefghij",  # 10 chars → ratio=5.0 > threshold 1.3
+    )
+    db_session.add(seg)
+    await db_session.flush()
 
-    translated_map = {"seg003": "abcdefghij"}  # 10 chars → ratio=5.0 > threshold 1.3
+    translated_map = {seg_id: "abcdefghij"}
     await run_post_check(
         session=db_session,
-        batch_segs=[FakeSeg()],
+        batch_segs=[seg],
         translated_map=translated_map,
         glossary=None,
         source_lang="en",
@@ -690,7 +742,7 @@ async def test_expansion_ratio_overflow_flag(db_session):
         expansion_thresholds={"en->vi": 1.3},
     )
     result = await db_session.execute(
-        select(SegmentFlag).where(SegmentFlag.segment_id == "seg003")
+        select(SegmentFlag).where(SegmentFlag.segment_id == seg_id)
     )
     flags = result.scalars().all()
     assert any(f.flag_type == FlagType.overflow for f in flags)
@@ -728,16 +780,21 @@ async def test_placeholder_mismatch_flag_written(db_session):
 @pytest.mark.asyncio
 @pytest.mark.xfail(reason="Requires Plan 03 run_post_check implementation", strict=False)
 async def test_llm_refusal_flag_written(db_session):
-    """run_post_check writes llm_refusal flag when output identical to source — WARNING 2 fix."""
+    """run_post_check writes llm_refusal flag when output identical to source — heuristic: len > 8 AND identical.
+
+    The heuristic requires len(source_stripped) > 8 to avoid false positives on short
+    acronyms (e.g. 'AI' → 'AI' is correct, not a refusal). 'Hello world' is 11 chars
+    and passes unchanged, so the flag should fire.
+    """
     from app.services.glossary_service import run_post_check
     from app.db.models import SegmentFlag, FlagType
     from sqlalchemy import select
 
     class FakeSeg:
         id = "seg005"
-        source_text = "Hello world"
+        source_text = "Hello world"  # 11 chars > 8 threshold
 
-    # LLM returned the source unchanged (refusal heuristic: identical)
+    # LLM returned the source unchanged (refusal heuristic: len > 8 AND identical)
     translated_map = {"seg005": "Hello world"}
     await run_post_check(
         session=db_session,
@@ -824,7 +881,8 @@ async def test_worker_passes_none_glossary_when_no_glossary(mock_arq_ctx, db_ses
   <done>
     - All 8 backend test files collected by pytest (no syntax errors)
     - All tests marked xfail (not error) — they will pass after feature implementations land
-    - test_post_check.py has 5 stubs: violation, short-term-skip, expansion-ratio, placeholder_mismatch, llm_refusal
+    - test_post_check.py has 5 stubs: violation, short-term-skip, expansion-ratio (real Segment DB row), placeholder_mismatch, llm_refusal (with len > 8 AND identical heuristic documented)
+    - test_glossary_service.py has 4 stubs including test_update_term and test_update_term_not_found_returns_none
     - Existing tests unchanged: `uv run pytest backend/tests/ -m "not integration" -x -q` still green
   </done>
 </task>
@@ -952,9 +1010,11 @@ After all tasks in this plan:
 - react-virtuoso@4.18.6 and react-hotkeys-hook@5.2.4 in frontend/package.json
 - 4 shadcn components added to frontend/src/components/ui/
 - frontend/tailwind.config.ts has paper-ink (#111111) and paper-accent (#8B5CF6) under theme.extend.colors
-- 8 backend test stubs collected by pytest (all xfail); test_post_check.py has 5 stubs (including placeholder_mismatch + llm_refusal)
+- 8 backend test stubs collected by pytest (all xfail); test_post_check.py has 5 stubs (including placeholder_mismatch + llm_refusal with len > 8 AND identical heuristic)
+- test_glossary_service.py has 4 stubs including test_update_term and test_update_term_not_found_returns_none
+- test_expansion_ratio_overflow_flag uses a real Segment DB row (not FakeSeg) so expansion_ratio write and FK constraint work correctly
 - 4 frontend test stubs collected by vitest (all todo)
-- conftest.py has make_glossary, make_glossary_term, make_segment_flag fixtures
+- conftest.py has make_glossary, make_glossary_term (both using commit()+refresh()), make_segment_flag fixtures
 - All existing 131+ unit tests still pass
 </success_criteria>
 
