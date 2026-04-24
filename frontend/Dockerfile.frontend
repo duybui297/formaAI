@@ -1,0 +1,15 @@
+FROM node:20-alpine
+
+WORKDIR /frontend
+
+# Copy package manifests first for layer caching
+COPY package.json package-lock.json* ./
+
+# Install dependencies (npm ci requires lock file; falls back to npm install if absent)
+RUN npm install
+
+# Source is bind-mounted in development via docker-compose volumes
+# In production builds, uncomment the COPY below and remove the bind mount
+# COPY . .
+
+EXPOSE 3000
