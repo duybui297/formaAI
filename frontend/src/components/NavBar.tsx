@@ -45,6 +45,12 @@ export function NavBar() {
           >
             Jobs
           </Link>
+          <Link
+            href="/glossaries"
+            className={`text-sm ${pathname?.startsWith("/glossaries") ? "text-indigo-600 font-medium" : "text-slate-600 hover:text-slate-900"}`}
+          >
+            Glossaries
+          </Link>
           <DashScopeHealthDot />
         </nav>
       </div>
