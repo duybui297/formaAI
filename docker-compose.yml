@@ -39,6 +39,11 @@ services:
     volumes:
       - ./frontend/src:/frontend/src
       - ./frontend/public:/frontend/public
+      - ./frontend/tsconfig.json:/frontend/tsconfig.json
+      - ./frontend/next.config.mjs:/frontend/next.config.mjs:ro
+      - ./frontend/tailwind.config.ts:/frontend/tailwind.config.ts:ro
+      - ./frontend/postcss.config.mjs:/frontend/postcss.config.mjs:ro
+      - ./frontend/components.json:/frontend/components.json:ro
     environment:
       - NEXT_PUBLIC_API_URL=http://localhost:8000
       - BACKEND_URL=http://api:8000
