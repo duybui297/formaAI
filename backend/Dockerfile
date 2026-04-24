@@ -3,7 +3,7 @@ FROM python:3.12-slim-bookworm
 # Install Noto fonts for CJK and Vietnamese/Latin PDF text insertion (Phase 3+)
 # Install now so Phase 3 doesn't need a Dockerfile change (per CLAUDE.md)
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends fonts-noto-cjk fonts-noto && \
+    apt-get install -y --no-install-recommends fonts-noto-cjk fonts-noto fontconfig && \
     fc-cache -f && \
     rm -rf /var/lib/apt/lists/*
 
@@ -23,5 +23,6 @@ COPY src/ src/
 
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONPATH=/backend/src
 
 EXPOSE 8000
