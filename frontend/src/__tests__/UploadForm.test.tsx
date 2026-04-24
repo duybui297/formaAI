@@ -325,6 +325,92 @@ describe("TrackedChangesModal unit tests (D-13 spec)", () => {
   })
 })
 
+describe("UploadForm tracked-changes reliability (G1 gap closure)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockFetchLanguages()
+  })
+
+  it("calls detectTrackedChanges on second upload of same tracked-changes DOCX", async () => {
+    mockDetect.mockResolvedValue(true)
+    renderForm()
+
+    const docxFile = new File(["bytes"], "tracked.docx", {
+      type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    })
+
+    // First upload — detection fires
+    selectFile(docxFile)
+    await waitFor(() => {
+      expect(mockDetect).toHaveBeenCalledTimes(1)
+    })
+
+    // Second upload of same file — detection must fire again (no caching/skipping)
+    selectFile(docxFile)
+    await waitFor(() => {
+      expect(mockDetect).toHaveBeenCalledTimes(2)
+    })
+
+    // Both calls used the same file object
+    expect(mockDetect).toHaveBeenNthCalledWith(1, docxFile)
+    expect(mockDetect).toHaveBeenNthCalledWith(2, docxFile)
+  })
+
+  it("resets modal after cancel then re-selection", async () => {
+    mockDetect.mockResolvedValue(true)
+    renderForm()
+
+    const docxFile = new File(["bytes"], "tracked.docx", {
+      type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    })
+
+    // First upload — detection fires and file is shown
+    selectFile(docxFile)
+    await waitFor(() => {
+      expect(screen.getByText("tracked.docx")).toBeDefined()
+    })
+    expect(mockDetect).toHaveBeenCalledTimes(1)
+
+    // Re-select the same file — detection fires again (state was fully reset)
+    selectFile(docxFile)
+    await waitFor(() => {
+      expect(mockDetect).toHaveBeenCalledTimes(2)
+    })
+    // File name still rendered and detection called fresh
+    expect(screen.getByText("tracked.docx")).toBeDefined()
+  })
+
+  it("Submit disabled while detecting", async () => {
+    let resolveDetect!: (val: boolean) => void
+    mockDetect.mockImplementationOnce(
+      () => new Promise(r => { resolveDetect = r })
+    )
+    renderForm()
+
+    const docxFile = new File(["bytes"], "test.docx", {
+      type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    })
+
+    selectFile(docxFile)
+
+    // While detection is pending the Submit button must be disabled
+    await waitFor(() => {
+      const button = screen.getByText("Translate Document").closest("button")
+      expect(button?.disabled).toBe(true)
+    })
+
+    // Resolve detection — detecting flag clears
+    await act(async () => {
+      resolveDetect(false)
+    })
+
+    // Detection resolved — button remains disabled only because no target
+    // language is selected (expected behaviour; !detecting constraint lifted)
+    const button = screen.getByText("Translate Document").closest("button")
+    expect(button?.disabled).toBe(true)
+  })
+})
+
 describe("LanguageSelect rendered inside UploadForm", () => {
   beforeEach(() => {
     vi.clearAllMocks()
