@@ -37,6 +37,8 @@ export function UploadForm() {
   const [showTrackedModal, setShowTrackedModal] = useState(false)
   // trackedAction: null = not yet decided; "strip"/"preserve" = decided by modal
   const [trackedAction, setTrackedAction] = useState<"strip" | "preserve" | null>(null)
+  // detecting: true while detectTrackedChanges() is in flight — blocks Submit
+  const [detecting, setDetecting] = useState(false)
 
   const handleFile = useCallback(async (f: File) => {
     const ext = getExt(f.name)
@@ -54,13 +56,17 @@ export function UploadForm() {
       })
       return
     }
+    // Reset all tracked-changes state atomically before detection
     setFile(f)
-    setTrackedAction(null) // Reset decision for new file
+    setTrackedAction(null)
     setHasTrackedChanges(false)
+    setShowTrackedModal(false)
+    setDetecting(true)
 
     // B4 Option A: detect tracked changes before any upload
     const hasTC = await detectTrackedChanges(f)
     setHasTrackedChanges(hasTC)
+    setDetecting(false)
   }, [toast])
 
   const onDrop = useCallback(
@@ -82,7 +88,7 @@ export function UploadForm() {
     setDragState(e.dataTransfer.items.length > 1 ? "multi" : "valid")
   }
 
-  const canSubmit = !!file && !!targetLang && !submitting
+  const canSubmit = !!file && !!targetLang && !submitting && !detecting
 
   // Core submit function — called with a resolved action (or null for non-DOCX)
   const submitWithAction = useCallback(
