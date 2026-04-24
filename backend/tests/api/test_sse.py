@@ -17,6 +17,28 @@ from httpx import ASGITransport, AsyncClient
 
 
 # ---------------------------------------------------------------------------
+# sse-starlette AppStatus reset fixture
+#
+# sse_starlette 1.x stores an anyio.Event as a class-level attribute on
+# AppStatus. When pytest-asyncio creates a new event loop per test, the
+# stale Event is bound to the previous loop and raises RuntimeError.
+# Reset it to None before each test so a fresh Event is created.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def reset_sse_app_status():
+    """Reset sse_starlette.AppStatus between tests to avoid event-loop binding errors."""
+    from sse_starlette.sse import AppStatus
+
+    AppStatus.should_exit = False
+    AppStatus.should_exit_event = None
+    yield
+    AppStatus.should_exit = False
+    AppStatus.should_exit_event = None
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 

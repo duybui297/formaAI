@@ -20,7 +20,7 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.api.middleware.cors import add_cors_middleware
-from app.api.routes import glossaries, health, languages, upload
+from app.api.routes import glossaries, health, jobs, languages, sse, upload
 from app.core.config import get_settings
 from app.core.logging import configure_logging
 
@@ -77,3 +77,5 @@ app.include_router(health.router)
 app.include_router(upload.router)
 app.include_router(languages.router)
 app.include_router(glossaries.router)
+app.include_router(jobs.router)
+app.include_router(sse.router)
