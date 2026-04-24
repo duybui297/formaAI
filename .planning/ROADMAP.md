@@ -48,22 +48,32 @@ Plans:
 **UI hint**: yes
 
 ### Phase 2: Review UX + Glossary
-**Goal**: The full DOCX workflow gains the two highest-value demo differentiators: a side-by-side Monaco segment editor where reviewers can inline-correct translations before export, and a glossary system that injects company-specific terminology via the `qwen-mt-turbo` `terminology` API and flags violations post-translation.
+**Goal**: The full DOCX workflow gains the two highest-value demo differentiators: a CAT-tool-style segment editor where reviewers can inline-correct translations before export, and a glossary system that injects company-specific terminology via the `qwen-mt-turbo` `terminology` API and flags violations post-translation.
 **Depends on**: Phase 1
-**Requirements**: GLOS-01, GLOS-02, GLOS-03, GLOS-04, GLOS-05, REV-01, REV-02, REV-03, REV-04, REV-05, REV-06, LAYOUT-01, LAYOUT-02, LAYOUT-03
+**Requirements**: GLOS-01, GLOS-02, GLOS-03, GLOS-04, GLOS-05, REV-01, REV-02, REV-03, REV-04, REV-05, REV-06, LAYOUT-01
 **Success Criteria** (what must be TRUE):
   1. User can create a named glossary, add term pairs manually or via CSV/TBX upload, and list/edit/delete glossaries through the UI
   2. When a glossary is attached to a job, its terms are passed to `qwen-mt-turbo` via the `terminology` parameter on every batch; a post-translation pass flags segments where a glossary term's target does not appear in the output
   3. A completed job opens a side-by-side view with source segments on the left and editable translations on the right; users can inline-edit any segment (debounced persistence to DB) and re-translate individual segments without rerunning the whole job
   4. Segment-level flags — overflow, glossary violation, placeholder mismatch, LLM refusal — are visibly surfaced in the review UI; text-expansion ratio is shown for segments above the configured threshold
   5. The Export button reassembles the document using `edited_text ?? translated_text` per segment, produces the translated DOCX, and the operation is idempotent (re-exporting does not corrupt the segment state)
-**Plans**: TBD
+**Plans**: 7 plans
+
+Plans:
+- [ ] 02-01-deps-test-scaffolding-PLAN.md — npm deps install, shadcn adds, test stub scaffolding
+- [ ] 02-02-db-migration-models-PLAN.md — Alembic migration 0002, SQLAlchemy model extensions
+- [ ] 02-03-glossary-backend-PLAN.md — Glossary CRUD service + REST endpoints + CSV/TBX import
+- [ ] 02-04-segment-export-backend-PLAN.md — Segment routes, export service, worker extension
+- [ ] 02-05-glossary-frontend-PLAN.md — Types, paper fonts, FlagBadge, GlossarySelect, glossary pages
+- [ ] 02-06-review-frontend-PLAN.md — useSegments, SegmentTable, SegmentRow, review page, keyboard nav
+- [ ] 02-07-integration-docs-PLAN.md — E2E test, planning artifact updates, VALIDATION.md completion
+
 **UI hint**: yes
 
 ### Phase 3: PPTX + Native PDF
 **Goal**: The pipeline spine from Phase 1 is extended to PPTX and native (text-layer) PDF, giving AICore all three hero formats: PPTX translates text boxes, speaker notes, tables, and nested groups with overflow detection and auto-fit; native PDF redacts and reinserts translated text with Noto font embedding and column-aware extraction.
 **Depends on**: Phase 2
-**Requirements**: PPTX-01, PPTX-02, PPTX-03, PPTX-04, PDF-01, PDF-02, PDF-03, PDF-04
+**Requirements**: PPTX-01, PPTX-02, PPTX-03, PPTX-04, PDF-01, PDF-02, PDF-03, PDF-04, LAYOUT-02, LAYOUT-03
 **Success Criteria** (what must be TRUE):
   1. A PPTX file round-trips with text boxes, speaker notes, tables, bulleted lists, and master-slide text translated; nested grouped shapes are recursively walked; SmartArt shapes are flagged in the review UI rather than silently skipped
   2. After PPTX translation, text-box overflow is detected and flagged in the review UI with an overflow badge; `MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE` is applied where safe
@@ -100,7 +110,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation + DOCX Pipeline | 0/11 | Not started | - |
-| 2. Review UX + Glossary | 0/TBD | Not started | - |
+| 2. Review UX + Glossary | 0/7 | Not started | - |
 | 3. PPTX + Native PDF | 0/TBD | Not started | - |
 | 4. Scanned PDF (OCR) | 0/TBD | Not started | - |
 | 5. Demo Hardening | 0/TBD | Not started | - |
