@@ -130,14 +130,22 @@ export default function JobStatusPage({
 
         {/* Action section */}
         {job.status === "done" && (
-          <Button
-            className="w-full bg-indigo-600 hover:bg-indigo-700 text-white"
-            onClick={() => {
-              window.location.href = `/api/jobs/${jobId}/download`
-            }}
-          >
-            Download Translation
-          </Button>
+          <div className="flex flex-col gap-3">
+            <Button
+              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white"
+              onClick={() => {
+                window.location.href = `/api/jobs/${jobId}/download`
+              }}
+            >
+              Download Translation
+            </Button>
+            <Link
+              href={`/jobs/${jobId}/review`}
+              className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-md bg-violet-500 hover:bg-violet-600 text-white text-sm font-medium w-full"
+            >
+              Review Translation
+            </Link>
+          </div>
         )}
 
         {job.status === "needs_review" && (
@@ -146,18 +154,26 @@ export default function JobStatusPage({
               Review Required
             </h2>
             <p className="text-sm text-slate-500">
-              Segment-level review will be available in the next release. You
-              can still download the current output.
+              Some segments were flagged for review. Open the review editor to
+              inspect and edit translations before exporting.
             </p>
-            <Button
-              variant="outline"
-              className="border-indigo-600 text-indigo-600 hover:bg-indigo-50"
-              onClick={() => {
-                window.location.href = `/api/jobs/${jobId}/download`
-              }}
-            >
-              Download Current Output
-            </Button>
+            <div className="flex flex-col gap-2">
+              <Link
+                href={`/jobs/${jobId}/review`}
+                className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-md bg-violet-500 hover:bg-violet-600 text-white text-sm font-medium w-full"
+              >
+                Review Translation
+              </Link>
+              <Button
+                variant="outline"
+                className="border-indigo-600 text-indigo-600 hover:bg-indigo-50 w-full"
+                onClick={() => {
+                  window.location.href = `/api/jobs/${jobId}/download`
+                }}
+              >
+                Download Current Output
+              </Button>
+            </div>
           </div>
         )}
       </main>
