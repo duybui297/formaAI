@@ -90,11 +90,11 @@ describe("UploadForm rendering", () => {
     expect(button?.disabled).toBe(true)
   })
 
-  it("hidden file input accepts .docx, .pdf, .pptx", () => {
+  it("hidden file input accept is restricted to DOCX only", () => {
     renderForm()
     const input = document.getElementById("file-input") as HTMLInputElement
     expect(input).toBeDefined()
-    expect(input?.accept).toBe(".docx,.pdf,.pptx")
+    expect(input?.accept).toBe(".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document")
   })
 })
 

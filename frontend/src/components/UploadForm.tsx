@@ -29,6 +29,7 @@ export function UploadForm() {
   const [sourceLang, setSourceLang] = useState("auto")
   const [targetLang, setTargetLang] = useState("")
   const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   // B4 Option A: client-side tracked-changes state
   // hasTrackedChanges: set by detectTrackedChanges() on file selection
@@ -56,6 +57,7 @@ export function UploadForm() {
       })
       return
     }
+    setError(null)
     // Reset all tracked-changes state atomically before detection
     setFile(f)
     setTrackedAction(null)
@@ -94,6 +96,7 @@ export function UploadForm() {
   const submitWithAction = useCallback(
     async (action: "strip" | "preserve" | null) => {
       if (!file || !targetLang) return
+      setError(null)
       setSubmitting(true)
       try {
         const formData = new FormData()
@@ -108,9 +111,11 @@ export function UploadForm() {
         const data = await res.json()
 
         if (!res.ok) {
+          const msg = data.detail || data.error || "Upload failed. Please try again."
+          setError(msg)
           toast({
             variant: "destructive",
-            description: data.detail || data.error || "Upload failed.",
+            description: msg,
           })
           setSubmitting(false)
           return
@@ -186,7 +191,7 @@ export function UploadForm() {
         <input
           id="file-input"
           type="file"
-          accept=".docx,.pdf,.pptx"
+          accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
           className="hidden"
           onChange={e => e.target.files?.[0] && handleFile(e.target.files[0])}
         />
@@ -238,6 +243,11 @@ export function UploadForm() {
         >
           {submitting ? "Uploading..." : "Translate Document"}
         </Button>
+        {error && (
+          <p role="alert" className="text-sm text-red-600 mt-1">
+            {error}
+          </p>
+        )}
       </form>
 
       {/* Tracked-changes modal (D-13) — shown BEFORE submit (B4 Option A) */}
