@@ -67,8 +67,8 @@ export function SegmentRow({
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">(
     "idle"
   );
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
-  const savedTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const savedTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const patchMutation = useSegmentPatch(jobId);
   const regenerateMutation = useSegmentRegenerate(jobId);
