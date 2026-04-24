@@ -101,3 +101,98 @@ def mock_arq_ctx(mock_redis, mock_llm_client, db_session):
         "redis": mock_redis,
         "session_factory": session_factory,
     }
+
+
+# ---------------------------------------------------------------------------
+# Phase 2: Factory fixtures for Glossary, GlossaryTerm, SegmentFlag
+# ---------------------------------------------------------------------------
+# NOTE: These fixtures will only be usable after Plan 02 adds Glossary,
+# GlossaryTerm, SegmentFlag to backend/src/app/db/models.py. The stub
+# test files (created in Task 3 of this plan) will skip/xfail until then.
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def make_glossary(db_session):
+    """Factory: create a Glossary row in the test DB.
+
+    IMPORTANT: Uses commit() (not flush()) so rows are visible to the HTTP
+    test client which runs in a separate session. flush() only makes rows
+    visible within the same session; API-level tests need committed rows.
+    """
+    import uuid
+
+    async def _make(
+        name: str = "Test Glossary",
+        source_lang: str = "vi",
+        target_lang: str = "en",
+    ):
+        from app.db.models import Glossary
+        g = Glossary(
+            id=str(uuid.uuid4()),
+            name=name,
+            source_lang=source_lang,
+            target_lang=target_lang,
+        )
+        db_session.add(g)
+        await db_session.commit()
+        await db_session.refresh(g)
+        return g
+
+    return _make
+
+
+@pytest.fixture
+def make_glossary_term(db_session):
+    """Factory: create a GlossaryTerm row in the test DB.
+
+    IMPORTANT: Uses commit() (not flush()) — same reason as make_glossary.
+    API-level tests use a separate session and cannot see uncommitted rows.
+    """
+    import uuid
+
+    async def _make(
+        glossary_id: str,
+        source_term: str = "AICore",
+        target_term: str = "AICore",
+        notes: str | None = None,
+    ):
+        from app.db.models import GlossaryTerm
+        t = GlossaryTerm(
+            id=str(uuid.uuid4()),
+            glossary_id=glossary_id,
+            source_term=source_term,
+            target_term=target_term,
+            notes=notes,
+        )
+        db_session.add(t)
+        await db_session.commit()
+        await db_session.refresh(t)
+        return t
+
+    return _make
+
+
+@pytest.fixture
+def make_segment_flag(db_session):
+    """Factory: create a SegmentFlag row in the test DB."""
+    import uuid
+
+    async def _make(
+        segment_id: str,
+        flag_type: str = "overflow",
+        severity: str = "warn",
+        details: dict | None = None,
+    ):
+        from app.db.models import SegmentFlag, FlagType, FlagSeverity
+        f = SegmentFlag(
+            id=str(uuid.uuid4()),
+            segment_id=segment_id,
+            flag_type=FlagType(flag_type),
+            severity=FlagSeverity(severity),
+            details=details or {},
+        )
+        db_session.add(f)
+        await db_session.flush()
+        return f
+
+    return _make
