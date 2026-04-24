@@ -60,8 +60,8 @@ Inherited from Phase 1 (8-point scale, all multiples of 4). No changes to base s
 - Segment table row minimum height: 48px (source/target textarea min-height; accessible click target on flag icon)
 - Segment textarea min-height: 48px; grows with content (no max-height enforced — react-virtuoso handles scroll at the list level)
 - Filter chip height: 32px (compact — they live in a horizontal chip bar, not as primary CTAs)
-- Glossary term inline row height: 44px (touch target minimum for edit/delete icon buttons)
-- Keyboard shortcut panel: 320px max-width, 40px per shortcut row
+- Glossary term inline row height: 48px (matches WCAG 2.5.5 enhanced touch target; consistent with segment row min-height)
+- Keyboard shortcut panel: 320px max-width, 32px per shortcut row (reference panel — compact is appropriate)
 
 ---
 
@@ -72,10 +72,9 @@ Inherited from Phase 1 (8-point scale, all multiples of 4). No changes to base s
 | Role | Size | Weight | Line Height | Font | Usage |
 |------|------|--------|-------------|------|-------|
 | Body | 14px | 400 (regular) | 1.5 | Roboto | Form labels, table cells, prose, status messages, glossary term text |
-| Label | 12px | 400 (regular) | 1.4 | Roboto | Badge text, helper text, metadata chips, flag badge labels, keyboard shortcut hints |
+| Label | 12px | 400 (regular) | 1.4 | Roboto / PT Mono | Badge text, helper text, metadata chips, flag badge labels, keyboard shortcut hints. Also used for PT Mono source cells — typeface provides distinction from Roboto 12px, not size. |
 | Heading | 20px | 600 (semibold) | 1.2 | Montserrat | Page titles, panel headings, glossary name |
 | Display | 28px | 600 (semibold) | 1.1 | Montserrat | App name in header only (inherited from Phase 1) |
-| Mono | 13px | 400 (regular) | 1.6 | PT Mono | Segment source text (read-only column) — distinguishes source from editable target |
 
 **Weight contract:** exactly 2 weights — 400 (regular) and 600 (semibold). No other weights.
 
@@ -156,7 +155,7 @@ All Phase 1 components continue as-is: `NavBar`, `StageIndicator`, `ProgressBar`
 | `SegmentTable` | custom (react-virtuoso `Virtuoso`) | Outer container. Fills viewport below filter bar. Variable row height. Overscan: 5. |
 | `SegmentRow` | custom | One row per segment. Three cells: `SegmentIndex`, `SourceCell`, `TargetCell`. Plus `FlagCell`. See row layout below. |
 | `SegmentIndex` | custom | Segment `#seq_in_job` number. 12px Roboto, slate-400. Width: 48px fixed. |
-| `SourceCell` | custom | Read-only. Source text in PT Mono 13px. `#111111`. Background `bg-slate-50`. Padding: `p-2`. Width: ~40% of row. Vertically aligned top. `select-text` cursor. |
+| `SourceCell` | custom | Read-only. Source text in PT Mono 12px (`text-xs font-mono`). `#111111`. Background `bg-slate-50`. Padding: `p-2`. Width: ~40% of row. Vertically aligned top. `select-text` cursor. |
 | `TargetCell` | shadcn `Textarea` | Editable. Auto-resize with content. Min-height 48px. Debounce 500ms → `PATCH /segments/{id}`. Focus ring: `ring-violet-500`. Optimistic cache update. Background: `bg-white`. Width: ~50% of row. |
 | `FlagCell` | custom | Renders 0..N `FlagBadge` components stacked vertically. Width: ~10% of row. Min-width: 80px. |
 | `ReviewFilterBar` | custom | Horizontal chip strip above segment table. Shows `All (N)`, `Overflow (n₁)`, `Glossary violation (n₂)`, `Placeholder (n₃)`, `Refusal (n₄)`. Active chip: violet-500 fill + white text. Inactive: slate-100 bg + slate-700 text. |
@@ -175,10 +174,10 @@ All Phase 1 components continue as-is: `NavBar`, `StageIndicator`, `ProgressBar`
 | `GlossaryDetailHeader` | custom | Glossary name (Heading), language pair chip, created date, edit/delete buttons. |
 | `TermsTable` | shadcn `Table` | Columns: Source Term, Target Term, Notes, Actions (edit / delete). Sortable by source_term. Inline edit row on click. |
 | `TermAddRow` | custom inline form | Bottom of TermsTable. Fields: source_term input, target_term input, notes input (optional). "Add Term" button (violet, sm). Confirm via Enter or button click. |
-| `TermEditRow` | custom inline form | Replaces the read-only row on edit. Same fields as TermAddRow. "Save" / "Cancel" inline. |
+| `TermEditRow` | custom inline form | Replaces the read-only row on edit. Same fields as TermAddRow. "Save Term" / "Discard changes" inline. |
 | `CSVUploadButton` | shadcn `Button` (outline) + hidden `<input type="file" accept=".csv">` | Label: "Import CSV". Triggers file picker. On select: POST to `/glossaries/{id}/terms/import`. Shows inline progress toast. |
 | `DeleteGlossaryDialog` | shadcn `Dialog` (destructive) | Triggered by trash icon on glossary list row. See destructive confirmation copy. |
-| `DeleteTermButton` | shadcn `Button` (ghost, destructive, icon-only) | `Trash2` lucide. Inline in TermsTable row. No dialog — single click delete (terms are cheap to re-add; destructive dialog is reserved for glossary-level deletes). |
+| `DeleteTermButton` | shadcn `Button` (ghost, destructive, icon-only) | `Trash2` lucide. `aria-label="Delete term"` and `title="Delete term"` (or shadcn `Tooltip` wrapping the button — mirrors `RegenerateButton` tooltip pattern). Inline in TermsTable row. No dialog — single click delete (terms are cheap to re-add; destructive dialog is reserved for glossary-level deletes). |
 
 ---
 
@@ -396,8 +395,9 @@ When a segment has `edited_text != null` and the user clicks "Regenerate":
 | Term source label | "Source term" |
 | Term target label | "Translation" |
 | Term notes label | "Notes (optional)" |
-| Term save CTA | "Save" |
-| Term cancel | "Cancel" |
+| Term save CTA | "Save Term" |
+| Term cancel | "Discard changes" |
+| Delete term tooltip | "Delete term" |
 | Delete term toast | "Term deleted." |
 | Delete glossary button | "Delete glossary" |
 | Delete glossary dialog title | "Delete glossary?" |
@@ -460,7 +460,11 @@ When a segment has `edited_text != null` and the user clicks "Regenerate":
 | Violet accent instead of indigo (paper skill override) | CONTEXT.md D-02-28 | Yes |
 | max-w-7xl for review page (exception) | Claude's Discretion — segment table needs width | Default |
 | max-w-4xl for glossary pages | Claude's Discretion | Default |
-| PT Mono for source text cell | Claude's Discretion — distinguishes read-only from editable | Default |
+| PT Mono 12px for source text cell (same size as Label, different typeface) | Checker fix — collapse 5 sizes to 4 | Fixed |
+| Glossary term row height 48px (WCAG 2.5.5) | Checker fix — 44px → 48px | Fixed |
+| Keyboard shortcut panel 32px row height (compact reference) | Checker fix — 40px → 32px | Fixed |
+| Term save CTA "Save Term" / cancel "Discard changes" | Checker fix — verb+noun pattern | Fixed |
+| DeleteTermButton aria-label + title "Delete term" | Checker fix — mirrors RegenerateButton tooltip | Fixed |
 | Delete term: no confirm dialog | Claude's Discretion — terms are cheap to re-add | Default |
 | Flag colors (amber/violet/orange/red per type) | Claude's Discretion — matching severity semantics | Default |
 | Row left border as flag severity indicator | Claude's Discretion — visible without opening badge | Default |
