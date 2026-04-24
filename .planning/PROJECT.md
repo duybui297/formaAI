@@ -25,9 +25,9 @@ A web-based AI document translation PoC that takes office documents (DOCX, PDF, 
 - [ ] Preserve format on the "hero" paths: DOCX (near pixel-perfect) and native PDF (high fidelity)
 - [ ] Handle PPTX with layout-aware translation (text-box auto-fit, overflow flags)
 - [ ] Handle scanned PDF via OCR with a readable output (side-by-side or overlay)
-- [ ] Custom glossary / terminology injection (company-specific terms enforced across the doc)
-- [ ] Smart layout handling: flag text expansion/overflow; auto-scale where safe
-- [ ] Side-by-side review UX: see source + translation, inline correct before export
+- [x] Custom glossary / terminology injection (company-specific terms enforced across the doc) — Phase 2
+- [~] Smart layout handling: flag text expansion/overflow; auto-scale where safe — flagging done in Phase 2; auto-scale deferred to Phase 3
+- [x] Side-by-side review UX: see source + translation, inline correct before export — Phase 2
 - [ ] Download the translated file in the original format
 - [ ] Multi-lingual (any pair the LLM supports — no hardcoded language list)
 
