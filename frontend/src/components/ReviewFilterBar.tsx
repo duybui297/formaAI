@@ -1,0 +1,89 @@
+"use client";
+import { Keyboard } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import type { FlagType, Segment } from "@/lib/review-types";
+import { cn } from "@/lib/utils";
+
+export type ReviewFilterType = FlagType | "all";
+
+interface ReviewFilterBarProps {
+  segments: Segment[];
+  activeFilter: ReviewFilterType;
+  onFilterChange: (f: ReviewFilterType) => void;
+  onToggleHelp: () => void;
+}
+
+const FLAG_LABELS: Record<FlagType, string> = {
+  overflow: "Overflow",
+  glossary_violation: "Glossary violation",
+  placeholder_mismatch: "Placeholder",
+  llm_refusal: "Refusal",
+};
+
+const ALL_FLAGS: FlagType[] = [
+  "overflow",
+  "glossary_violation",
+  "placeholder_mismatch",
+  "llm_refusal",
+];
+
+export function ReviewFilterBar({
+  segments,
+  activeFilter,
+  onFilterChange,
+  onToggleHelp,
+}: ReviewFilterBarProps) {
+  const allCount = segments.length;
+
+  const flagCounts = ALL_FLAGS.map((flagType) => ({
+    flagType,
+    count: segments.filter((s) =>
+      s.flags.some((f) => f.flag_type === flagType)
+    ).length,
+  }));
+
+  const chipBase =
+    "h-8 rounded-full text-xs px-3 border transition-colors flex-shrink-0";
+  const activeClass = "bg-violet-500 text-white border-violet-500";
+  const inactiveClass =
+    "bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200";
+
+  return (
+    <div className="flex items-center gap-2 h-12 px-4 bg-white border-b border-slate-100 overflow-x-auto sticky top-[120px] z-10">
+      {/* All chip */}
+      <button
+        className={cn(chipBase, activeFilter === "all" ? activeClass : inactiveClass)}
+        onClick={() => onFilterChange("all")}
+      >
+        All ({allCount})
+      </button>
+
+      {/* Per-flag chips */}
+      {flagCounts.map(({ flagType, count }) => (
+        <button
+          key={flagType}
+          className={cn(
+            chipBase,
+            activeFilter === flagType ? activeClass : inactiveClass
+          )}
+          onClick={() => onFilterChange(flagType)}
+        >
+          {FLAG_LABELS[flagType]} ({count})
+        </button>
+      ))}
+
+      <div className="flex-1" />
+
+      {/* Shortcuts toggle */}
+      <Button
+        variant="ghost"
+        size="sm"
+        className="flex items-center gap-1.5 text-xs text-slate-500 flex-shrink-0"
+        onClick={onToggleHelp}
+      >
+        <Keyboard className="h-3.5 w-3.5" />
+        Shortcuts
+      </Button>
+    </div>
+  );
+}
