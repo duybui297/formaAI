@@ -12,8 +12,13 @@ import pytest
 from docx import Document
 from docx.oxml.ns import qn
 
-from app.pipeline.docx.extractor import extract_segments, walk_document
-from app.pipeline.docx.reassembler import reassemble_docx, write_translated_paragraph
+from app.pipeline.docx.extractor import extract_run_segments, extract_segments, walk_document
+from app.pipeline.docx.reassembler import (
+    reassemble_docx,
+    reassemble_docx_runs,
+    write_translated_paragraph,
+    write_translated_run,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -316,3 +321,155 @@ def test_reassemble_docx_actually_translates(simple_doc):
 
     walk_texts = [p.text for _, p in walk_document(doc)]
     assert "Xin chào thế giới" in walk_texts
+
+
+# ---------------------------------------------------------------------------
+# Per-run segment extraction tests (G2 gap closure — plan 01-13)
+# ---------------------------------------------------------------------------
+
+
+def test_extract_run_segments_multi_format_paragraph():
+    """
+    extract_run_segments must split at format boundaries and assign run_index.
+
+    Paragraph: bold "Bold text " | plain "plain text " | italic+underline "italic-underline"
+    → 3 segments, one per run, each with correct run_index and source_text.
+    """
+    doc = Document()
+    para = doc.add_paragraph()
+    run0 = para.add_run("Bold text ")
+    run0.bold = True
+    run1 = para.add_run("plain text ")
+    # run1 has no bold/italic — plain formatting (defaults)
+    _ = run1  # suppress unused variable warning
+    run2 = para.add_run("italic-underline")
+    run2.italic = True
+    run2.underline = True
+
+    segments = extract_run_segments(doc, "job1")
+
+    assert len(segments) == 3
+    assert segments[0].source_text == "Bold text "
+    assert segments[0].run_index == 0
+    assert segments[1].source_text == "plain text "
+    assert segments[1].run_index == 1
+    assert segments[2].source_text == "italic-underline"
+    assert segments[2].run_index == 2
+
+
+def test_extract_run_segments_uniform_format_merges():
+    """
+    extract_run_segments must merge consecutive runs with identical formatting.
+
+    Paragraph: bold "A" | bold "B" | bold "C"
+    → 1 segment covering all 3 runs (run_index=0, run_group_size=3).
+    """
+    doc = Document()
+    para = doc.add_paragraph()
+    for ch in ("A", "B", "C"):
+        run = para.add_run(ch)
+        run.bold = True
+
+    segments = extract_run_segments(doc, "job1")
+
+    assert len(segments) == 1
+    assert segments[0].source_text == "ABC"
+    assert segments[0].run_index == 0
+    assert segments[0].run_group_size == 3
+
+
+def test_write_translated_run_preserves_formatting():
+    """
+    write_translated_run must write into the target run slot only.
+
+    Writing to run_index=2 must not alter run 0's formatting or text.
+    """
+    doc = Document()
+    para = doc.add_paragraph()
+    run0 = para.add_run("Bold text ")
+    run0.bold = True
+    para.add_run("plain text ")
+    run2 = para.add_run("italic-underline")
+    run2.italic = True
+    run2.underline = True
+
+    # Build a minimal Segment pointing at run_index=2
+    from app.pipeline.segment import Segment
+
+    seg = Segment.from_text(
+        source_text="italic-underline",
+        structural_position="para.0.run2",
+        seq_in_job=2,
+        run_index=2,
+        run_group_size=1,
+    )
+
+    write_translated_run(para, seg, "translated_end")
+
+    assert para.runs[2].text == "translated_end"
+    assert para.runs[2].italic is True
+    assert para.runs[2].underline is True
+    # run 0 must be untouched
+    assert para.runs[0].text == "Bold text "
+    assert para.runs[0].bold is True
+
+
+def test_write_translated_run_run_index_out_of_bounds_skips():
+    """
+    write_translated_run must not raise when run_index >= len(paragraph.runs).
+
+    A malformed Segment with run_index=99 on a 1-run paragraph should be silently
+    skipped without raising IndexError (T-13-01 mitigation).
+    """
+    doc = Document()
+    para = doc.add_paragraph()
+    para.add_run("only run")
+
+    from app.pipeline.segment import Segment
+
+    seg = Segment.from_text(
+        source_text="only run",
+        structural_position="para.0.run99",
+        seq_in_job=0,
+        run_index=99,
+        run_group_size=1,
+    )
+
+    # Must not raise
+    write_translated_run(para, seg, "should be ignored")
+
+    # Original text must be unchanged
+    assert para.runs[0].text == "only run"
+
+
+def test_reassemble_docx_runs_round_trip():
+    """
+    Full round-trip: extract_run_segments → reassemble_docx_runs must preserve
+    per-run formatting while writing back translated text.
+
+    Paragraph: bold "Hello " | plain "world" | italic "end"
+    After round-trip:
+      - runs[0].text == "TRANS_0"; bold is True
+      - runs[1].text == "TRANS_1"; bold is None (plain)
+      - runs[2].text == "TRANS_2"; italic is True
+    """
+    doc = Document()
+    para = doc.add_paragraph()
+    run0 = para.add_run("Hello ")
+    run0.bold = True
+    para.add_run("world")
+    run2 = para.add_run("end")
+    run2.italic = True
+
+    segs = extract_run_segments(doc, "j1")
+    assert len(segs) == 3, f"Expected 3 segments, got {len(segs)}"
+
+    translated_texts = {seg.id: f"TRANS_{i}" for i, seg in enumerate(segs)}
+    reassemble_docx_runs(doc, segs, translated_texts)
+
+    assert para.runs[0].text == "TRANS_0"
+    assert para.runs[0].bold is True
+    assert para.runs[1].text == "TRANS_1"
+    assert para.runs[1].bold is None  # plain — no bold set
+    assert para.runs[2].text == "TRANS_2"
+    assert para.runs[2].italic is True
