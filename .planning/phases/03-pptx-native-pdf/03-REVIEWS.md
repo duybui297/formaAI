@@ -124,3 +124,35 @@ The plan set is **execution-ready** with **above-average** internal consistency.
 
 ### Recommended Action
 Apply suggestions 1–4 (group fixture fix, auto-adjusted UI contract, master E2E assertion, HTML probe documentation) via `/gsd-plan-phase 3 --reviews`. Suggestions 5–7 are LOW priority / wording cleanups that can be folded in during execution.
+
+---
+
+## Resolution Status
+
+**Applied by:** `/gsd-plan-phase 3 --reviews` (revision pass)
+**Date:** 2026-04-26
+
+### MEDIUM — Applied
+
+| Item | Plan | Change Made |
+|------|------|-------------|
+| **M1** — fake group fixture | 03-02 Task 1 | Replaced plain text box with real lxml-injected `<p:grpSp>` OOXML element. Test now asserts `.group.` in `structural_position` — GROUP code path forced. |
+| **M2** — overflow vs auto-adjusted contract | 03-05, 03-06, 03-02 Task 3, UI-SPEC | Documented inline comment at SegmentFlag insertion site (worker). FlagBadge Task 2 action updated with `details?.auto_adjusted` differentiation logic. Two new vitest cases added (test_flag_badge_overflow_auto_adjusted_renders_info, test_flag_badge_overflow_unfit_renders_warning). UI-SPEC flag table updated with auto-adjusted rendering rule. |
+| **M3** — master text E2E gap | 03-07 Task 1 | `full_pptx` fixture writes text to `prs.slide_master.shapes.add_textbox`. `test_pptx_full_round_trip` asserts `master.` segments. New `test_pptx_master_text_round_trip` tests full master text round-trip (skips gracefully if fixture fails to write). must_haves truth added. |
+| **M4** — HTML probe semantics | 03-01 Task 4 | Probe script replaced with dual-path version: PATH 1 = pipeline (`translate_batch` with masking) → `pipeline_verdict`; PATH 2 = raw model (direct API) → `raw_verdict`. Output file format updated. Plan 03-04 read_first notes to use `pipeline_verdict`. |
+
+### LOW — Applied
+
+| Item | Plan | Change Made |
+|------|------|-------------|
+| **L1** — requirements traceability | 03-01 frontmatter + must_haves | Added comment clarifying PPTX-02/PDF-04/LAYOUT-02/03 are precondition-only; full delivery in 03-03/03-04/03-05/03-06. |
+| **L2** — canonical impl comment | 03-04 Task 1 | Added `# L2: Single canonical implementation — referenced by 03-VALIDATION.md PDF-04 tests` comment to `cluster_columns` docstring. Added VALIDATION.md to read_first. |
+| **L3** — multi_column_degraded heuristic | 03-05 Task 1 | Added inline comment: `# 'col' absent in structural_position == degraded page (extractor writes page.N.block.B for degraded, page.N.col.C.block.B otherwise)`. |
+
+### SKIP — Accepted
+
+| Item | Reason |
+|------|--------|
+| Large-file performance / log redaction | Explicitly out of scope per CLAUDE.md PoC bounds |
+| `test_empty_pptx` flakiness | Low risk; address only if goes red during execution |
+| Docker/WSL Noto path mismatch | Already mitigated by host fallback; runtime container is source of truth |
