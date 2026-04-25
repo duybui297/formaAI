@@ -18,6 +18,9 @@ COPY pyproject.toml .
 # Install all dependencies (including test extras) into the system Python
 RUN uv pip install --system -e ".[test]"
 
+# Copy alembic config — needed by `alembic current/upgrade` invoked via docker exec
+COPY alembic.ini .
+
 # Copy source code (bind-mounted in development; baked in production builds)
 COPY src/ src/
 
