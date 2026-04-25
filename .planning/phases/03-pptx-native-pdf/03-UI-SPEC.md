@@ -76,12 +76,22 @@ table.
 
 | Flag type | Color token | Tailwind classes | Applied to |
 |-----------|-------------|-----------------|-----------|
-| overflow | amber-500 | `text-amber-600 bg-amber-50 border-amber-200` | Overflow flag badge (Phase 1) |
+| overflow (warning) | amber-500 | `text-amber-600 bg-amber-50 border-amber-200` | Overflow flag badge — text could not fit safely (Phase 1) |
+| **overflow (auto-fit info)** | **slate-500** | **`text-slate-600 bg-slate-100 border-slate-300`** | **AUTO-FIT badge — `overflow` flag with `details.auto_adjusted === true` (M2)** |
 | glossary_violation | violet-600 | `text-violet-700 bg-violet-50 border-violet-200` | Glossary violation badge (Phase 1) |
 | placeholder_mismatch | orange-500 | `text-orange-700 bg-orange-50 border-orange-200` | Placeholder mismatch badge (Phase 2) |
 | llm_refusal | red-500 | `text-red-700 bg-red-50 border-red-200` | LLM refusal badge (Phase 2) |
 | **smartart** | **orange-500** | **`text-orange-700 bg-orange-50 border-orange-200`** | **SmartArt flag badge (Phase 3 — PPTX only)** |
 | **multi_column_degraded** | **slate-500** | **`text-slate-600 bg-slate-100 border-slate-300`** | **Multi-column degraded flag badge (Phase 3 — PDF only)** |
+
+**M2 overflow vs auto-adjusted rendering rule:**
+
+`flag_type === "overflow"` has two semantically distinct states. `FlagBadge` MUST differentiate using `details.auto_adjusted`:
+
+| Condition | Label | Tailwind classes | Meaning |
+|-----------|-------|-----------------|---------|
+| `flag_type === "overflow" && details?.auto_adjusted === true` | `AUTO-FIT` | `text-slate-600 bg-slate-100 border-slate-300` | TEXT_TO_FIT_SHAPE applied successfully (informational, not a warning) |
+| `flag_type === "overflow" && !details?.auto_adjusted` | `OVERFLOW` | `text-amber-600 bg-amber-50 border-amber-200` | Text expansion too large to auto-fit safely (warning — user may need to act) |
 
 **Left-border severity indicator** (existing SegmentRow pattern, extend to new types):
 
