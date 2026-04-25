@@ -102,10 +102,12 @@ async def _create_segment(
 async def _create_flag(
     session: AsyncSession,
     segment_id: str,
+    segment_job_id: str,
     flag_type: FlagType = FlagType.overflow,
 ) -> SegmentFlag:
     flag = SegmentFlag(
         segment_id=segment_id,
+        segment_job_id=segment_job_id,
         flag_type=flag_type,
         severity=FlagSeverity.warn,
         details={"test": True},
@@ -136,7 +138,7 @@ async def test_list_segments_returns_200_with_segments(tmp_path):
         async with factory() as sess:
             job = await _create_job(sess)
             seg = await _create_segment(sess, job.id, seq=1)
-            await _create_flag(sess, seg.id)
+            await _create_flag(sess, seg.id, job.id)
 
         async def override_session():
             async with factory() as sess:

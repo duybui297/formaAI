@@ -150,7 +150,7 @@ async def test_worker_passes_glossary_to_translate_batch(session, tmp_path):
         translate_calls.append({"glossary": glossary, "segments": segments})
         return [f"translated: {s}" for s in segments]
 
-    async def mock_post_check(session, batch_segs, translated_map, glossary, source_lang, target_lang, expansion_thresholds):
+    async def mock_post_check(session, batch_segs, translated_map, glossary, source_lang, target_lang, expansion_thresholds, job_id):
         post_check_calls.append({"glossary": glossary})
 
     mock_settings = MagicMock()
@@ -205,7 +205,7 @@ async def test_worker_passes_none_glossary_when_no_glossary(session, tmp_path):
         translate_calls.append({"glossary": glossary})
         return [f"translated: {s}" for s in segments]
 
-    async def mock_post_check(session, batch_segs, translated_map, glossary, source_lang, target_lang, expansion_thresholds):
+    async def mock_post_check(session, batch_segs, translated_map, glossary, source_lang, target_lang, expansion_thresholds, job_id):
         pass
 
     mock_settings = MagicMock()
@@ -250,7 +250,7 @@ async def test_worker_calls_run_post_check_per_batch(session, tmp_path):
     async def mock_translate_batch(client, segments, source_lang, target_lang, glossary):
         return [f"translated: {s}" for s in segments]
 
-    async def mock_post_check(session, batch_segs, translated_map, glossary, source_lang, target_lang, expansion_thresholds):
+    async def mock_post_check(session, batch_segs, translated_map, glossary, source_lang, target_lang, expansion_thresholds, job_id):
         post_check_calls.append({
             "batch_size": len(batch_segs),
             "translated_map_keys": list(translated_map.keys()),

@@ -171,6 +171,7 @@ async def test_segment_flag_create_roundtrip(db_session) -> None:
 
     flag = SegmentFlag(
         segment_id=seg_id,
+        segment_job_id=job.id,
         flag_type=FlagType.overflow,
         severity=FlagSeverity.warn,
         details={"ratio": 1.6, "threshold": 1.3},

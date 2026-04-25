@@ -48,6 +48,7 @@ async def test_run_post_check_overflow_flag(db_session):
         source_lang="vi",
         target_lang="en",
         expansion_thresholds={"vi->en": 1.5},
+        job_id="test-job-id",
     )
 
     overflow_flags = [f for f in flags_added if f.flag_type == FlagType.overflow]
@@ -81,6 +82,7 @@ async def test_run_post_check_glossary_violation_flag(db_session):
         source_lang="vi",
         target_lang="en",
         expansion_thresholds={},
+        job_id="test-job-id",
     )
 
     viol_flags = [f for f in flags_added if f.flag_type == FlagType.glossary_violation]
@@ -112,6 +114,7 @@ async def test_run_post_check_glossary_no_violation_when_term_present(db_session
         source_lang="vi",
         target_lang="en",
         expansion_thresholds={},
+        job_id="test-job-id",
     )
 
     viol_flags = [f for f in flags_added if f.flag_type == FlagType.glossary_violation]
@@ -141,6 +144,7 @@ async def test_run_post_check_glossary_no_violation_when_source_not_in_source(db
         source_lang="vi",
         target_lang="en",
         expansion_thresholds={},
+        job_id="test-job-id",
     )
 
     viol_flags = [f for f in flags_added if f.flag_type == FlagType.glossary_violation]
@@ -170,6 +174,7 @@ async def test_run_post_check_placeholder_mismatch_flag(db_session):
         source_lang="vi",
         target_lang="en",
         expansion_thresholds={},
+        job_id="test-job-id",
     )
 
     pm_flags = [f for f in flags_added if f.flag_type == FlagType.placeholder_mismatch]
@@ -201,6 +206,7 @@ async def test_run_post_check_placeholder_no_flag_when_preserved(db_session):
         source_lang="vi",
         target_lang="en",
         expansion_thresholds={},
+        job_id="test-job-id",
     )
 
     pm_flags = [f for f in flags_added if f.flag_type == FlagType.placeholder_mismatch]
@@ -229,6 +235,7 @@ async def test_run_post_check_llm_refusal_flag_long_source(db_session):
         source_lang="vi",
         target_lang="en",
         expansion_thresholds={},
+        job_id="test-job-id",
     )
 
     refusal_flags = [f for f in flags_added if f.flag_type == FlagType.llm_refusal]
@@ -257,6 +264,7 @@ async def test_run_post_check_llm_refusal_no_flag_short_strings(db_session):
             source_lang="vi",
             target_lang="en",
             expansion_thresholds={},
+            job_id="test-job-id",
         )
 
         refusal_flags = [f for f in flags_added if f.flag_type == FlagType.llm_refusal]
@@ -288,6 +296,7 @@ async def test_run_post_check_glossary_skips_short_target_terms(db_session):
         source_lang="en",
         target_lang="vi",
         expansion_thresholds={},
+        job_id="test-job-id",
     )
 
     viol_flags = [f for f in flags_added if f.flag_type == FlagType.glossary_violation]
@@ -318,6 +327,7 @@ async def test_run_post_check_all_flags_severity_warn(db_session):
         source_lang="vi",
         target_lang="en",
         expansion_thresholds={"vi->en": 1.5},
+        job_id="test-job-id",
     )
 
     for flag in flags_added:
