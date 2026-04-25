@@ -17,6 +17,7 @@ PITFALL: image blocks (type==1) have no "lines" key — ALWAYS filter type==0 on
 """
 from __future__ import annotations
 
+import html as _html
 import unicodedata
 
 import pymupdf
@@ -48,17 +49,18 @@ def spans_to_html(block: dict) -> str:
             text = span.get("text", "")
             if not text:
                 continue
+            escaped = _html.escape(text)  # prevent injection of <, >, & from PDF text
             flags = span.get("flags", 0)
             is_bold = bool(flags & (2**4))
             is_italic = bool(flags & (2**1))
             if is_bold and is_italic:
-                parts.append(f"<b><i>{text}</i></b>")
+                parts.append(f"<b><i>{escaped}</i></b>")
             elif is_bold:
-                parts.append(f"<b>{text}</b>")
+                parts.append(f"<b>{escaped}</b>")
             elif is_italic:
-                parts.append(f"<i>{text}</i>")
+                parts.append(f"<i>{escaped}</i>")
             else:
-                parts.append(text)
+                parts.append(escaped)
         parts.append(" ")  # line separator
     return "".join(parts).strip()
 
