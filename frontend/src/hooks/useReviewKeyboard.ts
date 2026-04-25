@@ -70,8 +70,9 @@ export function useReviewKeyboard({
     [focusedIndex]
   );
 
-  // ?: toggle help panel (shift+/)
-  useHotkeys("shift+/", () => onToggleHelp(), { preventDefault: true });
+  // ?: toggle help panel — detect event.key==="?" directly (Shift+/ sends "?" in all browsers)
+  // Using shift+/ is wrong: it would match event.key==="/", but Shift held transforms / to ?
+  useHotkeys("?", () => onToggleHelp(), { preventDefault: true });
 
   // Escape: blur active textarea (enabled in textarea)
   useHotkeys(
