@@ -3,12 +3,12 @@ status: diagnosed
 phase: 02-review-ux-glossary
 source: [02-VERIFICATION.md]
 started: 2026-04-25T03:45:00Z
-updated: 2026-04-25T17:00:00Z
+updated: 2026-04-25T21:50:00Z
 ---
 
 ## Current Test
 
-[testing complete — 6/7 passed; test 3 keyboard UX issues + new VN font gap need new closure round]
+[testing complete — 8/9 pass; test 9 textarea-edit affordance logged for cosmetic closure round]
 
 ## Tests
 
@@ -32,19 +32,25 @@ expected: Textarea shows "Saving..." then "Saved" within ~600ms; network PATCH c
 result: pass
 
 ### 3. Keyboard shortcuts
-expected: j/k move segment focus; ? toggles keyboard help panel; Escape blurs active textarea
-result: issue
-reported: "j/k moves still not highlight which current segment on. ? cannot use because when i need to press ?, i need to hold shift. propose: change to ctrl + shift + p or something like vscode shortcut. escape cannot blurs"
-severity: major
-sub_issues:
-  - "j/k navigation has no visible focus indicator on current segment — UX breaks (user can't see where focus is)"
-  - "? hotkey: 02-12 fix may not have actually fired in browser; user wants vscode-style binding (ctrl+shift+p) to avoid shift requirement"
-  - "Escape does not blur active textarea"
-prior_attempt:
-  reported: "shift+? cannot work (may be due to ? need to hold shift first). also j/k combination not good for UX"
-  fix: "02-12 — useHotkeys('?') now matches event.key === '?' (browser sends ? already shift-pressed)"
-  applied_in: ["02-12-SUMMARY.md"]
-  outcome: "partial — ? still not working in browser; visible focus + Escape blur still broken"
+expected: |
+  j/k move segment focus and show visible violet ring on current row;
+  ? OR Ctrl+Shift+P toggles keyboard help panel (Ctrl+Shift+P also works from inside textarea);
+  Escape blurs active textarea
+result: pass
+side_observation: "textarea when edit is not good UI (need to highlight or white box or something) — logged as test 9"
+prior_attempts:
+  - round: 1
+    reported: "shift+? cannot work; j/k combination not good for UX"
+    fix: "02-12 — useHotkeys('?')"
+    outcome: "did not address j/k focus visibility, still broken in browser"
+  - round: 2
+    reported: "j/k no visible focus highlight; ? still requires shift; Escape doesn't blur"
+    fix: |
+      02-13:
+      - SegmentRow.tsx: ring-2 ring-violet-500 bg-violet-50 + data-focused
+      - useReviewKeyboard.ts: additive ctrl+shift+p binding (enableOnFormTags textarea), Escape blur via setTimeout(blur, 0)
+      - KeyboardHelpPanel.tsx: label updated to "? / Ctrl+Shift+P"
+    applied_in: ["02-13-SUMMARY.md"]
 
 ### 4. Export DOCX file download
 expected: Browser triggers a DOCX file download; re-clicking does not corrupt segment state
@@ -88,10 +94,33 @@ prior_attempt:
   applied_in: ["02-10-SUMMARY.md", "02-11-SUMMARY.md"]
 cross_ref_test: 4
 
+### 8. Vietnamese font rendering
+expected: |
+  Vietnamese diacritics (ắ, ề, ộ, ý, ữ) render correctly in body text, headings, and source-cell monospace font.
+  No tofu boxes or fallback substitution glyphs visible.
+result: pass
+
+### 9. Textarea active-edit visual state
+expected: |
+  When user clicks/focuses a target segment textarea to edit, it shows clear visual contrast vs surrounding read-only cells: white bg, distinct ring, padding cue, OR similar "this is editable now" affordance. Should NOT blend with the row.
+result: issue
+reported: "textarea when edit is not good UI (need to highlight or white box or something like that)"
+severity: minor
+discovered_during: "round 3 retest of test 3"
+prior_attempt:
+  reported: "current font is errored when display vietnamese (paper-skill PT Mono / Roboto subsets missing 'vietnamese')"
+  fix: |
+    02-14:
+    - layout.tsx: Roboto + Montserrat subsets include 'vietnamese'
+    - PT Mono → JetBrains Mono (PT Mono lacks vietnamese subset on Google Fonts)
+    - CSS var --font-pt-mono preserved → SegmentRow.tsx unchanged
+    - CLAUDE.md font convention updated
+  applied_in: ["02-14-SUMMARY.md"]
+
 ## Summary
 
-total: 7
-passed: 6
+total: 9
+passed: 8
 issues: 1
 partial: 0
 pending: 0
@@ -170,3 +199,16 @@ blocked: 0
     - "Update segment_flags FK: reference (segment_id) needs change — likely add segment_flags.job_id, FK to (segments.job_id, segments.id)"
     - "Verify all queries that look up segment by id alone still work (segments.py PATCH, run_post_check) — most filter by job_id already"
     - "Re-test re-upload scenario after migration"
+
+- truth: "When user clicks/focuses target textarea to edit, it shows clear visual contrast vs surrounding read-only cells (white bg, distinct ring, padding cue)"
+  status: failed
+  reason: "User reported: textarea when edit is not good UI (need to highlight or white box or something)"
+  severity: minor
+  test: 9
+  artifacts:
+    - "frontend/src/components/SegmentRow.tsx (TargetCell textarea)"
+  missing:
+    - "Apply :focus-within or :focus styles to target-cell textarea — examples: bg-white, ring-2 ring-violet-400, shadow-sm"
+    - "Distinguish read-only target cell (current state: blends with row) from active edit (should be visibly distinct)"
+    - "Optional: subtle animation/transition on focus for polish"
+  discovered_during: "round 3 retest of test 3"
