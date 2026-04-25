@@ -41,7 +41,8 @@ export function ReviewPageHeader({ job }: ReviewPageHeaderProps) {
       a.href = url;
       a.download = job.original_filename.replace(/(\.\w+)?$/, "_translated.docx");
       a.click();
-      URL.revokeObjectURL(url);
+      // Defer revocation so Safari/Firefox finish reading the blob before it is released.
+      setTimeout(() => URL.revokeObjectURL(url), 100);
       toast({ title: "Export ready — downloading." });
     } catch {
       toast({
