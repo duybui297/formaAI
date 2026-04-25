@@ -128,7 +128,7 @@ Metrics worth recording (logs are sufficient for PoC; Prometheus optional):
 - [ ] `backend/tests/pipeline/test_pdf_columns.py` — covers PDF-04
 - [ ] `frontend/src/__tests__/formatBreadcrumb.test.ts` — covers D-03-07
 - [ ] `frontend/src/__tests__/FlagBadge.test.tsx` — extend with smartart + multi_column_degraded
-- [ ] `backend/tests/fixtures/` — minimal PPTX fixture (text+notes+table+group+SmartArt+master), 1-col PDF, 2-col PDF, 3-col PDF
+- [x] Programmatic fixtures via tmp_path_factory in test_pptx_extractor.py, test_pptx_reassembler.py, test_pdf_extractor.py, test_pdf_reassembler.py, test_pdf_columns.py — no binary files committed (per PATTERNS.md DOCX analog)
 - [ ] Wave-0 empirical probe: `qwen-mt-turbo` HTML-tag preservation → planned in plan 03-01 Task 4 (wave0_html_probe.py)
 - [ ] Wave-0 empirical probe: `fc-list | grep Noto` inside Docker → planned in plan 03-01 Task 3 (wave-0-noto-paths.txt)
 
