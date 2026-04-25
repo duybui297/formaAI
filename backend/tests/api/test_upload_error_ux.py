@@ -7,8 +7,8 @@ frontend error UX to work end-to-end.
 
 Existing status-code coverage in test_upload.py:
   - test_upload_rejects_unsupported_extension -> 415 for .txt
-  - test_upload_rejects_pdf_phase1 -> 422 for .pdf (Phase 1 gate)
-  - test_upload_rejects_pptx_phase1 -> 422 for .pptx (Phase 1 gate)
+  - test_upload_accepts_pdf_phase3 -> 202 for .pdf (Phase 3 native PDF)
+  - test_upload_accepts_pptx_phase3 -> 202 for .pptx (Phase 3 PPTX)
 """
 from __future__ import annotations
 
@@ -33,11 +33,8 @@ async def test_upload_txt_detail_mentions_docx(app_and_tmp):
 
 
 @pytest.mark.asyncio
-async def test_upload_pdf_phase1_gate_detail(app_and_tmp):
-    """Phase 1 gate: .pdf returns 422 with actionable detail (not 415).
-
-    .pdf is in ALLOWED_EXTENSIONS so extension check passes; Phase 1 gate rejects it.
-    """
+async def test_upload_pdf_returns_job_id(app_and_tmp):
+    """Phase 3: .pdf accepted, response carries a job_id for polling."""
     app, _ = app_and_tmp
     pdf_magic = b"%PDF-1.4\n%stub"
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
@@ -46,7 +43,6 @@ async def test_upload_pdf_phase1_gate_detail(app_and_tmp):
             files={"file": ("doc.pdf", pdf_magic, "application/pdf")},
             data={"source_lang": "en", "target_lang": "vi"},
         )
-    assert r.status_code == 422
+    assert r.status_code == 202
     body = r.json()
-    assert "detail" in body and body["detail"]
-    assert any(kw in body["detail"].lower() for kw in ("pdf", "phase", "docx", "supported"))
+    assert "job_id" in body and body["job_id"]

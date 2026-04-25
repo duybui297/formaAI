@@ -32,8 +32,8 @@ router = APIRouter()
 
 MAX_UPLOAD_BYTES: int = 25 * 1024 * 1024  # 25 MB (UPLD-03)
 ALLOWED_EXTENSIONS: frozenset[str] = frozenset({".docx", ".pptx", ".pdf"})  # UPLD-02
-# Phase 1: only DOCX supports end-to-end translation (D-15)
-PHASE1_SUPPORTED_FORMATS: frozenset[str] = frozenset({".docx"})
+# Formats with end-to-end pipelines: DOCX (Phase 1), PPTX + native PDF (Phase 3, D-15)
+SUPPORTED_FORMATS: frozenset[str] = frozenset({".docx", ".pptx", ".pdf"})
 
 _STREAMING_CHUNK = 64 * 1024  # 64 KB per read chunk
 
@@ -72,14 +72,11 @@ async def upload_document(
             detail="Unsupported file type. Upload a DOCX, PDF, or PPTX.",
         )
 
-    # --- Phase 1 format gate (D-15) ---
-    if ext not in PHASE1_SUPPORTED_FORMATS:
+    # --- Format gate (D-15) — defensive: ALLOWED_EXTENSIONS already filtered above ---
+    if ext not in SUPPORTED_FORMATS:
         raise HTTPException(
             status_code=422,
-            detail=(
-                f"{ext.lstrip('.').upper()} translation is not yet supported. "
-                "DOCX is available now; PPTX and PDF are coming in the next release."
-            ),
+            detail=f"{ext.lstrip('.').upper()} translation is not yet supported.",
         )
 
     # --- Language code validation (T-06a-03) ---

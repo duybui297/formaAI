@@ -212,8 +212,8 @@ async def test_upload_rejects_unsupported_extension(app_and_tmp):
 
 
 @pytest.mark.asyncio
-async def test_upload_rejects_pdf_phase1(app_and_tmp):
-    """422 returned for .pdf upload in Phase 1 (PPTX/PDF not yet supported)."""
+async def test_upload_accepts_pdf_phase3(app_and_tmp):
+    """202 returned for .pdf upload — Phase 3 enabled native PDF pipeline."""
     app, _ = app_and_tmp
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         response = await c.post(
@@ -221,13 +221,12 @@ async def test_upload_rejects_pdf_phase1(app_and_tmp):
             files={"file": ("doc.pdf", b"%PDF-1.4", "application/pdf")},
             data={"source_lang": "auto", "target_lang": "en"},
         )
-    assert response.status_code == 422
-    assert "PDF" in response.json()["detail"] or "pdf" in response.json()["detail"].lower()
+    assert response.status_code == 202
 
 
 @pytest.mark.asyncio
-async def test_upload_rejects_pptx_phase1(app_and_tmp):
-    """422 returned for .pptx upload in Phase 1."""
+async def test_upload_accepts_pptx_phase3(app_and_tmp):
+    """202 returned for .pptx upload — Phase 3 enabled PPTX pipeline."""
     app, _ = app_and_tmp
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         response = await c.post(
@@ -235,7 +234,7 @@ async def test_upload_rejects_pptx_phase1(app_and_tmp):
             files={"file": ("slide.pptx", b"PK\x03\x04", "application/octet-stream")},
             data={"source_lang": "auto", "target_lang": "en"},
         )
-    assert response.status_code == 422
+    assert response.status_code == 202
 
 
 # ---------------------------------------------------------------------------
