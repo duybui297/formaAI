@@ -86,7 +86,17 @@ Plans:
   2. After PPTX translation, text-box overflow is detected and flagged in the review UI with an overflow badge; `MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE` is applied where safe
   3. A native (text-layer) PDF is parsed with PyMuPDF; translated text is reinserted using the redact-annot workflow with bundled Noto CJK fonts; multi-column layouts are handled via x-coordinate clustering (proven on at least one 2-column test PDF)
   4. When translated PDF text does not fit its bounding box, the segment is flagged for review in the UI (orange highlight); if font scaling brings it within range, it is recorded as auto-adjusted
-**Plans**: TBD
+**Plans**: 7 plans
+
+Plans:
+- [ ] 03-01-PLAN.md — pyproject.toml deps (pymupdf + python-pptx) + FlagType enum extension + migration 0004
+- [ ] 03-02-PLAN.md — TDD RED test scaffolding (5 backend + 2 frontend test files)
+- [ ] 03-03-PLAN.md — PPTX pipeline (smartart.py, extractor, reassembler)
+- [ ] 03-04-PLAN.md — PDF pipeline (columns, fonts, extractor, reassembler)
+- [ ] 03-05-PLAN.md — Worker dispatch (match/case + SegmentFlag persistence for pptx/pdf formats)
+- [ ] 03-06-PLAN.md — Frontend deltas (formatBreadcrumb, FlagBadge, SegmentRow, UploadForm, FlagType unions)
+- [ ] 03-07-PLAN.md — Round-trip integration tests + coverage gate (80%) + frontend gate
+
 **UI hint**: yes
 
 ### Phase 4: Scanned PDF (OCR)
@@ -118,6 +128,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 |-------|----------------|--------|-----------|
 | 1. Foundation + DOCX Pipeline | 0/11 | Not started | - |
 | 2. Review UX + Glossary | 0/14 | Not started | - |
-| 3. PPTX + Native PDF | 0/TBD | Not started | - |
+| 3. PPTX + Native PDF | 0/7 | Not started | - |
 | 4. Scanned PDF (OCR) | 0/TBD | Not started | - |
 | 5. Demo Hardening | 0/TBD | Not started | - |
