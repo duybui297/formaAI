@@ -5,6 +5,7 @@ import { Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { GlossaryList } from "@/components/glossary/GlossaryList"
 import { GlossaryCreateDialog } from "@/components/glossary/GlossaryCreateDialog"
+import { NavBar } from "@/components/NavBar"
 import type { Glossary } from "@/lib/types"
 
 export default function GlossariesPage() {
@@ -28,37 +29,40 @@ export default function GlossariesPage() {
   })
 
   return (
-    <div className="px-8 py-8">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-semibold font-[--font-montserrat] text-[#111111]">
-          Glossaries
-        </h1>
-        <Button
-          onClick={() => setCreateOpen(true)}
-          className="bg-violet-500 hover:bg-violet-600 text-white"
-        >
-          <Plus className="h-4 w-4 mr-2" />
-          Create Glossary
-        </Button>
-      </div>
+    <div>
+      <NavBar />
+      <div className="px-8 py-8">
+        <div className="flex items-center justify-between mb-6">
+          <h1 className="text-2xl font-semibold font-[--font-montserrat] text-[#111111]">
+            Glossaries
+          </h1>
+          <Button
+            onClick={() => setCreateOpen(true)}
+            className="bg-violet-500 hover:bg-violet-600 text-white"
+          >
+            <Plus className="h-4 w-4 mr-2" />
+            Create Glossary
+          </Button>
+        </div>
 
-      {isLoading ? (
-        <p className="text-slate-400">Loading…</p>
-      ) : (
-        <GlossaryList
-          glossaries={glossaries}
-          onDelete={(id) => deleteMutation.mutate(id)}
+        {isLoading ? (
+          <p className="text-slate-400">Loading…</p>
+        ) : (
+          <GlossaryList
+            glossaries={glossaries}
+            onDelete={(id) => deleteMutation.mutate(id)}
+          />
+        )}
+
+        <GlossaryCreateDialog
+          open={createOpen}
+          onOpenChange={setCreateOpen}
+          onCreated={() => {
+            queryClient.invalidateQueries({ queryKey: ["glossaries"] })
+            setCreateOpen(false)
+          }}
         />
-      )}
-
-      <GlossaryCreateDialog
-        open={createOpen}
-        onOpenChange={setCreateOpen}
-        onCreated={() => {
-          queryClient.invalidateQueries({ queryKey: ["glossaries"] })
-          setCreateOpen(false)
-        }}
-      />
+      </div>
     </div>
   )
 }

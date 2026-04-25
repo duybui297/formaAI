@@ -22,7 +22,10 @@ export function useReviewKeyboard({
   // j: next segment — disabled in form tags by default
   useHotkeys(
     "j",
-    () => onFocusChange(Math.min(focusedIndex + 1, segmentCount - 1)),
+    () => {
+      if (segmentCount === 0) return;
+      onFocusChange(Math.min(focusedIndex + 1, segmentCount - 1));
+    },
     { preventDefault: true },
     [focusedIndex, segmentCount]
   );
@@ -30,9 +33,12 @@ export function useReviewKeyboard({
   // k: previous segment
   useHotkeys(
     "k",
-    () => onFocusChange(Math.max(focusedIndex - 1, 0)),
+    () => {
+      if (segmentCount === 0) return;
+      onFocusChange(Math.max(focusedIndex - 1, 0));
+    },
     { preventDefault: true },
-    [focusedIndex]
+    [focusedIndex, segmentCount]
   );
 
   // n: next flagged segment (cycles)

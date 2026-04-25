@@ -52,7 +52,7 @@ export function GlossaryList({ glossaries, onDelete }: GlossaryListProps) {
               {g.source_lang} → {g.target_lang}
             </TableCell>
             <TableCell className="text-slate-600">
-              {g.terms?.length ?? "—"}
+              {g.term_count}
             </TableCell>
             <TableCell className="text-slate-500 text-sm">
               {new Date(g.created_at).toLocaleDateString()}

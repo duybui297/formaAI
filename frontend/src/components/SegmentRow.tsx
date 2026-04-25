@@ -69,6 +69,7 @@ export function SegmentRow({
   );
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const savedTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const isMountedRef = useRef(true);
 
   const patchMutation = useSegmentPatch(jobId);
   const regenerateMutation = useSegmentRegenerate(jobId);
@@ -91,21 +92,30 @@ export function SegmentRow({
         { segmentId: segment.id, editedText: value },
         {
           onSuccess: () => {
+            if (!isMountedRef.current) return;
             setSaveState("saved");
-            savedTimerRef.current = setTimeout(
-              () => setSaveState("idle"),
-              1500
-            );
+            savedTimerRef.current = setTimeout(() => {
+              if (isMountedRef.current) setSaveState("idle");
+            }, 1500);
           },
           // CRITICAL: reset saveState on error — UI must not stay stuck on "Saving…"
           // Hook-level onError handles cache rollback + toast; this resets local UI state.
           onError: () => {
+            if (!isMountedRef.current) return;
             setSaveState("idle");
           },
         }
       );
     }, 500);
   };
+
+  // WR-03: mark unmounted so stale mutation callbacks are no-ops
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   // Cleanup debounce and saved-state timers on unmount
   useEffect(() => {
