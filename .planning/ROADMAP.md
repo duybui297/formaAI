@@ -72,8 +72,8 @@ Plans:
 - [x] 02-10-segment-pk-and-export-fields-PLAN.md — Compound PK (job_id, id), run_index/run_group_size columns, migration 0003, worker integration (gap closure)
 - [x] 02-11-export-error-surfacing-PLAN.md — Structured JSON error from export endpoint; frontend parses detail field (gap closure)
 - [x] 02-12-keyboard-shortcut-fix-PLAN.md — Fix ? key detection (shift+/ → "?"), update KeyboardHelpPanel label (gap closure)
-- [ ] 02-13-PLAN.md — Keyboard UX: visible focus ring, ctrl+shift+p help binding, Escape blur fix (gap closure)
-- [ ] 02-14-PLAN.md — Vietnamese font rendering: swap PT Mono → JetBrains Mono with vietnamese subset (gap closure)
+- [x] 02-13-PLAN.md — Keyboard UX: visible focus ring, ctrl+shift+p help binding, Escape blur fix (gap closure)
+- [x] 02-14-PLAN.md — Vietnamese font rendering: swap PT Mono → JetBrains Mono with vietnamese subset (gap closure)
 
 **UI hint**: yes
 
