@@ -1,14 +1,14 @@
 ---
-status: partial
+status: diagnosed
 phase: 02-review-ux-glossary
 source: [02-VERIFICATION.md]
 started: 2026-04-25T03:45:00Z
-updated: 2026-04-25T16:30:00Z
+updated: 2026-04-25T17:00:00Z
 ---
 
 ## Current Test
 
-[testing complete]
+[testing complete — 6/7 passed; test 3 keyboard UX issues + new VN font gap need new closure round]
 
 ## Tests
 
@@ -32,38 +32,47 @@ expected: Textarea shows "Saving..." then "Saved" within ~600ms; network PATCH c
 result: pass
 
 ### 3. Keyboard shortcuts
-expected: j/k move segment focus; shift+? toggles keyboard help panel; Escape blurs active textarea
+expected: j/k move segment focus; ? toggles keyboard help panel; Escape blurs active textarea
 result: issue
-reported: "shift+? cannot work (may be due to ? need to hold shift first). also j/k combination not good for UX"
+reported: "j/k moves still not highlight which current segment on. ? cannot use because when i need to press ?, i need to hold shift. propose: change to ctrl + shift + p or something like vscode shortcut. escape cannot blurs"
 severity: major
+sub_issues:
+  - "j/k navigation has no visible focus indicator on current segment — UX breaks (user can't see where focus is)"
+  - "? hotkey: 02-12 fix may not have actually fired in browser; user wants vscode-style binding (ctrl+shift+p) to avoid shift requirement"
+  - "Escape does not blur active textarea"
+prior_attempt:
+  reported: "shift+? cannot work (may be due to ? need to hold shift first). also j/k combination not good for UX"
+  fix: "02-12 — useHotkeys('?') now matches event.key === '?' (browser sends ? already shift-pressed)"
+  applied_in: ["02-12-SUMMARY.md"]
+  outcome: "partial — ? still not working in browser; visible focus + Escape blur still broken"
 
 ### 4. Export DOCX file download
 expected: Browser triggers a DOCX file download; re-clicking does not corrupt segment state
-result: issue
-reported: "error banner Export failed - Unknown error. Try again."
-severity: major
-diagnosis: |
-  AttributeError: 'Segment' object has no attribute 'run_index' at
-  backend/src/app/services/export_service.py:102 — reassemble_docx_runs
-  is called with ORM Segment rows, but `run_index` and `run_group_size`
-  are dataclass-only fields (pipeline/segment.py). Worker reassembly
-  works because it passes the live dataclass list; export reloads from
-  DB and the columns don't exist.
-  Also: api should surface specific error to UI, not "Unknown error".
+result: pass
+prior_attempt:
+  reported: "error banner Export failed - Unknown error. Try again."
+  diagnosis: "AttributeError: 'Segment' object has no attribute 'run_index' at export_service.py:102"
+  fix: |
+    02-10 added run_index + run_group_size columns to ORM Segment.
+    Worker line 305-321 populates from dataclass.
+    02-11 surfaces structured JSON {code, detail} on failure.
+    02-REVIEW-FIX WR-04: revokeObjectURL deferred 100ms (Safari/Firefox race).
+  applied_in: ["02-10-SUMMARY.md", "02-11-SUMMARY.md", "02-REVIEW-FIX.md"]
 
 ### 5. End-to-end glossary injection
-expected: Glossary terms appear in job; segments with glossary violations show violet "GLOSSARY" badge
-result: issue
-reported: "Translation Failed: sqlalchemy IntegrityError UniqueViolationError"
-severity: blocker
-diagnosis: |
-  duplicate key value violates unique constraint "segments_pkey"
-  Key (id)=(c8f39cf9b5b68be1) already exists.
-  segments.id PK is global; make_segment_id() = sha256(source_text +
-  structural_position)[:16] is deterministic per (text, position) but
-  job-independent (D-06 intent: translation memory reuse v2).
-  Re-uploading same/overlapping doc content → duplicate ids across jobs
-  → INSERT collision in translate_worker.py:322. PoC blocker.
+expected: Glossary terms appear in job; segments with glossary violations show violet "GLOSSARY" badge; re-upload same content does not collide
+result: pass
+note: "PK collision fix verified — re-upload same content works"
+side_observation: "Vietnamese glyphs render incorrectly in segment cells (paper-skill PT Mono / Roboto missing VN tone marks?). New issue logged separately."
+prior_attempt:
+  reported: "Translation Failed: sqlalchemy IntegrityError UniqueViolationError on segments_pkey"
+  diagnosis: "global PK on segments.id collided across jobs (deterministic D-06 hash)"
+  fix: |
+    02-10 migrated segments PK to compound (job_id, id).
+    SegmentFlag uses compound FK (segment_job_id, segment_id).
+    Migration 0003 applied to live Postgres.
+    02-REVIEW-FIX WR-03: worker insert wrapped in try/except IntegrityError → idempotent on retry.
+  applied_in: ["02-10-SUMMARY.md", "02-REVIEW-FIX.md"]
 
 ### 6. CSV import flow
 expected: Browser file picker accepts CSV; dedup enforced via UniqueConstraint; parsed rows appear in terms table
@@ -71,23 +80,20 @@ result: pass
 note: "duplicates rejected as expected"
 
 ### 7. End-to-end segment persistence
-expected: Real translation job (non-mocked) completes; review page displays translated segments (not empty); glossary violation badges appear on relevant segments when glossary attached
-result: partial
-reported: "review page can show segment but still cannot download (can still download unedited but translated document in the job page)"
-severity: major
-note: |
-  Persistence works (review page renders segments). Job-page download
-  works because worker saved output.docx during translate_to_done.
-  Review-page Export fails — same root cause as test 4 (run_index
-  AttributeError). Once test 4 is fixed, this passes fully.
+expected: Real translation job (non-mocked) completes; review page displays translated segments; review-page Export downloads DOCX; glossary violation badges appear on relevant segments when glossary attached
+result: pass
+prior_attempt:
+  reported: "review page can show segment but still cannot download (can still download unedited but translated document in the job page)"
+  fix: "inherits test 4 fix (02-10 + 02-11) — run_index now on ORM, export reassembles correctly"
+  applied_in: ["02-10-SUMMARY.md", "02-11-SUMMARY.md"]
 cross_ref_test: 4
 
 ## Summary
 
 total: 7
-passed: 3
-issues: 3
-partial: 1
+passed: 6
+issues: 1
+partial: 0
 pending: 0
 skipped: 0
 blocked: 0
@@ -104,27 +110,56 @@ blocked: 0
   resolution: "ops — docker compose restart worker"
 
 - truth: "Keyboard shortcut shift+? toggles the keyboard help panel; j/k navigation feels good"
-  status: failed
-  reason: "User reported: shift+? cannot work (may be due to ? need to hold shift first). also j/k combination not good for UX"
+  status: superseded
+  reason: "Prior round: shift+? not firing; j/k UX complaint. 02-12 changed binding to '?' but retest still fails."
   severity: major
   test: 3
   artifacts: ["frontend/src/hooks/useReviewKeyboard.ts", "frontend/src/components/KeyboardHelpPanel.tsx"]
-  missing: ["correct ? key detection (event.key === '?' OR shift + '/')", "evaluate j/k vs alternative nav (arrows, n/p)"]
+  missing: ["correct ? key detection", "evaluate j/k vs alternative nav"]
+  superseded_by: "second-round gap below"
+
+- truth: "Review-page keyboard nav is usable: visible focus on current segment, help panel opens without modifier gymnastics, Escape blurs active textarea"
+  status: failed
+  reason: "User reported (retest): j/k moves not highlighting current segment; ? still requires shift; Escape does not blur"
+  severity: major
+  test: 3
+  artifacts:
+    - "frontend/src/hooks/useReviewKeyboard.ts"
+    - "frontend/src/components/KeyboardHelpPanel.tsx"
+    - "frontend/src/components/SegmentRow.tsx"
+    - "frontend/src/components/SegmentTable.tsx"
+  missing:
+    - "Visible focus ring or row highlight on the j/k-focused segment (SegmentRow needs data-focused state, ring-2 ring-primary or similar)"
+    - "Help-panel hotkey changed to a non-shifted key OR explicit modifier combo. User proposes ctrl+shift+p (vscode-style command palette)"
+    - "Escape handler must call (document.activeElement as HTMLTextAreaElement)?.blur() — current implementation may not actually blur"
+    - "Verify each binding works in browser end-to-end, not just unit tests"
+  user_proposal: "ctrl+shift+p for help panel toggle (vscode convention)"
 
 - truth: "Export downloads a DOCX assembled from edited_text ?? translated_text; idempotent re-export"
-  status: failed
-  reason: "AttributeError: 'Segment' object has no attribute 'run_index' at export_service.py:102"
+  status: resolved
+  reason: "02-10 added run_index/run_group_size to ORM + worker; 02-11 surfaces structured JSON; retest passed"
   severity: major
   test: 4
-  artifacts: ["backend/src/app/services/export_service.py", "backend/src/app/db/models.py", "backend/src/app/pipeline/docx/reassembler.py", "backend/src/app/workers/translate_worker.py"]
+  artifacts: ["02-10-SUMMARY.md", "02-11-SUMMARY.md", "02-REVIEW-FIX.md"]
+  missing: []
+
+- truth: "Vietnamese diacritics render correctly in segment cells (and other UI text)"
+  status: failed
+  reason: "User retest observation: VN glyphs error in display"
+  severity: major
+  test: 5
+  artifacts:
+    - "frontend/src/app/layout.tsx (next/font/google config)"
+    - "frontend/src/components/SegmentRow.tsx (PT Mono cell)"
+    - "frontend/tailwind.config.ts (font-family stack)"
   missing:
-    - "ORM Segment columns: run_index (Integer nullable), run_group_size (Integer default 1)"
-    - "Alembic migration adding both columns"
-    - "translate_worker.py:305-321 populates run_index/run_group_size in SegmentORM(...)"
-    - "API error response surfaces specific error code (not generic Unknown)"
+    - "Verify next/font/google subsets includes 'vietnamese' for Roboto, Montserrat, PT Mono"
+    - "If PT Mono lacks VN coverage, swap source-cell font for one with full VN diacritic support (JetBrains Mono, IBM Plex Mono, or Roboto Mono)"
+    - "Check fallback font stack — must include sans-serif system fallback before generic"
+  user_observation: "current font is errored when display vietnamese"
 
 - truth: "Translation job persists segments without PK collision when re-uploading documents"
-  status: failed
+  status: resolved
   reason: "duplicate key value violates unique constraint segments_pkey: Key (id)=(c8f39cf9b5b68be1) already exists"
   severity: blocker
   test: 5
