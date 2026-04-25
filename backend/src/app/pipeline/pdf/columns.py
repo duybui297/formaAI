@@ -85,7 +85,7 @@ def cluster_columns(
     is_degraded   : True if 3+ columns or ambiguous (D-03-03)
     """
     if not text_blocks:
-        return [[]], False
+        return [], False
 
     # Compute x-midpoints for each block
     midpoints = [(b["bbox"][0] + b["bbox"][2]) / 2.0 for b in text_blocks]
