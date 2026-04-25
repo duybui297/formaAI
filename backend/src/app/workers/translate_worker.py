@@ -383,7 +383,6 @@ async def _run_translation(ctx: dict, session, job_id: str) -> None:
         # ----------------------------------------------------------------
         sem = asyncio.Semaphore(settings.worker_concurrency)
         translated_map: dict[str, str] = {}  # segment_id → translated_text
-        segments_done = 0
 
         # Map each batch back to its source Segment objects
         batch_seg_groups: list[list] = []
@@ -392,10 +391,14 @@ async def _run_translation(ctx: dict, session, job_id: str) -> None:
             batch_seg_groups.append(segments[offset : offset + len(batch)])
             offset += len(batch)
 
+        # WR-01 fix: per-batch done counts (list indexed by batch_id) — avoids
+        # nonlocal integer +=  race when concurrent coroutines read-add-write the
+        # same value near an await boundary.
+        batch_done_counts: list[int] = [0] * len(batch_seg_groups)
+
         async def _translate_one_batch(
             batch_id: int, batch_texts: list[str], batch_segs: list
         ) -> None:
-            nonlocal segments_done
             async with sem:
                 results = await translate_batch_with_retry(
                     ctx=ctx,
@@ -406,40 +409,19 @@ async def _run_translation(ctx: dict, session, job_id: str) -> None:
                     job_id=job_id,
                     batch_id=batch_id,
                 )
+                # WR-06 fix: only update the in-memory map here; DB writes are
+                # moved outside the gather so all coroutines never share a session
+                # concurrently (SQLAlchemy async sessions are not coroutine-safe).
                 for seg, translated in zip(batch_segs, results):
                     translated_map[seg.id] = translated
-                    # Gap 1: persist translated_text to DB in the same batch transaction.
-                    await session.execute(
-                        sa_update(SegmentORM)
-                        .where(SegmentORM.id == seg.id)
-                        .values(translated_text=translated)
-                    )
-                await session.flush()
-                segments_done += len(batch_texts)
 
-                # GLOS-04 + LAYOUT-01: post-translation check per batch
-                # run_post_check is imported from glossary_service (Plan 03)
-                # Writes overflow / glossary_violation / placeholder_mismatch / llm_refusal flags
-                # Also stores expansion_ratio on each segment
-                await run_post_check(
-                    session=session,
-                    batch_segs=batch_segs,
-                    translated_map={seg.id: translated_map[seg.id] for seg in batch_segs if seg.id in translated_map},
-                    glossary=glossary,
-                    source_lang=job.source_lang,
-                    target_lang=job.target_lang,
-                    expansion_thresholds=ctx["settings"].expansion_thresholds_dict,
-                    job_id=job_id,  # gap-closure 02-10: needed for compound PK WHERE + SegmentFlag.segment_job_id
-                )
-
-                await update_job_progress(
-                    session, job_id,
-                    segments_done, segments_total,
-                    batch_id, 0, JobStage.translate
-                )
+                # WR-01: record this batch's count at its own index (safe — one
+                # writer per index), then compute running total for progress emit.
+                batch_done_counts[batch_id] = len(batch_texts)
+                segments_done_now = sum(batch_done_counts)
                 await _publish_progress(
                     redis, job_id, "running", "translate",
-                    segments_done, segments_total,
+                    segments_done_now, segments_total,
                     batch_id, 0,
                     f"Translating batch {batch_id + 1}/{len(batches)}"
                 )
@@ -448,6 +430,43 @@ async def _run_translation(ctx: dict, session, job_id: str) -> None:
             _translate_one_batch(i, [seg.source_text for seg in batch_segs], batch_segs)
             for i, batch_segs in enumerate(batch_seg_groups)
         ])
+
+        # WR-06 fix: all DB writes happen sequentially here, after gather, on a
+        # single session — no concurrent coroutines touching the session object.
+        segments_done = sum(batch_done_counts)
+        for batch_id, batch_segs in enumerate(batch_seg_groups):
+            for seg in batch_segs:
+                translated = translated_map.get(seg.id)
+                if translated is None:
+                    continue
+                # Gap 1: persist translated_text to DB
+                await session.execute(
+                    sa_update(SegmentORM)
+                    .where(SegmentORM.id == seg.id)
+                    .values(translated_text=translated)
+                )
+            await session.flush()
+
+            # GLOS-04 + LAYOUT-01: post-translation check per batch
+            # run_post_check is imported from glossary_service (Plan 03)
+            # Writes overflow / glossary_violation / placeholder_mismatch / llm_refusal flags
+            # Also stores expansion_ratio on each segment
+            await run_post_check(
+                session=session,
+                batch_segs=batch_segs,
+                translated_map={seg.id: translated_map[seg.id] for seg in batch_segs if seg.id in translated_map},
+                glossary=glossary,
+                source_lang=job.source_lang,
+                target_lang=job.target_lang,
+                expansion_thresholds=ctx["settings"].expansion_thresholds_dict,
+                job_id=job_id,  # gap-closure 02-10: needed for compound PK WHERE + SegmentFlag.segment_job_id
+            )
+
+            await update_job_progress(
+                session, job_id,
+                segments_done, segments_total,
+                batch_id, 0, JobStage.translate
+            )
 
         # ----------------------------------------------------------------
         # STAGE 4: Reassemble + save output — dispatched by format (D-04)
