@@ -130,9 +130,10 @@ export function SegmentRow({
 
   return (
     <div
+      data-focused={isFocused ? "true" : undefined}
       className={cn(
         "flex border-b border-slate-100 border-l-4",
-        isFocused ? "ring-1 ring-violet-200" : "",
+        isFocused ? "ring-2 ring-violet-500 bg-violet-50" : "",
         primaryFlag
           ? (LEFT_BORDER[primaryFlag] ?? "border-l-transparent")
           : "border-l-transparent",
