@@ -2,7 +2,7 @@
 phase: 3
 slug: pptx-native-pdf
 status: draft
-nyquist_compliant: false
+nyquist_compliant: true
 wave_0_complete: false
 created: 2026-04-25
 ---
@@ -129,8 +129,8 @@ Metrics worth recording (logs are sufficient for PoC; Prometheus optional):
 - [ ] `frontend/src/__tests__/formatBreadcrumb.test.ts` — covers D-03-07
 - [ ] `frontend/src/__tests__/FlagBadge.test.tsx` — extend with smartart + multi_column_degraded
 - [ ] `backend/tests/fixtures/` — minimal PPTX fixture (text+notes+table+group+SmartArt+master), 1-col PDF, 2-col PDF, 3-col PDF
-- [ ] Wave-0 empirical probe: `qwen-mt-turbo` HTML-tag preservation (informs whether HTML feed or placeholder protection ships)
-- [ ] Wave-0 empirical probe: `fc-list | grep Noto` inside Docker → hardcode font paths in `pipeline/pdf/fonts.py`
+- [ ] Wave-0 empirical probe: `qwen-mt-turbo` HTML-tag preservation → planned in plan 03-01 Task 4 (wave0_html_probe.py)
+- [ ] Wave-0 empirical probe: `fc-list | grep Noto` inside Docker → planned in plan 03-01 Task 3 (wave-0-noto-paths.txt)
 
 ---
 
@@ -151,6 +151,6 @@ Metrics worth recording (logs are sufficient for PoC; Prometheus optional):
 - [ ] Wave 0 covers all MISSING references
 - [ ] No watch-mode flags
 - [ ] Feedback latency < 30 seconds (quick run)
-- [ ] `nyquist_compliant: true` set in frontmatter
+- [x] `nyquist_compliant: true` set in frontmatter (probe tasks added to plan 03-01)
 
 **Approval:** pending
