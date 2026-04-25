@@ -14,11 +14,16 @@ def _make_block(x0: float, y0: float, x1: float, y1: float) -> dict:
     return {"type": 0, "bbox": (x0, y0, x1, y1), "lines": []}
 
 
-def test_cluster_columns_empty_returns_single_group():
-    """Edge case: no blocks → single empty group, not degraded."""
+def test_cluster_columns_empty_returns_no_groups():
+    """Edge case: no blocks → no column groups, not degraded.
+
+    Caller (extractor) guards `if not text_blocks: continue` before calling,
+    so the returned value is purely a contract sentinel — len(groups) == 0
+    is the unambiguous "no columns" signal (post WR-02 fix).
+    """
     from app.pipeline.pdf.columns import cluster_columns
     groups, is_degraded = cluster_columns([], page_width=595.0)
-    assert len(groups) == 1
+    assert len(groups) == 0
     assert is_degraded is False
 
 
