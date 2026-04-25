@@ -61,6 +61,10 @@ created: 2026-04-24
 | 02-07-T1 | 07 | 3 | REV-01, REV-02, REV-04, REV-05, GLOS-01 | — | E2E: no secrets in spec; test uses env-var base URL | e2e | `cd /home/thu/dev/projects/ai-translation/frontend && pnpm playwright test e2e/phase-2-review.spec.ts --reporter=list 2>&1 \| tail -20` | phase-2-review.spec.ts | ⬜ pending |
 | 02-07-T2 | 07 | 3 | infrastructure | — | REQUIREMENTS.md updated; ROADMAP.md 7-plan list; CLAUDE.md conventions added | docs | `grep -q "LAYOUT-02" .planning/REQUIREMENTS.md && grep -q "Phase 3" .planning/REQUIREMENTS.md` | REQUIREMENTS.md, ROADMAP.md, CLAUDE.md | ⬜ pending |
 | 02-07-T3 | 07 | 3 | infrastructure | — | nyquist_compliant: true set in this file | docs | `grep -q "nyquist_compliant: true" .planning/phases/02-review-ux-glossary/02-VALIDATION.md` | 02-VALIDATION.md | ⬜ pending |
+| 02-08-T1 | 08 | 8 | REV-01, REV-04, GLOS-04 | T-02-08-01 | Tests run RED before implementation; no DashScope calls; SQLite in-memory | unit (TDD RED) | `cd /home/thu/dev/projects/ai-translation/backend && uv run pytest tests/workers/test_segment_persistence.py -x -q 2>&1 \| tail -15` | test_segment_persistence.py | ⬜ pending |
+| 02-08-T2 | 08 | 8 | REV-01, REV-02, REV-04, REV-05, GLOS-04, GLOS-05 | T-02-08-01, T-02-08-02 | session.add_all for ORM segments; await session.rollback() before transition_to_failed; no FK violation possible | unit (TDD GREEN) | `cd /home/thu/dev/projects/ai-translation/backend && uv run pytest tests/workers/test_segment_persistence.py tests/workers/test_worker_glossary.py -x -q 2>&1 \| tail -15` | translate_worker.py | ⬜ pending |
+| 02-09-T1 | 09 | 9 | GLOS-01, GLOS-05 | T-02-09-01 | glossary_id in _job_to_dict is server-generated UUID; term_count from server count not client array | unit | `cd /home/thu/dev/projects/ai-translation/frontend && npx tsc --noEmit 2>&1 \| grep -v UploadForm \| head -10` | types.ts, jobs.py | ⬜ pending |
+| 02-09-T2 | 09 | 9 | GLOS-01, REV-01, REV-02 | T-02-09-02 | NavBar renders on glossary routes; isMountedRef guard uses useRef (not useState) to avoid re-renders | unit | `cd /home/thu/dev/projects/ai-translation/frontend && npx tsc --noEmit 2>&1 \| grep -v UploadForm \| head -10` | glossaries/page.tsx, GlossaryList.tsx, SegmentRow.tsx, useReviewKeyboard.ts | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -114,3 +118,4 @@ created: 2026-04-24
 - [x] `nyquist_compliant: true` set in frontmatter
 
 **Approval:** complete — verified by Plan 02-07 executor (2026-04-25)
+**Gap closure plans added:** 2026-04-25 — Plans 08-09 close UAT blockers (Gap 1, Gap 2) and advisory items
