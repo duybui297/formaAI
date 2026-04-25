@@ -133,7 +133,7 @@ export function UploadForm() {
         setSubmitting(false)
       }
     },
-    [file, targetLang, sourceLang, router, toast]
+    [file, targetLang, sourceLang, glossaryId, router, toast]
   )
 
   const handleSubmit = async (e: React.FormEvent) => {
