@@ -315,6 +315,8 @@ async def _run_translation(ctx: dict, session, job_id: str) -> None:
                 translated_text=None,
                 edited_text=None,
                 expansion_ratio=None,
+                run_index=seg.run_index,          # gap-closure 02-10: None for para-level, int for run-level
+                run_group_size=seg.run_group_size,  # gap-closure 02-10: defaults to 1 in dataclass
             )
             for seg in segments
         ]
@@ -381,6 +383,7 @@ async def _run_translation(ctx: dict, session, job_id: str) -> None:
                     source_lang=job.source_lang,
                     target_lang=job.target_lang,
                     expansion_thresholds=ctx["settings"].expansion_thresholds_dict,
+                    job_id=job_id,  # gap-closure 02-10: needed for compound PK WHERE + SegmentFlag.segment_job_id
                 )
 
                 await update_job_progress(

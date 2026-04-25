@@ -4,7 +4,7 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Enum as SAEnum, Float, ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, Enum as SAEnum, Float, ForeignKey, ForeignKeyConstraint, Index, Integer, JSON, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -100,6 +100,7 @@ class Segment(Base):
     __tablename__ = "segments"
 
     # D-06: 16-char hex from sha256(source_text + structural_position)
+    # Compound PK (job_id, id) — same content hash can appear in different jobs (gap-closure 02-10)
     id: Mapped[str] = mapped_column(String(16), primary_key=True)
     seq_in_job: Mapped[int] = mapped_column(Integer, nullable=False)
 
@@ -108,6 +109,7 @@ class Segment(Base):
         ForeignKey("jobs.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
+        primary_key=True,  # compound PK with id (gap-closure 02-10)
     )
 
     source_text: Mapped[str] = mapped_column(Text, nullable=False)
@@ -121,6 +123,11 @@ class Segment(Base):
     # D-13: tracked change markers
     is_inserted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    # run_index / run_group_size — DOCX run-level segment fields (gap-closure 02-10)
+    # run_index=None for paragraph-level segments; int for run-level segments
+    run_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    run_group_size: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -211,16 +218,20 @@ class SegmentFlag(Base):
     __table_args__ = (
         # D-02-10: composite index for flag-count GROUP BY query
         Index("ix_segment_flags_segment_flag", "segment_id", "flag_type"),
+        # gap-closure 02-10: compound FK to segments compound PK (job_id, id)
+        ForeignKeyConstraint(
+            ["segment_job_id", "segment_id"],
+            ["segments.job_id", "segments.id"],
+            ondelete="CASCADE",
+            name="fk_segment_flags_segment",
+        ),
     )
 
     id: Mapped[str] = mapped_column(
         String(36), primary_key=True, default=lambda: str(uuid.uuid4())
     )
-    segment_id: Mapped[str] = mapped_column(
-        String(16),
-        ForeignKey("segments.id", ondelete="CASCADE"),
-        nullable=False,
-    )
+    segment_id: Mapped[str] = mapped_column(String(16), nullable=False)
+    segment_job_id: Mapped[str] = mapped_column(String(36), nullable=False)
     flag_type: Mapped[FlagType] = mapped_column(
         SAEnum(FlagType, native_enum=False), nullable=False
     )

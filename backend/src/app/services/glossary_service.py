@@ -399,6 +399,7 @@ async def run_post_check(
     source_lang: str,
     target_lang: str,
     expansion_thresholds: dict[str, float],
+    job_id: str,  # gap-closure 02-10: required for compound PK WHERE + SegmentFlag.segment_job_id
 ) -> None:
     """GLOS-04 + LAYOUT-01: Post-translation checks per batch.
 
@@ -428,13 +429,17 @@ async def run_post_check(
         # --- 1. overflow: expansion ratio ---
         if len(source) > 0:
             ratio = len(translated) / len(source)
+            # gap-closure 02-10: compound WHERE (job_id, id) — id alone is not unique across jobs
             await session.execute(
-                update(Segment).where(Segment.id == seg.id).values(expansion_ratio=ratio)
+                update(Segment)
+                .where(Segment.job_id == job_id, Segment.id == seg.id)
+                .values(expansion_ratio=ratio)
             )
             if ratio > expansion_threshold:
                 flags_to_insert.append(
                     SegmentFlag(
                         segment_id=seg.id,
+                        segment_job_id=job_id,  # gap-closure 02-10: compound FK field
                         flag_type=FlagType.overflow,
                         severity=FlagSeverity.warn,
                         details={"ratio": round(ratio, 3), "threshold": expansion_threshold},
@@ -455,6 +460,7 @@ async def run_post_check(
                     flags_to_insert.append(
                         SegmentFlag(
                             segment_id=seg.id,
+                            segment_job_id=job_id,  # gap-closure 02-10: compound FK field
                             flag_type=FlagType.glossary_violation,
                             severity=FlagSeverity.warn,
                             details={"term": src_term, "expected": tgt_term},
@@ -470,6 +476,7 @@ async def run_post_check(
                 flags_to_insert.append(
                     SegmentFlag(
                         segment_id=seg.id,
+                        segment_job_id=job_id,  # gap-closure 02-10: compound FK field
                         flag_type=FlagType.placeholder_mismatch,
                         severity=FlagSeverity.warn,
                         details={"missing_tokens": sorted(missing_tokens)},
@@ -486,6 +493,7 @@ async def run_post_check(
             flags_to_insert.append(
                 SegmentFlag(
                     segment_id=seg.id,
+                    segment_job_id=job_id,  # gap-closure 02-10: compound FK field
                     flag_type=FlagType.llm_refusal,
                     severity=FlagSeverity.warn,
                     details={

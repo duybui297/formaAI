@@ -87,10 +87,10 @@ async def list_segments(
     segments = list(seg_result.scalars().all())
 
     # D-02-10: flag counts per type (one GROUP BY query)
+    # gap-closure 02-10: filter by segment_job_id directly (compound FK column), avoids cross-job join ambiguity
     count_result = await session.execute(
         select(SegmentFlag.flag_type, func.count(SegmentFlag.id).label("count"))
-        .join(Segment, SegmentFlag.segment_id == Segment.id)
-        .where(Segment.job_id == job_id)
+        .where(SegmentFlag.segment_job_id == job_id)
         .group_by(SegmentFlag.flag_type)
     )
     flag_counts = {
@@ -115,10 +115,13 @@ async def patch_segment(
 
     409 if job is not in done/needs_review state — prevents editing during active worker run.
     """
+    # gap-closure 02-10: compound PK means segment_id alone is not globally unique.
+    # Using .limit(1) prevents MultipleResultsFound when same content was re-uploaded.
+    # TODO(02-11): migrate to PATCH /jobs/{job_id}/segments/{segment_id} for unambiguous scoping.
     seg_result = await session.execute(
-        select(Segment).where(Segment.id == segment_id)
+        select(Segment).where(Segment.id == segment_id).limit(1)
     )
-    seg = seg_result.scalar_one_or_none()
+    seg = seg_result.scalars().first()
     if seg is None:
         raise HTTPException(status_code=404, detail="Segment not found")
 
@@ -134,9 +137,11 @@ async def patch_segment(
             ),
         )
 
+    # gap-closure 02-10: use compound WHERE (job_id, id) for the UPDATE — safe since we
+    # already fetched seg above and know seg.job_id.
     await session.execute(
         update(Segment)
-        .where(Segment.id == segment_id)
+        .where(Segment.job_id == seg.job_id, Segment.id == segment_id)
         .values(edited_text=body.edited_text)
     )
     await session.commit()
@@ -156,10 +161,12 @@ async def regenerate_segment(
     D-02-21: uses job's locked glossary.
     LLM client loaded from app.state (set in lifespan).
     """
+    # gap-closure 02-10: .limit(1) prevents MultipleResultsFound with compound PK.
+    # TODO(02-11): migrate to POST /jobs/{job_id}/segments/{segment_id}/regenerate.
     seg_result = await session.execute(
-        select(Segment).where(Segment.id == segment_id)
+        select(Segment).where(Segment.id == segment_id).limit(1)
     )
-    seg = seg_result.scalar_one_or_none()
+    seg = seg_result.scalars().first()
     if seg is None:
         raise HTTPException(status_code=404, detail="Segment not found")
 
@@ -184,9 +191,10 @@ async def regenerate_segment(
     new_translated_text = translated_list[0]
 
     # D-02-20: overwrite translated_text ONLY — never touch edited_text
+    # gap-closure 02-10: compound WHERE (job_id, id) for unambiguous UPDATE
     await session.execute(
         update(Segment)
-        .where(Segment.id == segment_id)
+        .where(Segment.job_id == seg.job_id, Segment.id == segment_id)
         .values(translated_text=new_translated_text)
     )
     await session.commit()
