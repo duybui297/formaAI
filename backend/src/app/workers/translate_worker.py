@@ -26,6 +26,7 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from sqlalchemy import update as sa_update
+from sqlalchemy.exc import IntegrityError
 
 from app.core.config import get_settings
 from app.core.logging import bind_job_id, clear_job_id, configure_logging
@@ -320,9 +321,17 @@ async def _run_translation(ctx: dict, session, job_id: str) -> None:
             )
             for seg in segments
         ]
-        session.add_all(orm_segments)
-        await session.commit()
-        log.info("segments_persisted", job_id=job_id, count=segments_total)
+        try:
+            session.add_all(orm_segments)
+            await session.commit()
+            log.info("segments_persisted", job_id=job_id, count=segments_total)
+        except IntegrityError:
+            await session.rollback()
+            log.warning(
+                "segments_already_persisted_skipping",
+                job_id=job_id,
+                count=segments_total,
+            )
 
         await update_job_progress(
             session, job_id, 0, segments_total, 0, 0, JobStage.translate
