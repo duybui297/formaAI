@@ -42,6 +42,24 @@ def _find_gaps(histogram: list[int], min_width_bins: int) -> list[int]:
     return gaps
 
 
+def _count_peaks(histogram: list[int]) -> int:
+    """
+    Count maximal runs of consecutive non-zero bins (column "peaks").
+    Used to detect 3+ column layouts where gutters are narrower than gap_threshold
+    but the layout still has multiple distinct x-midpoint clusters.
+    """
+    peaks = 0
+    in_peak = False
+    for count in histogram:
+        if count > 0:
+            if not in_peak:
+                peaks += 1
+                in_peak = True
+        else:
+            in_peak = False
+    return peaks
+
+
 def cluster_columns(
     text_blocks: list[dict],
     page_width: float,
@@ -84,6 +102,14 @@ def cluster_columns(
     gap_min_bins = max(int(gap_min_width / bin_width), 1)
 
     gaps = _find_gaps(histogram, gap_min_bins)
+    peaks = _count_peaks(histogram)
+
+    # 3+ distinct x-midpoint clusters → degraded regardless of gap width.
+    # Captures 3-column layouts whose gutters are narrower than gap_threshold
+    # but whose midpoint distribution still shows three peaks.
+    if peaks >= 3:
+        flat = sorted(text_blocks, key=lambda b: (b["bbox"][1], b["bbox"][0]))
+        return [flat], True
 
     if len(gaps) == 0:
         # Single column: sort top-to-bottom
@@ -102,6 +128,6 @@ def cluster_columns(
         return [left, right], False
 
     else:
-        # 3+ columns or ambiguous — D-03-03: degrade to flat reading order
+        # 2+ wide gaps detected — D-03-03: degrade to flat reading order
         flat = sorted(text_blocks, key=lambda b: (b["bbox"][1], b["bbox"][0]))
         return [flat], True
