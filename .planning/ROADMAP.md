@@ -57,7 +57,7 @@ Plans:
   3. A completed job opens a side-by-side view with source segments on the left and editable translations on the right; users can inline-edit any segment (debounced persistence to DB) and re-translate individual segments without rerunning the whole job
   4. Segment-level flags — overflow, glossary violation, placeholder mismatch, LLM refusal — are visibly surfaced in the review UI; text-expansion ratio is shown for segments above the configured threshold
   5. The Export button reassembles the document using `edited_text ?? translated_text` per segment, produces the translated DOCX, and the operation is idempotent (re-exporting does not corrupt the segment state)
-**Plans**: 12 plans
+**Plans**: 14 plans
 
 Plans:
 - [x] 02-01-deps-test-scaffolding-PLAN.md — npm deps install, shadcn adds, test stub scaffolding
@@ -72,6 +72,8 @@ Plans:
 - [x] 02-10-segment-pk-and-export-fields-PLAN.md — Compound PK (job_id, id), run_index/run_group_size columns, migration 0003, worker integration (gap closure)
 - [x] 02-11-export-error-surfacing-PLAN.md — Structured JSON error from export endpoint; frontend parses detail field (gap closure)
 - [x] 02-12-keyboard-shortcut-fix-PLAN.md — Fix ? key detection (shift+/ → "?"), update KeyboardHelpPanel label (gap closure)
+- [ ] 02-13-PLAN.md — Keyboard UX: visible focus ring, ctrl+shift+p help binding, Escape blur fix (gap closure)
+- [ ] 02-14-PLAN.md — Vietnamese font rendering: swap PT Mono → JetBrains Mono with vietnamese subset (gap closure)
 
 **UI hint**: yes
 
@@ -115,7 +117,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation + DOCX Pipeline | 0/11 | Not started | - |
-| 2. Review UX + Glossary | 0/12 | Not started | - |
+| 2. Review UX + Glossary | 0/14 | Not started | - |
 | 3. PPTX + Native PDF | 0/TBD | Not started | - |
 | 4. Scanned PDF (OCR) | 0/TBD | Not started | - |
 | 5. Demo Hardening | 0/TBD | Not started | - |
