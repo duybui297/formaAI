@@ -57,7 +57,7 @@ Plans:
   3. A completed job opens a side-by-side view with source segments on the left and editable translations on the right; users can inline-edit any segment (debounced persistence to DB) and re-translate individual segments without rerunning the whole job
   4. Segment-level flags — overflow, glossary violation, placeholder mismatch, LLM refusal — are visibly surfaced in the review UI; text-expansion ratio is shown for segments above the configured threshold
   5. The Export button reassembles the document using `edited_text ?? translated_text` per segment, produces the translated DOCX, and the operation is idempotent (re-exporting does not corrupt the segment state)
-**Plans**: 7 plans
+**Plans**: 12 plans
 
 Plans:
 - [x] 02-01-deps-test-scaffolding-PLAN.md — npm deps install, shadcn adds, test stub scaffolding
@@ -67,6 +67,11 @@ Plans:
 - [x] 02-05-glossary-frontend-PLAN.md — Types, paper fonts, FlagBadge, GlossarySelect, glossary pages
 - [x] 02-06-review-frontend-PLAN.md — useSegments, SegmentTable, SegmentRow, review page, keyboard nav
 - [x] 02-07-integration-docs-PLAN.md — E2E test, planning artifact updates, VALIDATION.md completion
+- [x] 02-08-segment-persistence-session-recovery-PLAN.md — Segment ORM persistence before translate loop, session rollback guard (gap closure)
+- [x] 02-09-polish-gaps-PLAN.md — NavBar glossary routes, term_count fix, glossary_id in job response, WR-02/WR-03 guards (gap closure)
+- [ ] 02-10-segment-pk-and-export-fields-PLAN.md — Compound PK (job_id, id), run_index/run_group_size columns, migration 0003, worker integration (gap closure)
+- [ ] 02-11-export-error-surfacing-PLAN.md — Structured JSON error from export endpoint; frontend parses detail field (gap closure)
+- [ ] 02-12-keyboard-shortcut-fix-PLAN.md — Fix ? key detection (shift+/ → "?"), update KeyboardHelpPanel label (gap closure)
 
 **UI hint**: yes
 
@@ -110,7 +115,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation + DOCX Pipeline | 0/11 | Not started | - |
-| 2. Review UX + Glossary | 0/7 | Not started | - |
+| 2. Review UX + Glossary | 0/12 | Not started | - |
 | 3. PPTX + Native PDF | 0/TBD | Not started | - |
 | 4. Scanned PDF (OCR) | 0/TBD | Not started | - |
 | 5. Demo Hardening | 0/TBD | Not started | - |
