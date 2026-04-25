@@ -34,6 +34,7 @@ export function KeyboardHelpPanel({ open, onClose }: KeyboardHelpPanelProps) {
           variant="ghost"
           size="icon"
           className="h-6 w-6"
+          aria-label="Close keyboard shortcuts panel"
           onClick={onClose}
         >
           <X className="h-3.5 w-3.5" />
