@@ -12,6 +12,7 @@ export interface JobProgress {
   retry_count: number
   last_message: string
   // From GET /jobs/{id} — not in SSE payload but merged into TanStack cache
+  glossary_id?: string | null
   detected_lang?: string
   original_filename?: string
   source_lang?: string
@@ -78,6 +79,7 @@ export interface Segment {
 
 export interface SegmentsResponse {
   segments: Segment[]
+  flag_counts: Record<string, number>   // IN-01: server-computed flag counts by type
   total: number
 }
 
@@ -95,7 +97,8 @@ export interface Glossary {
   name: string
   source_lang: string
   target_lang: string
+  term_count: number          // IN-03: returned by list API as len(terms)
   created_at: string
   updated_at: string
-  terms?: GlossaryTerm[]
+  terms?: GlossaryTerm[]      // only populated by GET /glossaries/{id}
 }
