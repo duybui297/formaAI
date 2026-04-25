@@ -11,6 +11,7 @@ Key design decisions:
 - D-11: errors.log written on failure for durable developer debugging.
 - D-13: strip_tracked_changes() called before extraction when job.tracked_changes_action=="strip".
 - WorkerSettings.functions must reference translate_job directly (RESEARCH.md Pitfall #5).
+- D-03 Phase 3: match/case dispatch routes pptx/pdf through their respective pipelines.
 """
 from __future__ import annotations
 
@@ -30,7 +31,13 @@ from sqlalchemy.exc import IntegrityError
 
 from app.core.config import get_settings
 from app.core.logging import bind_job_id, clear_job_id, configure_logging
-from app.db.models import JobStage, Segment as SegmentORM  # Gap 1: ORM model for DB persistence
+from app.db.models import (  # Gap 1: ORM model for DB persistence
+    FlagSeverity,
+    FlagType,
+    JobStage,
+    Segment as SegmentORM,
+    SegmentFlag,
+)
 from app.llm.client import make_llm_client
 from app.llm.token_budget import SegmentTooLargeError, pack_into_batches
 from app.llm.translator import translate_batch
@@ -221,10 +228,10 @@ async def translate_job(ctx: dict, job_id: str) -> None:
     arq task function. Called by arq when a translation job is dequeued.
 
     Orchestrates the full pipeline:
-      1. Parse: load DOCX, optionally strip tracked changes (D-13), extract segments
+      1. Parse: dispatch by format (docx/pptx/pdf), extract segments
       2. Batch: pack segments into token-budgeted batches (D-07)
       3. Translate: concurrent batch translation with CORE-06 retry (D-17)
-      4. Reassemble: write translations back into DOCX, save output file (D-04)
+      4. Reassemble: write translations back, save output file (D-04)
 
     Progress is published to Redis after every batch (D-10).
     Failures write errors.log and mark job failed (D-11).
@@ -266,15 +273,45 @@ async def _run_translation(ctx: dict, session, job_id: str) -> None:
 
     try:
         # ----------------------------------------------------------------
-        # STAGE 1: Parse
+        # STAGE 1: Parse — dispatch by format (D-03 Phase 3 extension)
         # ----------------------------------------------------------------
-        doc = Document(job.input_path)
+        match job.input_format:
+            case "docx":
+                _doc = Document(job.input_path)
+                # D-13: strip tracked changes before extraction if user chose strip
+                if job.has_tracked_changes and job.tracked_changes_action == "strip":
+                    _doc = strip_tracked_changes(_doc)
+                segments = extract_run_segments(_doc, job_id)
+                _format_ctx: dict = {"type": "docx", "doc": _doc}
 
-        # D-13: strip tracked changes before extraction if user chose strip
-        if job.has_tracked_changes and job.tracked_changes_action == "strip":
-            doc = strip_tracked_changes(doc)
+            case "pptx":
+                from pptx import Presentation as PPTXPresentation  # noqa: PLC0415
+                from app.pipeline.pptx.extractor import extract_pptx_segments  # noqa: PLC0415
+                _prs = PPTXPresentation(job.input_path)
+                segments = extract_pptx_segments(_prs, job_id)
+                log.info(
+                    "pptx_extracted",
+                    job_id=job_id,
+                    slide_count=len(_prs.slides),
+                    segment_count=len(segments),
+                )
+                _format_ctx = {"type": "pptx", "prs": _prs}
 
-        segments = extract_run_segments(doc, job_id)
+            case "pdf":
+                import pymupdf  # noqa: PLC0415
+                from app.pipeline.pdf.extractor import extract_pdf_segments  # noqa: PLC0415
+                _pdf_doc = pymupdf.open(job.input_path)
+                segments = extract_pdf_segments(_pdf_doc, job_id)
+                log.info(
+                    "pdf_extracted",
+                    job_id=job_id,
+                    page_count=len(_pdf_doc),
+                    segment_count=len(segments),
+                )
+                _format_ctx = {"type": "pdf", "doc": _pdf_doc}
+
+            case _:
+                raise ValueError(f"Unsupported format: {job.input_format!r}")
 
         if not segments:
             # Empty document — mark done with empty output path
@@ -413,7 +450,7 @@ async def _run_translation(ctx: dict, session, job_id: str) -> None:
         ])
 
         # ----------------------------------------------------------------
-        # STAGE 4: Reassemble + save output (D-04)
+        # STAGE 4: Reassemble + save output — dispatched by format (D-04)
         # ----------------------------------------------------------------
         await _publish_progress(
             redis, job_id, "running", "reassemble",
@@ -421,11 +458,132 @@ async def _run_translation(ctx: dict, session, job_id: str) -> None:
             "Reassembling document..."
         )
 
-        doc = reassemble_docx_runs(doc, segments, translated_map)
+        _out_dir = os.path.join(data_dir, "jobs", job_id)
+        os.makedirs(_out_dir, exist_ok=True)
 
-        output_path = os.path.join(data_dir, "jobs", job_id, "output.docx")
-        os.makedirs(os.path.dirname(output_path), exist_ok=True)
-        doc.save(output_path)
+        match _format_ctx["type"]:
+            case "docx":
+                _out_doc = reassemble_docx_runs(_format_ctx["doc"], segments, translated_map)
+                output_path = os.path.join(_out_dir, "output.docx")
+                _out_doc.save(output_path)
+
+            case "pptx":
+                from app.pipeline.pptx.reassembler import reassemble_pptx  # noqa: PLC0415
+                # reassemble_pptx returns (Presentation, list[dict]) — unpack tuple
+                _prs_out, _pptx_overflow = reassemble_pptx(
+                    _format_ctx["prs"], segments, translated_map
+                )
+                output_path = os.path.join(_out_dir, "output.pptx")
+                _prs_out.save(output_path)
+
+                # Persist PPTX overflow + smartart flags
+                #
+                # M2 overflow vs auto-adjusted contract (UI-SPEC):
+                #   FlagType.overflow + details.auto_adjusted=False → "OVERFLOW" warning badge (amber)
+                #     Meaning: text expansion too large to safely auto-fit (shrink < 0.7); user must act.
+                #   FlagType.overflow + details.auto_adjusted=True  → "AUTO-FIT" info badge (slate)
+                #     Meaning: TEXT_TO_FIT_SHAPE applied successfully (shrink >= 0.7); informational only.
+                # UI consumes details.auto_adjusted to differentiate badge rendering (plan 03-06).
+                _pptx_flags: list[SegmentFlag] = []
+                for _r in _pptx_overflow:
+                    _seg_id = _r["segment_id"]
+                    if _r.get("overflow"):
+                        # Overflow — could not auto-fit safely (shrink factor < 0.7); warning
+                        _pptx_flags.append(SegmentFlag(
+                            segment_id=_seg_id,
+                            segment_job_id=job_id,
+                            flag_type=FlagType.overflow,
+                            severity=FlagSeverity.warn,
+                            details={"char_ratio": _r.get("char_ratio"), "auto_adjusted": False},
+                        ))
+                    elif _r.get("auto_adjusted"):
+                        # Auto-fit applied successfully (shrink >= 0.7); informational
+                        _pptx_flags.append(SegmentFlag(
+                            segment_id=_seg_id,
+                            segment_job_id=job_id,
+                            flag_type=FlagType.overflow,
+                            severity=FlagSeverity.info,
+                            details={"char_ratio": _r.get("char_ratio"), "auto_adjusted": True},
+                        ))
+
+                # SmartArt: identify segments with .smartart in structural_position
+                for _seg in segments:
+                    if _seg.structural_position.endswith(".smartart"):
+                        _pptx_flags.append(SegmentFlag(
+                            segment_id=_seg.id,
+                            segment_job_id=job_id,
+                            flag_type=FlagType.smartart,
+                            severity=FlagSeverity.warn,
+                            details={"reason": "smartart_write_back_skipped"},
+                        ))
+                if _pptx_flags:
+                    session.add_all(_pptx_flags)
+                    await session.flush()
+
+            case "pdf":
+                _pdf_overflow_flags: list[dict] = []
+                output_path = os.path.join(_out_dir, "output.pdf")
+                from app.pipeline.pdf.reassembler import reassemble_pdf  # noqa: PLC0415
+                reassemble_pdf(
+                    _format_ctx["doc"], segments, translated_map,
+                    output_path, _pdf_overflow_flags,
+                )
+                log.info(
+                    "pdf_reassembled",
+                    job_id=job_id,
+                    overflow_count=sum(1 for f in _pdf_overflow_flags if f.get("overflow")),
+                )
+
+                # Persist PDF overflow + multi_column_degraded flags
+                #
+                # M2 overflow vs auto-adjusted contract (same as PPTX above):
+                #   FlagType.overflow + details.auto_adjusted=False (or absent) → warning
+                #     (insert_htmlbox could not fit text even at scale_low=0.7; spare_height < 0)
+                #   FlagType.overflow + details.auto_adjusted=True → info
+                #     (scaled but within 0.7 threshold)
+                _pdf_db_flags: list[SegmentFlag] = []
+                for _r in _pdf_overflow_flags:
+                    _seg_id = _r["segment_id"]
+                    _details = {k: v for k, v in _r.items() if k != "segment_id"}
+                    if _r.get("overflow"):
+                        # Overflow — insert_htmlbox returned spare_height < 0 at scale_low=0.7; warning
+                        _pdf_db_flags.append(SegmentFlag(
+                            segment_id=_seg_id,
+                            segment_job_id=job_id,
+                            flag_type=FlagType.overflow,
+                            severity=FlagSeverity.warn,
+                            details=_details,
+                        ))
+                    elif _r.get("auto_adjusted"):
+                        # Auto-adjusted — insert_htmlbox scaled text down but it fit; informational
+                        _pdf_db_flags.append(SegmentFlag(
+                            segment_id=_seg_id,
+                            segment_job_id=job_id,
+                            flag_type=FlagType.overflow,
+                            severity=FlagSeverity.info,
+                            details=_details,
+                        ))
+
+                # multi_column_degraded: segments on degraded pages have "page.N.block.B" position
+                # L3: "col" absent in structural_position == degraded page
+                # (extractor writes page.N.block.B for degraded, page.N.col.C.block.B otherwise)
+                _degraded_seg_ids = {
+                    s.id for s in segments
+                    if "col" not in s.structural_position
+                    and s.structural_position.startswith("page.")
+                }
+                for _seg_id in _degraded_seg_ids:
+                    _pdf_db_flags.append(SegmentFlag(
+                        segment_id=_seg_id,
+                        segment_job_id=job_id,
+                        flag_type=FlagType.multi_column_degraded,
+                        severity=FlagSeverity.info,
+                        details={"reason": "3_or_more_columns_detected_flat_reading_order_applied"},
+                    ))
+
+                if _pdf_db_flags:
+                    session.add_all(_pdf_db_flags)
+                    await session.flush()
 
         # JOB-03: running → done
         await transition_to_done(session, job_id, output_path=output_path)
