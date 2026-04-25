@@ -22,11 +22,16 @@ export function ReviewPageHeader({ job }: ReviewPageHeaderProps) {
         method: "POST",
       });
       if (!res.ok) {
-        const err = await res.json().catch(() => ({ detail: "Unknown error" }));
-        toast({
-          title: `Export failed — ${(err as { detail?: string }).detail ?? "Unknown error"}. Try again.`,
-          variant: "destructive",
-        });
+        let detail = "Could not export document. Try again.";
+        try {
+          const body = await res.json();
+          if (body?.detail) {
+            detail = body.detail;
+          }
+        } catch {
+          // response was not JSON — keep generic message
+        }
+        toast({ title: detail, variant: "destructive" });
         return;
       }
       // Trigger browser download
@@ -40,7 +45,7 @@ export function ReviewPageHeader({ job }: ReviewPageHeaderProps) {
       toast({ title: "Export ready — downloading." });
     } catch {
       toast({
-        title: "Export failed — network error. Try again.",
+        title: "Network error — export could not be initiated. Try again.",
         variant: "destructive",
       });
     } finally {
