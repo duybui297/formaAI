@@ -59,7 +59,7 @@ export function useReviewKeyboard({
     "e",
     () => onEdit(focusedIndex),
     { preventDefault: true },
-    [focusedIndex]
+    [focusedIndex, onEdit]
   );
 
   // r: regenerate focused segment
@@ -67,7 +67,7 @@ export function useReviewKeyboard({
     "r",
     () => onRegenerate(focusedIndex),
     { preventDefault: true },
-    [focusedIndex]
+    [focusedIndex, onRegenerate]
   );
 
   // ?: toggle help panel — fires when NOT inside a form element
