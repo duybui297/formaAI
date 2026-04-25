@@ -3,7 +3,7 @@ status: partial
 phase: 02-review-ux-glossary
 source: [02-VERIFICATION.md]
 started: 2026-04-25T03:45:00Z
-updated: 2026-04-25T03:45:00Z
+updated: 2026-04-25T13:50:00Z
 ---
 
 ## Current Test
@@ -36,12 +36,16 @@ result: [pending]
 expected: Browser file picker accepts CSV; dedup enforced via UniqueConstraint; parsed rows appear in terms table
 result: [pending]
 
+### 7. End-to-end segment persistence
+expected: Real translation job (non-mocked) completes; review page displays translated segments (not empty); glossary violation badges appear on relevant segments when glossary attached
+result: [pending]
+
 ## Summary
 
-total: 6
+total: 7
 passed: 0
 issues: 0
-pending: 6
+pending: 7
 skipped: 0
 blocked: 0
 
