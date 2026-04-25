@@ -20,7 +20,7 @@ log = structlog.get_logger()
 router = APIRouter()
 
 
-@router.post("/jobs/{job_id}/export")
+@router.post("/jobs/{job_id}/export", response_model=None)
 async def export_document(
     job_id: str,
     session: AsyncSession = Depends(get_session),
