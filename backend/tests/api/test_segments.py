@@ -205,7 +205,7 @@ async def test_list_segments_returns_404_for_unknown_job(tmp_path):
 
 @pytest.mark.asyncio
 async def test_patch_segment_updates_edited_text(tmp_path):
-    """PATCH /segments/{id} persists edited_text and returns 200."""
+    """PATCH /jobs/{job_id}/segments/{id} persists edited_text and returns 200."""
     lifespan = _make_lifespan(str(tmp_path))
     with patch("app.main.lifespan", lifespan):
         from app.main import app
@@ -230,7 +230,7 @@ async def test_patch_segment_updates_edited_text(tmp_path):
             transport=ASGITransport(app=app), base_url="http://test"
         ) as client:
             response = await client.patch(
-                f"/segments/{seg.id}",
+                f"/jobs/{job.id}/segments/{seg.id}",
                 json={"edited_text": "Updated translation"},
             )
 
@@ -245,7 +245,7 @@ async def test_patch_segment_updates_edited_text(tmp_path):
 
 @pytest.mark.asyncio
 async def test_patch_segment_clears_edited_text_when_null(tmp_path):
-    """PATCH /segments/{id} with edited_text=null clears the edit."""
+    """PATCH /jobs/{job_id}/segments/{id} with edited_text=null clears the edit."""
     lifespan = _make_lifespan(str(tmp_path))
     with patch("app.main.lifespan", lifespan):
         from app.main import app
@@ -270,7 +270,7 @@ async def test_patch_segment_clears_edited_text_when_null(tmp_path):
             transport=ASGITransport(app=app), base_url="http://test"
         ) as client:
             response = await client.patch(
-                f"/segments/{seg.id}",
+                f"/jobs/{job.id}/segments/{seg.id}",
                 json={"edited_text": None},
             )
 
@@ -284,7 +284,7 @@ async def test_patch_segment_clears_edited_text_when_null(tmp_path):
 
 @pytest.mark.asyncio
 async def test_patch_segment_returns_409_when_job_queued(tmp_path):
-    """PATCH /segments/{id} returns 409 when job status is queued."""
+    """PATCH /jobs/{job_id}/segments/{id} returns 409 when job status is queued."""
     lifespan = _make_lifespan(str(tmp_path))
     with patch("app.main.lifespan", lifespan):
         from app.main import app
@@ -309,7 +309,7 @@ async def test_patch_segment_returns_409_when_job_queued(tmp_path):
             transport=ASGITransport(app=app), base_url="http://test"
         ) as client:
             response = await client.patch(
-                f"/segments/{seg.id}",
+                f"/jobs/{job.id}/segments/{seg.id}",
                 json={"edited_text": "Should be blocked"},
             )
 
@@ -321,7 +321,7 @@ async def test_patch_segment_returns_409_when_job_queued(tmp_path):
 
 @pytest.mark.asyncio
 async def test_patch_segment_returns_409_when_job_running(tmp_path):
-    """PATCH /segments/{id} returns 409 when job status is running."""
+    """PATCH /jobs/{job_id}/segments/{id} returns 409 when job status is running."""
     lifespan = _make_lifespan(str(tmp_path))
     with patch("app.main.lifespan", lifespan):
         from app.main import app
@@ -346,7 +346,7 @@ async def test_patch_segment_returns_409_when_job_running(tmp_path):
             transport=ASGITransport(app=app), base_url="http://test"
         ) as client:
             response = await client.patch(
-                f"/segments/{seg.id}",
+                f"/jobs/{job.id}/segments/{seg.id}",
                 json={"edited_text": "Should be blocked"},
             )
 
@@ -358,7 +358,7 @@ async def test_patch_segment_returns_409_when_job_running(tmp_path):
 
 @pytest.mark.asyncio
 async def test_patch_segment_returns_404_for_unknown_segment(tmp_path):
-    """PATCH /segments/{id} returns 404 for unknown segment_id."""
+    """PATCH /jobs/{job_id}/segments/{id} returns 404 for unknown segment_id."""
     lifespan = _make_lifespan(str(tmp_path))
     with patch("app.main.lifespan", lifespan):
         from app.main import app
@@ -379,7 +379,7 @@ async def test_patch_segment_returns_404_for_unknown_segment(tmp_path):
             transport=ASGITransport(app=app), base_url="http://test"
         ) as client:
             response = await client.patch(
-                "/segments/nonexistent-seg",
+                "/jobs/nonexistent-job/segments/nonexistent-seg",
                 json={"edited_text": "test"},
             )
 
@@ -391,7 +391,7 @@ async def test_patch_segment_returns_404_for_unknown_segment(tmp_path):
 
 @pytest.mark.asyncio
 async def test_patch_segment_rejects_oversized_edited_text(tmp_path):
-    """PATCH /segments/{id} returns 422 when edited_text exceeds 10000 chars."""
+    """PATCH /jobs/{job_id}/segments/{id} returns 422 when edited_text exceeds 10000 chars."""
     lifespan = _make_lifespan(str(tmp_path))
     with patch("app.main.lifespan", lifespan):
         from app.main import app
@@ -416,7 +416,7 @@ async def test_patch_segment_rejects_oversized_edited_text(tmp_path):
             transport=ASGITransport(app=app), base_url="http://test"
         ) as client:
             response = await client.patch(
-                f"/segments/{seg.id}",
+                f"/jobs/{job.id}/segments/{seg.id}",
                 json={"edited_text": "x" * 10001},
             )
 
