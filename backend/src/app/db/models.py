@@ -153,6 +153,8 @@ class FlagType(str, enum.Enum):
     glossary_violation = "glossary_violation"
     placeholder_mismatch = "placeholder_mismatch"
     llm_refusal = "llm_refusal"
+    smartart = "smartart"                                    # D-03-01: PPTX SmartArt detected, write-back skipped
+    multi_column_degraded = "multi_column_degraded"          # D-03-03: 3+ PDF columns, flat reading order applied
 
 
 class FlagSeverity(str, enum.Enum):
