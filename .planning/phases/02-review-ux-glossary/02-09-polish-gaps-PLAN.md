@@ -307,7 +307,8 @@ cd frontend && npx tsc --noEmit 2>&1 | head -20
     frontend/src/app/glossaries/[id]/page.tsx,
     frontend/src/components/glossary/GlossaryList.tsx,
     frontend/src/hooks/useReviewKeyboard.ts,
-    frontend/src/components/SegmentRow.tsx
+    frontend/src/components/SegmentRow.tsx,
+    frontend/src/app/jobs/[id]/review/page.tsx
   </files>
   <action>
 **1. frontend/src/app/glossaries/page.tsx — add NavBar:**
