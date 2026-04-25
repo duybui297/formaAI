@@ -90,9 +90,9 @@ Plans:
 
 Plans:
 - [x] 03-01-PLAN.md — pyproject.toml deps (pymupdf + python-pptx) + FlagType enum extension + migration 0004
-- [ ] 03-02-PLAN.md — TDD RED test scaffolding (5 backend + 2 frontend test files)
-- [ ] 03-03-PLAN.md — PPTX pipeline (smartart.py, extractor, reassembler)
-- [ ] 03-04-PLAN.md — PDF pipeline (columns, fonts, extractor, reassembler)
+- [x] 03-02-PLAN.md — TDD RED test scaffolding (5 backend + 2 frontend test files)
+- [x] 03-03-PLAN.md — PPTX pipeline (smartart.py, extractor, reassembler)
+- [x] 03-04-PLAN.md — PDF pipeline (columns, fonts, extractor, reassembler)
 - [ ] 03-05-PLAN.md — Worker dispatch (match/case + SegmentFlag persistence for pptx/pdf formats)
 - [ ] 03-06-PLAN.md — Frontend deltas (formatBreadcrumb, FlagBadge, SegmentRow, UploadForm, FlagType unions)
 - [ ] 03-07-PLAN.md — Round-trip integration tests + coverage gate (80%) + frontend gate
