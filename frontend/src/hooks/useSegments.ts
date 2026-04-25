@@ -28,7 +28,7 @@ export function useSegmentPatch(jobId: string) {
       segmentId: string;
       editedText: string | null;
     }) => {
-      const res = await fetch(`/api/segments/${segmentId}`, {
+      const res = await fetch(`/api/jobs/${jobId}/segments/${segmentId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ edited_text: editedText }),
@@ -76,7 +76,7 @@ export function useSegmentRegenerate(jobId: string) {
 
   return useMutation({
     mutationFn: async (segmentId: string) => {
-      const res = await fetch(`/api/segments/${segmentId}/regenerate`, {
+      const res = await fetch(`/api/jobs/${jobId}/segments/${segmentId}/regenerate`, {
         method: "POST",
       });
       if (!res.ok) throw new Error("Regenerate failed");

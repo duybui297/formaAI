@@ -105,8 +105,9 @@ async def list_segments(
     }
 
 
-@router.patch("/segments/{segment_id}", status_code=200)
+@router.patch("/jobs/{job_id}/segments/{segment_id}", status_code=200)
 async def patch_segment(
+    job_id: str,
     segment_id: str,
     body: SegmentPatchRequest,
     session: AsyncSession = Depends(get_session),
@@ -114,19 +115,17 @@ async def patch_segment(
     """REV-02: Persist edited_text. edited_text=null clears the edit.
 
     409 if job is not in done/needs_review state — prevents editing during active worker run.
+    Scoped by (job_id, segment_id) — compound PK prevents cross-job collision.
     """
-    # gap-closure 02-10: compound PK means segment_id alone is not globally unique.
-    # Using .limit(1) prevents MultipleResultsFound when same content was re-uploaded.
-    # TODO(02-11): migrate to PATCH /jobs/{job_id}/segments/{segment_id} for unambiguous scoping.
     seg_result = await session.execute(
-        select(Segment).where(Segment.id == segment_id).limit(1)
+        select(Segment).where(Segment.job_id == job_id, Segment.id == segment_id)
     )
-    seg = seg_result.scalars().first()
+    seg = seg_result.scalar_one_or_none()
     if seg is None:
         raise HTTPException(status_code=404, detail="Segment not found")
 
     # Gate: prevent editing while worker is still running (worker race guard)
-    job_result = await session.execute(select(Job).where(Job.id == seg.job_id))
+    job_result = await session.execute(select(Job).where(Job.id == job_id))
     job = job_result.scalar_one_or_none()
     if job is None or job.status not in _REVIEWABLE_STATUSES:
         raise HTTPException(
@@ -137,11 +136,9 @@ async def patch_segment(
             ),
         )
 
-    # gap-closure 02-10: use compound WHERE (job_id, id) for the UPDATE — safe since we
-    # already fetched seg above and know seg.job_id.
     await session.execute(
         update(Segment)
-        .where(Segment.job_id == seg.job_id, Segment.id == segment_id)
+        .where(Segment.job_id == job_id, Segment.id == segment_id)
         .values(edited_text=body.edited_text)
     )
     await session.commit()
@@ -149,8 +146,9 @@ async def patch_segment(
     return {"segment_id": segment_id, "edited_text": body.edited_text}
 
 
-@router.post("/segments/{segment_id}/regenerate", status_code=200)
+@router.post("/jobs/{job_id}/segments/{segment_id}/regenerate", status_code=200)
 async def regenerate_segment(
+    job_id: str,
     segment_id: str,
     request: Request,
     session: AsyncSession = Depends(get_session),
@@ -160,17 +158,16 @@ async def regenerate_segment(
     D-02-20: overwrites translated_text; edited_text is NOT touched.
     D-02-21: uses job's locked glossary.
     LLM client loaded from app.state (set in lifespan).
+    Scoped by (job_id, segment_id) — compound PK prevents cross-job collision.
     """
-    # gap-closure 02-10: .limit(1) prevents MultipleResultsFound with compound PK.
-    # TODO(02-11): migrate to POST /jobs/{job_id}/segments/{segment_id}/regenerate.
     seg_result = await session.execute(
-        select(Segment).where(Segment.id == segment_id).limit(1)
+        select(Segment).where(Segment.job_id == job_id, Segment.id == segment_id)
     )
-    seg = seg_result.scalars().first()
+    seg = seg_result.scalar_one_or_none()
     if seg is None:
         raise HTTPException(status_code=404, detail="Segment not found")
 
-    job_result = await session.execute(select(Job).where(Job.id == seg.job_id))
+    job_result = await session.execute(select(Job).where(Job.id == job_id))
     job = job_result.scalar_one_or_none()
     if job is None or job.status not in _REVIEWABLE_STATUSES:
         raise HTTPException(
