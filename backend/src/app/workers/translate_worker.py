@@ -25,9 +25,11 @@ from openai import APIConnectionError, APIStatusError, RateLimitError
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+from sqlalchemy import update as sa_update
+
 from app.core.config import get_settings
 from app.core.logging import bind_job_id, clear_job_id, configure_logging
-from app.db.models import JobStage
+from app.db.models import JobStage, Segment as SegmentORM  # Gap 1: ORM model for DB persistence
 from app.llm.client import make_llm_client
 from app.llm.token_budget import SegmentTooLargeError, pack_into_batches
 from app.llm.translator import translate_batch
@@ -297,6 +299,29 @@ async def _run_translation(ctx: dict, session, job_id: str) -> None:
         # ----------------------------------------------------------------
         batches = pack_into_batches(segments, budget_tokens=settings.token_budget)
 
+        # Gap 1 fix: persist ORM Segment rows so run_post_check can UPDATE/INSERT against them.
+        # segments here are app.pipeline.segment.Segment dataclass objects (not ORM). We create
+        # ORM instances from them and commit once before the translate loop.
+        orm_segments: list[SegmentORM] = [
+            SegmentORM(
+                id=seg.id,
+                job_id=job_id,
+                seq_in_job=seg.seq_in_job,
+                source_text=seg.source_text,
+                structural_position=seg.structural_position,
+                is_comment=seg.is_comment,
+                is_inserted=seg.is_inserted,
+                is_deleted=seg.is_deleted,
+                translated_text=None,
+                edited_text=None,
+                expansion_ratio=None,
+            )
+            for seg in segments
+        ]
+        session.add_all(orm_segments)
+        await session.commit()
+        log.info("segments_persisted", job_id=job_id, count=segments_total)
+
         await update_job_progress(
             session, job_id, 0, segments_total, 0, 0, JobStage.translate
         )
@@ -335,6 +360,13 @@ async def _run_translation(ctx: dict, session, job_id: str) -> None:
                 )
                 for seg, translated in zip(batch_segs, results):
                     translated_map[seg.id] = translated
+                    # Gap 1: persist translated_text to DB in the same batch transaction.
+                    await session.execute(
+                        sa_update(SegmentORM)
+                        .where(SegmentORM.id == seg.id)
+                        .values(translated_text=translated)
+                    )
+                await session.flush()
                 segments_done += len(batch_texts)
 
                 # GLOS-04 + LAYOUT-01: post-translation check per batch
@@ -419,6 +451,14 @@ async def _run_translation(ctx: dict, session, job_id: str) -> None:
         # Unexpected failure: write error log, mark job failed, publish failed status
         msg = f"Translation failed: {exc}"
         append_error_log(data_dir, job_id, msg)
+        # Gap 2: roll back any in-flight transaction before calling transition_to_failed.
+        # If run_post_check raised a FK violation (e.g. missing Segment rows), the session
+        # is in PendingRollbackError state. transition_to_failed calls get_job() which
+        # issues a SELECT — that would also raise. Rollback first.
+        try:
+            await session.rollback()
+        except Exception:
+            pass  # best-effort; if rollback itself fails, we still attempt the status update
         await transition_to_failed(session, job_id, error_msg=msg)
         await _publish_progress(
             redis, job_id, "failed", "failed", 0, 0, 0, 0, msg,
