@@ -69,9 +69,9 @@ Plans:
 - [x] 02-07-integration-docs-PLAN.md — E2E test, planning artifact updates, VALIDATION.md completion
 - [x] 02-08-segment-persistence-session-recovery-PLAN.md — Segment ORM persistence before translate loop, session rollback guard (gap closure)
 - [x] 02-09-polish-gaps-PLAN.md — NavBar glossary routes, term_count fix, glossary_id in job response, WR-02/WR-03 guards (gap closure)
-- [ ] 02-10-segment-pk-and-export-fields-PLAN.md — Compound PK (job_id, id), run_index/run_group_size columns, migration 0003, worker integration (gap closure)
-- [ ] 02-11-export-error-surfacing-PLAN.md — Structured JSON error from export endpoint; frontend parses detail field (gap closure)
-- [ ] 02-12-keyboard-shortcut-fix-PLAN.md — Fix ? key detection (shift+/ → "?"), update KeyboardHelpPanel label (gap closure)
+- [x] 02-10-segment-pk-and-export-fields-PLAN.md — Compound PK (job_id, id), run_index/run_group_size columns, migration 0003, worker integration (gap closure)
+- [x] 02-11-export-error-surfacing-PLAN.md — Structured JSON error from export endpoint; frontend parses detail field (gap closure)
+- [x] 02-12-keyboard-shortcut-fix-PLAN.md — Fix ? key detection (shift+/ → "?"), update KeyboardHelpPanel label (gap closure)
 
 **UI hint**: yes
 
