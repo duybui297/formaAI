@@ -48,13 +48,20 @@ def upgrade() -> None:
         sa.Column("segment_job_id", sa.String(36), nullable=True),
     )
 
-    # Backfill segment_job_id from the segments table
+    # Backfill segment_job_id from the segments table.
+    # Use a deterministic subquery: when a segment.id maps to multiple jobs
+    # (compound PK collision that this migration is fixing), pick the earliest job
+    # by created_at to produce a repeatable result.
     op.execute(
         """
         UPDATE segment_flags sf
-        SET segment_job_id = s.job_id
-        FROM segments s
-        WHERE s.id = sf.segment_id
+        SET segment_job_id = (
+            SELECT s.job_id
+            FROM segments s
+            WHERE s.id = sf.segment_id
+            ORDER BY s.created_at
+            LIMIT 1
+        )
         """
     )
 
