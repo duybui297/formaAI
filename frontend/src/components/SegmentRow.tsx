@@ -6,6 +6,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useSegmentPatch, useSegmentRegenerate } from "@/hooks/useSegments";
 import type { FlagType, Segment } from "@/lib/review-types";
 import { cn } from "@/lib/utils";
+import { formatBreadcrumb } from "@/lib/formatBreadcrumb";
 
 // Inline flag badge — avoids dependency on FlagBadge.tsx (plan 05 scope)
 const FLAG_BADGE_STYLES: Record<FlagType, string> = {
@@ -13,6 +14,8 @@ const FLAG_BADGE_STYLES: Record<FlagType, string> = {
   glossary_violation: "bg-violet-100 text-violet-800 border-violet-300",
   placeholder_mismatch: "bg-orange-100 text-orange-800 border-orange-300",
   llm_refusal: "bg-red-100 text-red-800 border-red-300",
+  smartart: "bg-orange-100 text-orange-800 border-orange-300",
+  multi_column_degraded: "bg-slate-100 text-slate-600 border-slate-300",
 };
 
 const FLAG_LABELS: Record<FlagType, string> = {
@@ -20,6 +23,8 @@ const FLAG_LABELS: Record<FlagType, string> = {
   glossary_violation: "Glossary",
   placeholder_mismatch: "Placeholder",
   llm_refusal: "Refusal",
+  smartart: "SMART",
+  multi_column_degraded: "MULTI-COL",
 };
 
 function InlineFlagBadge({ flagType }: { flagType: FlagType }) {
@@ -40,6 +45,8 @@ const LEFT_BORDER: Record<FlagType, string> = {
   glossary_violation: "border-l-violet-500",
   placeholder_mismatch: "border-l-orange-500",
   llm_refusal: "border-l-red-500",
+  smartart: "border-l-orange-500",
+  multi_column_degraded: "border-l-slate-400",
 };
 
 interface SegmentRowProps {
@@ -151,6 +158,11 @@ export function SegmentRow({
         className="flex-[40] py-2 px-2 text-xs font-mono text-[#111111] bg-slate-50 border-r border-slate-100 select-text min-h-[48px] whitespace-pre-wrap"
         style={{ fontFamily: "var(--font-pt-mono, monospace)" }}
       >
+        {segment.structural_position && (
+          <span className="text-xs text-slate-400 font-mono mb-1 block select-none">
+            {formatBreadcrumb(segment.structural_position)}
+          </span>
+        )}
         {segment.source_text}
       </div>
 

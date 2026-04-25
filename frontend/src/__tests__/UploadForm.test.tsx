@@ -69,7 +69,7 @@ describe("UploadForm rendering", () => {
   it("renders the drop zone with idle text", () => {
     renderForm()
     expect(
-      screen.getByText("Drop your DOCX here (PDF & PPTX coming soon)")
+      screen.getByText("Drop your document here — DOCX, PPTX, or native PDF")
     ).toBeDefined()
     expect(screen.getByText(/or click to choose a file/)).toBeDefined()
   })
@@ -92,11 +92,11 @@ describe("UploadForm rendering", () => {
     expect(button?.disabled).toBe(true)
   })
 
-  it("hidden file input accept is restricted to DOCX only", () => {
+  it("hidden file input accept includes DOCX, PPTX, and PDF", () => {
     renderForm()
     const input = document.getElementById("file-input") as HTMLInputElement
     expect(input).toBeDefined()
-    expect(input?.accept).toBe(".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+    expect(input?.accept).toBe(".docx,.pptx,.pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/pdf")
   })
 })
 
@@ -152,21 +152,21 @@ describe("UploadForm file validation", () => {
     })
   })
 
-  it("rejects a PDF file client-side and does NOT call detectTrackedChanges", async () => {
+  it("accepts a PDF file client-side and does NOT call detectTrackedChanges", async () => {
+    // Phase 3: PDF is accepted — no rejection toast, no tracked-changes detection
     renderForm()
     const pdfFile = new File(["pdf-bytes"], "test.pdf", { type: "application/pdf" })
     selectFile(pdfFile)
 
     await waitFor(() => {
-      expect(mockToast).toHaveBeenCalledWith(
-        expect.objectContaining({
-          variant: "destructive",
-          description: expect.stringContaining(".docx only"),
-        })
-      )
+      expect(screen.getByText("test.pdf")).toBeDefined()
     })
-    // Phase 1 is DOCX-only; PDFs never reach the tracked-changes detector.
+    // PDF files skip tracked-changes detection (DOCX-only feature)
     expect(mockDetect).not.toHaveBeenCalled()
+    // No destructive toast for a valid PDF
+    expect(mockToast).not.toHaveBeenCalledWith(
+      expect.objectContaining({ variant: "destructive" })
+    )
   })
 
   it("shows filename after a valid DOCX is selected", async () => {
