@@ -1,218 +1,296 @@
 ---
 phase: 02-review-ux-glossary
-reviewed: 2026-04-25T14:00:00Z
+reviewed: 2026-04-25T00:00:00Z
 depth: standard
-files_reviewed: 11
+files_reviewed: 9
 files_reviewed_list:
+  - backend/src/app/db/models.py
+  - backend/src/app/db/migrations/versions/0003_segment_compound_pk_run_fields.py
   - backend/src/app/workers/translate_worker.py
-  - backend/tests/workers/test_segment_persistence.py
-  - backend/src/app/api/routes/jobs.py
-  - frontend/src/lib/types.ts
-  - frontend/src/components/NavBar.tsx
-  - frontend/src/app/glossaries/page.tsx
-  - frontend/src/app/glossaries/[id]/page.tsx
-  - frontend/src/components/glossary/GlossaryList.tsx
-  - frontend/src/app/jobs/[id]/review/page.tsx
-  - frontend/src/components/SegmentRow.tsx
+  - backend/src/app/services/glossary_service.py
+  - backend/src/app/api/routes/segments.py
+  - backend/src/app/api/routes/export.py
+  - backend/tests/workers/test_segment_pk_collision.py
   - frontend/src/hooks/useReviewKeyboard.ts
+  - frontend/src/components/ReviewPageHeader.tsx
 findings:
   critical: 0
-  warning: 3
+  warning: 4
   info: 4
-  total: 7
+  total: 8
 status: issues_found
 ---
 
-# Phase 02 Gap-Closure: Code Review Report
+# Phase 02 Gap-Closure: Code Review Report (02-10/02-11/02-12)
 
-**Reviewed:** 2026-04-25T14:00:00Z
+**Reviewed:** 2026-04-25
 **Depth:** standard
-**Files Reviewed:** 11 (gap-closure plans 02-08 segment persistence + session recovery; 02-09 polish)
+**Files Reviewed:** 9 (gap-closure plans 02-10 compound PK + run fields, 02-11 structured export error, 02-12 keyboard fix)
 **Status:** issues_found
 
 ## Summary
 
-This review covers the 11 files modified by gap-closure plans 02-08 (segment persistence, session recovery) and 02-09 (polish gaps). The gap-closure work is well-structured: the new test file directly exercises the two gaps it claims to fix, and the `SegmentRow` unmount-safety fix (`isMountedRef`) is already present in the current code.
+The three gap-closure plans are coherently implemented. The compound PK migration
+(`0003_segment_compound_pk_run_fields.py`) is correctly sequenced: drop FK, drop PK,
+create compound PK, backfill `segment_job_id`, create compound FK, add run columns. The
+ORM model aligns with the migration schema. The worker correctly scopes all
+compound-PK WHERE clauses with `(job_id, id)`. The export endpoint returns structured
+JSON on error (02-11). The keyboard hook is correctly typed and the hotkeys are correct
+(02-12).
 
-One significant architectural bug was found: the `asyncio.gather` in `translate_worker.py` runs multiple batch coroutines that share a single SQLAlchemy `AsyncSession`, which is unsafe for concurrent use. This is the most important finding. Two additional warnings cover an `updated_at` field gap in `_job_to_dict` and a temp-file leak in the new test fixture. Four info items address type completeness, a missing error path, and a minor UX omission.
+No critical issues found. Four warnings cover real logic bugs or crash risks:
+
+1. `patch_segment` / `regenerate_segment` use `.limit(1)` without `job_id` scoping,
+   so edits silently land on a randomly chosen job when the same document is uploaded twice.
+2. The migration backfill is non-deterministic when a `segment_flags.segment_id` maps
+   to multiple `segments` rows.
+3. Worker segment insertion is not idempotent — crash-restart causes `IntegrityError`
+   and prevents job recovery.
+4. `URL.revokeObjectURL` races the browser download on Safari/Firefox.
+
+---
 
 ## Warnings
 
-### WR-01: Shared `AsyncSession` used concurrently across `asyncio.gather` batches
+### WR-01: `patch_segment` / `regenerate_segment` silently target wrong job on duplicate segment hash
 
-**File:** `backend/src/app/workers/translate_worker.py:347-401`
+**File:** `backend/src/app/api/routes/segments.py:121-123` and `169-170`
 
-**Issue:** `_translate_one_batch` is defined as an inner coroutine that closes over `session`. When `asyncio.gather` launches all batch coroutines simultaneously, multiple coroutines call `await session.execute(...)` and `await session.flush()` on the same `AsyncSession` instance concurrently. SQLAlchemy's `AsyncSession` is a **single-connection, single-transaction object that is not safe for concurrent coroutine use**. At every `await` point inside one batch coroutine, the event loop may resume another batch coroutine that also issues `session.execute()` — interleaving operations in the same transaction context in unpredictable order and corrupting the session state.
+**Issue:** Both endpoints query `Segment` by `id` alone with `.limit(1)` to suppress
+`MultipleResultsFound`. When the same document is uploaded twice, the same content hash
+`id` exists under two different `job_id` values. `.limit(1)` returns whichever the DB
+returns first (insertion order), so an edit from the review page for Job B can
+silently persist against Job A's segment row. The TODO comment acknowledges the issue
+but the current code silently misbehaves rather than returning an error.
 
-Concrete failure modes:
-- Two `session.execute(sa_update(...))` calls interleave, causing one UPDATE to be lost or both to be applied against the wrong row identity.
-- `session.flush()` is called by batch A while batch B is mid-execution, flushing incomplete data for batch B's rows.
-- If `run_post_check` issues INSERTs (flag rows) inside the shared session while another batch coroutine is also INSERTing, the flush-order is undefined and a duplicate key error can silently consume one batch's flag rows.
-
-The `worker_concurrency=1` cap at the `Semaphore` level means only one batch is inside the `sem` block at a time — but the `asyncio.gather` still creates all coroutines up front, and the `sem` only gates the LLM call. The `session.execute` / `session.flush` / `run_post_check` calls are all inside the `async with sem:` block, so with `worker_concurrency=1` only one batch holds the semaphore at a time and the session operations do not actually interleave. However, this correctness guarantee is fragile: it depends on `worker_concurrency=1` being invariant (a config value, not a code invariant), and the semaphore structure itself does not prevent a reader from bumping `worker_concurrency` on a paid tier and triggering the race silently.
-
-**Fix:** Move all DB operations out of the shared session inside the coroutine, or — the cleaner fix — use a per-batch session from the session factory rather than sharing the outer session:
-
-```python
-async def _translate_one_batch(
-    batch_id: int, batch_texts: list[str], batch_segs: list
-) -> None:
-    nonlocal segments_done
-    async with sem:
-        results = await translate_batch_with_retry(...)
-        # Use a fresh session per batch — safe for concurrent use
-        async with ctx["session_factory"]() as batch_session:
-            for seg, translated in zip(batch_segs, results):
-                translated_map[seg.id] = translated
-                await batch_session.execute(
-                    sa_update(SegmentORM)
-                    .where(SegmentORM.id == seg.id)
-                    .values(translated_text=translated)
-                )
-            await run_post_check(
-                session=batch_session,
-                ...
-            )
-            await batch_session.commit()
-        async with ctx["session_factory"]() as prog_session:
-            segments_done += len(batch_texts)
-            await update_job_progress(prog_session, job_id, segments_done, ...)
-            await prog_session.commit()
-        await _publish_progress(...)
-```
-
-Alternatively, if keeping the shared session is required, add a module-level `asyncio.Lock` to serialize all session operations:
+**Fix:** Until the route path is migrated to `/jobs/{job_id}/segments/{segment_id}`,
+require `job_id` as a query parameter and scope the fetch:
 
 ```python
-_session_lock = asyncio.Lock()
-
-async def _translate_one_batch(...):
-    nonlocal segments_done
-    async with sem:
-        results = await translate_batch_with_retry(...)
-        async with _session_lock:
-            for seg, translated in zip(batch_segs, results):
-                ...
-                await session.execute(sa_update(...).values(...))
-            await session.flush()
-            segments_done += len(batch_texts)
-            await run_post_check(session=session, ...)
-            await update_job_progress(session, ...)
-        await _publish_progress(...)
+# segments.py — patch_segment (same fix applies to regenerate_segment)
+@router.patch("/jobs/{job_id}/segments/{segment_id}", status_code=200)
+async def patch_segment(
+    job_id: str,
+    segment_id: str,
+    body: SegmentPatchRequest,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    seg_result = await session.execute(
+        select(Segment).where(Segment.job_id == job_id, Segment.id == segment_id)
+    )
+    seg = seg_result.scalar_one_or_none()
+    if seg is None:
+        raise HTTPException(status_code=404, detail="Segment not found")
+    # ... rest unchanged; remove the .limit(1) workaround
 ```
 
 ---
 
-### WR-02: `_job_to_dict` omits `updated_at` field that `types.ts` expects
+### WR-02: Migration backfill for `segment_job_id` is non-deterministic when `segment.id` is not unique
 
-**File:** `backend/src/app/api/routes/jobs.py:31-53`
+**File:** `backend/src/app/db/migrations/versions/0003_segment_compound_pk_run_fields.py:51-59`
 
-**Issue:** The `JobProgress` / `JobSummary` interfaces in `frontend/src/lib/types.ts` reference `updated_at` as a standard field on job objects. The `_job_to_dict` serializer at line 31 includes `"created_at"` (line 51) but does **not** include `"updated_at"`. The `updated_at` field exists on the `Job` ORM model (it is a standard SQLAlchemy `DateTime` column). Any frontend code that reads `job.updated_at` from the REST response will always get `undefined`.
+**Issue:** The backfill query:
 
-The `JobSummary` type in `types.ts` (line 46–54) does not declare `updated_at` — so this is not yet causing a TypeScript error — but the `JobProgress` interface (line 5–27) also doesn't declare it explicitly, though `updated_at` appears in the backend docstring comment at line 78 in `jobs.py` as one of the returned D-10 fields.
-
-**Fix:** Add `updated_at` to `_job_to_dict`:
-
-```python
-"updated_at": job.updated_at.isoformat() if job.updated_at else None,
+```sql
+UPDATE segment_flags sf
+SET segment_job_id = s.job_id
+FROM segments s
+WHERE s.id = sf.segment_id
 ```
 
-Insert after line 52 (`"created_at": ...`).
+This is a one-to-many join when `segments.id` was not yet unique (the old single-column
+PK was dropped at step 2 in this same migration). If any PK-colliding rows already
+existed in the DB (precisely what this migration is intended to fix), the UPDATE assigns
+an arbitrary `job_id` to each affected flag row. For a fresh PoC DB with no prior
+collisions this is low-risk, but it is fragile by design.
+
+**Fix:** Use a deterministic subquery, or document the pre-condition in the migration:
+
+```python
+# Deterministic backfill — picks lowest created_at job when segment.id maps to multiple jobs
+op.execute(
+    """
+    UPDATE segment_flags sf
+    SET segment_job_id = (
+        SELECT s.job_id
+        FROM segments s
+        WHERE s.id = sf.segment_id
+        ORDER BY s.created_at
+        LIMIT 1
+    )
+    """
+)
+```
 
 ---
 
-### WR-03: Temp file created in `_make_minimal_docx` leaks on test failure
+### WR-03: Worker segment insertion is not idempotent — crash-restart causes `IntegrityError`
 
-**File:** `backend/tests/workers/test_segment_persistence.py:24-31`
+**File:** `backend/src/app/workers/translate_worker.py:305-324`
 
-**Issue:** `_make_minimal_docx` creates a temp file with `delete=False` and returns its path. The `job` fixture stores the path but never schedules cleanup — neither in a `yield`-based cleanup block nor via `tmp_path` (which is pytest-managed). If the test fails between fixture setup and teardown, the `.docx` file is left in the system's temp directory. On a CI runner this is harmless but accumulates across runs; in a shared dev environment it can cause false positives if a stale file is accidentally reused.
-
-**Fix:** Pass the temp file through `tmp_path` (which pytest cleans up automatically) instead of `tempfile.NamedTemporaryFile`:
-
-```python
-def _make_minimal_docx(tmp_path) -> str:
-    """Write a DOCX with one paragraph to a tmp_path file; return path."""
-    doc = DocxDocument()
-    doc.add_paragraph("Hello world")
-    path = str(tmp_path / "test.docx")
-    doc.save(path)
-    return path
-```
-
-And update the `job` fixture signature to accept `tmp_path`:
+**Issue:** ORM segments are inserted with `session.add_all(orm_segments)` + `commit()`
+before the translate loop. If the worker crashes (process kill, OOM, `job_timeout`)
+after this commit and before `transition_to_done`, arq re-enqueues the job. The second
+run hits an `IntegrityError` on the compound PK `(job_id, id)` for the same segment
+rows, falls into the `except Exception` branch, and marks the job failed — rather than
+resuming from where it stopped.
 
 ```python
-@pytest_asyncio.fixture
-async def job(session_factory, tmp_path):
-    docx_path = _make_minimal_docx(tmp_path)
-    ...
+# translate_worker.py:323-324 — not safe to re-run
+session.add_all(orm_segments)
+await session.commit()
 ```
 
-The three test functions already receive `tmp_path` — the same `tmp_path` fixture instance is passed to both `job` and the test body within the same test invocation.
+**Fix (simplest, cross-DB compatible):** Wrap in a try/except `IntegrityError` to
+skip re-insertion on retry:
+
+```python
+try:
+    session.add_all(orm_segments)
+    await session.commit()
+except IntegrityError:
+    await session.rollback()
+    log.warning("segments_already_persisted_skipping", job_id=job_id)
+```
+
+For a production-grade fix on PostgreSQL, use `INSERT … ON CONFLICT DO NOTHING`:
+
+```python
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+stmt = (
+    pg_insert(SegmentORM)
+    .values([{...} for seg in segments])
+    .on_conflict_do_nothing(index_elements=["job_id", "id"])
+)
+await session.execute(stmt)
+await session.commit()
+```
+
+---
+
+### WR-04: `URL.revokeObjectURL` called synchronously after `a.click()` races download
+
+**File:** `frontend/src/components/ReviewPageHeader.tsx:43-44`
+
+**Issue:**
+
+```typescript
+a.click();
+URL.revokeObjectURL(url);
+```
+
+`a.click()` schedules the download asynchronously. The browser initiates the blob read
+after the current call stack unwinds. `revokeObjectURL` is called immediately before the
+browser has started reading from the URL. On Safari and some Firefox versions this causes
+a silent download failure — the blob is revoked before navigation occurs.
+
+**Fix:** Use `setTimeout` (standard browser idiom):
+
+```typescript
+a.click();
+setTimeout(() => URL.revokeObjectURL(url), 100);
+```
+
+---
 
 ## Info
 
-### IN-01: `translate_worker.py` — `segments_done` counter has no lock under concurrent batches
+### IN-01: `SegmentFlag` relationship missing explicit `foreign_keys` for compound FK
 
-**File:** `backend/src/app/workers/translate_worker.py:350, 370`
+**File:** `backend/src/app/db/models.py:247`
 
-**Issue:** The `nonlocal segments_done` increment at line 370 (`segments_done += len(batch_texts)`) runs inside the `async with sem:` block. As noted in WR-01, with `worker_concurrency=1` only one batch holds the semaphore at a time, so in practice this never races. But if `worker_concurrency` is bumped, two batches can hold the semaphore simultaneously and `segments_done += len(batch_texts)` becomes a non-atomic read-modify-write across `await` points. The reported progress in DB/Redis can undercount or skip values. This is secondary to WR-01 but worth noting separately.
+**Issue:** The `segment` relationship on `SegmentFlag` has no explicit `foreign_keys` or
+`primaryjoin`:
 
-**Fix:** If WR-01 is addressed with a per-batch session, move the counter increment into a single async-safe update (e.g., use `asyncio.Lock` around just the counter increment, or derive `segments_done` from a count query rather than an in-memory accumulator).
+```python
+segment: Mapped[Segment] = relationship("Segment", back_populates="flags")
+```
 
----
+SQLAlchemy 2.0 can usually infer the join from the `ForeignKeyConstraint`, but omitting
+explicit join conditions is fragile — any future rename of `segment_job_id` or `segment_id`
+columns would silently misconfigure the relationship.
 
-### IN-02: `GlossaryList` renders `g.term_count` correctly but the field was missing from `types.ts` in earlier phase; confirm it is now present
+**Fix:** Declare `foreign_keys` explicitly:
 
-**File:** `frontend/src/components/glossary/GlossaryList.tsx:55` and `frontend/src/lib/types.ts:96-104`
-
-**Issue:** `GlossaryList` at line 55 renders `{g.term_count}`. The `Glossary` interface in `types.ts` does include `term_count: number` at line 98 — this is correctly typed. This is a **resolved** item from the previous broader review (IN-03 in `02-REVIEWS.md`). No action needed; confirmed correct.
-
----
-
-### IN-03: `useReviewKeyboard` `escape` handler uses `enableOnFormTags` but not `enableOnContentEditable`
-
-**File:** `frontend/src/hooks/useReviewKeyboard.ts:76-80`
-
-**Issue:** The `escape` handler at line 76 sets `enableOnFormTags: ["textarea"]` so pressing Escape inside the translation textarea blurs it. This is correct for `<textarea>` elements. If any segment cells are later changed to use `contentEditable` divs (e.g., for rich text), the Escape key will not fire inside them because `contentEditable` elements require `enableOnContentEditable: true`. This is a forward-looking concern — currently all editing uses `<Textarea>` and the hook is correct.
-
-**Fix (preemptive, low priority):** Add `enableOnContentEditable: true` to the escape handler options so the behavior stays consistent if the editor is ever upgraded:
-
-```typescript
-useHotkeys(
-  "escape",
-  () => (document.activeElement as HTMLElement)?.blur(),
-  { enableOnFormTags: ["textarea"], enableOnContentEditable: true }
-);
+```python
+segment: Mapped[Segment] = relationship(
+    "Segment",
+    back_populates="flags",
+    foreign_keys="[SegmentFlag.segment_job_id, SegmentFlag.segment_id]",
+)
 ```
 
 ---
 
-### IN-04: `GlossariesPage` delete mutation has no error handling — silent failure on 404/409
+### IN-02: Test functions lack `@pytest.mark.asyncio` decorator
 
-**File:** `frontend/src/app/glossaries/page.tsx:23-29`
+**File:** `backend/tests/workers/test_segment_pk_collision.py:37`, `87`, `122`
 
-**Issue:** The `deleteMutation` at line 23 has `onSuccess` (invalidates cache) but no `onError` callback. If the DELETE request fails (e.g., glossary is currently attached to a running job and the backend returns 409), the UI silently does nothing — the glossary stays in the list (TanStack Query does not re-fetch on mutation error by default), and the user receives no feedback. There is no toast or alert.
+**Issue:** All three test functions are `async def` but have no `@pytest.mark.asyncio`
+decorator. Whether they execute depends on `asyncio_mode = "auto"` being set in
+`pyproject.toml`. If that setting is absent, the tests silently skip rather than run.
+Explicit decoration makes intent clear regardless of configuration.
 
-**Fix:** Add a minimal `onError` handler:
+**Fix:**
 
-```typescript
-const deleteMutation = useMutation({
-  mutationFn: (id: string) =>
-    fetch(`/api/glossaries/${id}`, { method: "DELETE" }).then((r) => {
-      if (!r.ok) throw new Error(`Delete failed: ${r.status}`)
-    }),
-  onSuccess: () => queryClient.invalidateQueries({ queryKey: ["glossaries"] }),
-  onError: (err) => {
-    // Replace with toast when a toast library is available
-    console.error("Failed to delete glossary:", err)
-    alert("Failed to delete glossary. It may be in use by a running job.")
-  },
-})
+```python
+@pytest.mark.asyncio
+async def test_same_content_two_jobs_no_pk_collision(session: AsyncSession) -> None:
+    ...
+```
+
+Apply to all three test functions.
+
+---
+
+### IN-03: `update_glossary_name` mutates ORM object in-place (breaks immutability convention)
+
+**File:** `backend/src/app/services/glossary_service.py:100-104`
+
+**Issue:**
+
+```python
+g.name = name
+await session.commit()
+```
+
+Per project coding style (CLAUDE.md immutability rule), data updates should use statement
+forms rather than attribute mutation. The same service already uses `sa_update()` statements
+correctly in `run_post_check` and the worker uses them for segment updates.
+
+**Fix:** Use an `UPDATE` statement:
+
+```python
+await session.execute(
+    update(Glossary).where(Glossary.id == glossary_id).values(name=name)
+)
+await session.commit()
+g = await get_glossary(session, glossary_id)
+return g
 ```
 
 ---
 
-_Reviewed: 2026-04-25T14:00:00Z_
+### IN-04: `useReviewKeyboard` — comment on `?` hotkey is slightly misleading
+
+**File:** `frontend/src/hooks/useReviewKeyboard.ts:73-75`
+
+**Issue:** The comment says `"Using shift+/ is wrong: it would match event.key==='/',
+but Shift held transforms / to ?"`. This conflates raw DOM behavior with `react-hotkeys-hook`
+library behavior and could mislead future maintainers. The hotkey `"?"` itself is correct.
+
+**Fix:** Simplify the comment:
+
+```typescript
+// "?" — react-hotkeys-hook matches event.key directly;
+// no need to specify "shift+/" explicitly.
+useHotkeys("?", () => onToggleHelp(), { preventDefault: true });
+```
+
+---
+
+_Reviewed: 2026-04-25_
 _Reviewer: Claude (gsd-code-reviewer)_
 _Depth: standard_
