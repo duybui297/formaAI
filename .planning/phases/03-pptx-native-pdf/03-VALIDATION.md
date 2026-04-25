@@ -52,7 +52,7 @@ created: 2026-04-25
 | PDF-02 | 1 | redact-reinsert produces PDF with Noto text + non-text preserved | unit | `pytest tests/pipeline/test_pdf_reassembler.py::test_round_trip -x` | ❌ W0 |
 | PDF-03 | 1 | overflow flagged when scale < 0.7 | unit | `pytest tests/pipeline/test_pdf_reassembler.py::test_overflow_flag -x` | ❌ W0 |
 | PDF-04 | 1 | 2-col PDF produces 2 column groups in reading order; 3+ → degraded | unit | `pytest tests/pipeline/test_pdf_columns.py -x` | ❌ W0 |
-| LAYOUT-02 | 2 | `overflow` SegmentFlag persisted with `(job_id, segment_id)` FK | integration | `pytest tests/pipeline/test_pdf_reassembler.py::test_overflow_db_flag -x` | ❌ W0 |
+| LAYOUT-02 | 2 | `overflow` SegmentFlag persisted with `(job_id, segment_id)` FK | integration | `pytest tests/pipeline/test_pdf_reassembler.py::test_overflow_db_flag_persisted -x` | ❌ W0 |
 | LAYOUT-03 | 2 | `auto_adjusted` metadata in SegmentFlag.details JSON | unit | `pytest tests/pipeline/test_pptx_reassembler.py::test_auto_adjusted -x` | ❌ W0 |
 | FE-01 | 2 | `FlagBadge` renders `smartart` (orange) + `multi_column_degraded` (slate) | unit (vitest) | `cd frontend && npm run test -- FlagBadge` | ✅ extend |
 | FE-02 | 2 | `formatBreadcrumb()` parses docx/pptx/pdf position formats | unit (vitest) | `cd frontend && npm run test -- formatBreadcrumb` | ❌ W0 |
