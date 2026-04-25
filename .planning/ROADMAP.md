@@ -95,7 +95,7 @@ Plans:
 - [x] 03-04-PLAN.md — PDF pipeline (columns, fonts, extractor, reassembler)
 - [x] 03-05-PLAN.md — Worker dispatch (match/case + SegmentFlag persistence for pptx/pdf formats)
 - [x] 03-06-PLAN.md — Frontend deltas (formatBreadcrumb, FlagBadge, SegmentRow, UploadForm, FlagType unions)
-- [ ] 03-07-PLAN.md — Round-trip integration tests + coverage gate (80%) + frontend gate
+- [x] 03-07-PLAN.md — Round-trip integration tests + coverage gate (80%) + frontend gate
 
 **UI hint**: yes
 
