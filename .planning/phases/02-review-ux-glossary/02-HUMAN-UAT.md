@@ -8,13 +8,15 @@ updated: 2026-04-25T13:50:00Z
 
 ## Current Test
 
-[awaiting human testing]
+[paused — blocker reported on test 1, see Gaps]
 
 ## Tests
 
 ### 1. Review page visual rendering
 expected: Side-by-side table renders with source segments on left, editable textareas on right; flag badges visible on flagged segments
-result: [pending]
+result: issue
+reported: "stuck at translate_job process"
+severity: blocker
 
 ### 2. Debounced inline edit + save indicator
 expected: Textarea shows "Saving..." then "Saved" within ~600ms; network PATCH call appears in DevTools
@@ -44,9 +46,17 @@ result: [pending]
 
 total: 7
 passed: 0
-issues: 0
-pending: 7
+issues: 1
+pending: 6
 skipped: 0
 blocked: 0
 
 ## Gaps
+
+- truth: "Translation job completes so review page can render segments"
+  status: failed
+  reason: "User reported: stuck at translate_job process"
+  severity: blocker
+  test: 1
+  artifacts: []
+  missing: []
