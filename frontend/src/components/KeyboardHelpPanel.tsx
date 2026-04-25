@@ -15,7 +15,7 @@ const SHORTCUTS: Array<{ key: string; action: string }> = [
   { key: "e", action: "Edit current segment" },
   { key: "r", action: "Regenerate current segment" },
   { key: "Esc", action: "Blur text field" },
-  { key: "?", action: "Toggle this panel" },
+  { key: "? / Ctrl+Shift+P", action: "Toggle this panel" },
 ];
 
 export function KeyboardHelpPanel({ open, onClose }: KeyboardHelpPanelProps) {

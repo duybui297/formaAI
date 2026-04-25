@@ -70,14 +70,27 @@ export function useReviewKeyboard({
     [focusedIndex]
   );
 
-  // ?: toggle help panel — detect event.key==="?" directly (Shift+/ sends "?" in all browsers)
-  // Using shift+/ is wrong: it would match event.key==="/", but Shift held transforms / to ?
+  // ?: toggle help panel — fires when NOT inside a form element
+  // Shift+/ sends event.key==="?" in all browsers (no explicit Shift modifier needed)
   useHotkeys("?", () => onToggleHelp(), { preventDefault: true });
 
-  // Escape: blur active textarea (enabled in textarea)
+  // ctrl+shift+p: same action — vscode-style binding that works FROM textarea
+  // Additive alongside "?" (per D-02-17: locked shortcuts preserved)
+  useHotkeys(
+    "ctrl+shift+p",
+    () => onToggleHelp(),
+    { preventDefault: true, enableOnFormTags: ["textarea"] }
+  );
+
+  // Escape: blur active textarea — use setTimeout(0) for cross-browser reliability
   useHotkeys(
     "escape",
-    () => (document.activeElement as HTMLElement)?.blur(),
+    () => {
+      const el = document.activeElement as HTMLTextAreaElement | null;
+      if (el && typeof el.blur === "function") {
+        setTimeout(() => el.blur(), 0);
+      }
+    },
     { enableOnFormTags: ["textarea"] }
   );
 }
