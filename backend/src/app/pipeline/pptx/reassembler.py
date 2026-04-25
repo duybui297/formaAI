@@ -118,6 +118,10 @@ def _write_back_table(
                     continue
                 translated = translated_map.get(seg.id, seg.source_text)
                 _write_paragraph_runs(para, translated)
+                # LAYOUT-02: detect overflow for table cells (mirrors _write_back_text_frame)
+                result = detect_pptx_overflow(cell, seg.source_text, translated)
+                if result["overflow"] or result["auto_adjusted"]:
+                    overflow_results.append({"segment_id": seg.id, **result})
     return overflow_results
 
 
