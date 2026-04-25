@@ -1162,32 +1162,37 @@ No new authentication, session, or access-control surfaces introduced. Phase 3 i
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Master text write-back propagation**
    - What we know: `prs.slide_master.shapes[N].text_frame` is writable
    - What's unclear: Does editing master text propagate automatically to layout slides, or must each layout's shape be edited independently?
    - Recommendation: Write a fixture test during Wave 0 — edit master text, save, reopen, confirm slides reflect change
+   - **RESOLVED:** Resolved via Wave 1 implementation — extractor uses `slide.slide_layout.slide_master.shapes` and `slide.slide_layout.placeholders` walked once per master id; reassembler writes back to source shape ref. If master propagation fails empirically during Wave 0 fixture, plan 03-03 includes per-layout write-back fallback.
 
 2. **qwen-mt-turbo + HTML tag preservation**
    - What we know: qwen-mt-turbo handles `terminology` injection; unclear if it honors HTML tags
    - What's unclear: Will it strip `<b>`, `<i>` tags or hallucinate extra HTML?
    - Recommendation: Test empirically in Wave 0 with a simple `<b>hello</b> world` payload; implement placeholder-protection fallback if tags are corrupted
+   - **RESOLVED:** Resolved by adding Wave 0 empirical probe task to plan 03-01 (HTML-tag survival probe). If tags survive: feed HTML directly. If tags corrupted: implement placeholder-protection in `pipeline/pdf/extractor.py spans_to_html()` (replace `<span>` with `[[1]]`-style markers, restore after translation).
 
 3. **`autofit_text()` headless reliability**
    - What we know: `text_frame.autofit_text()` calls an internal font scaling calculation
    - What's unclear: Whether this requires a rendering context unavailable in a headless Python process
    - Recommendation: Use char-count ratio (Q4) as primary; `auto_size = TEXT_TO_FIT_SHAPE` as the declarative fallback PowerPoint will apply on open
+   - **RESOLVED:** Resolved by Wave 1 design choice — primary mechanism is char-count ratio (chars_translated / chars_source); `MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE` set declaratively so PowerPoint applies on open. `autofit_text()` is NOT called from headless worker.
 
 4. **Noto font filenames on runtime Docker image**
    - What we know: `apt-get install fonts-noto-cjk fonts-noto` installs them; path is `/usr/share/fonts/truetype/noto/`
    - What's unclear: Exact filenames (especially `NotoSansCJK-Regular.ttc` vs `NotoSansCJKsc-Regular.otf`)
    - Recommendation: Add a Wave 0 task: `docker run --rm <image> fc-list | grep Noto` → hardcode discovered paths in `fonts.py`
+   - **RESOLVED:** Resolved by adding Wave 0 empirical probe task to plan 03-01 (`fc-list | grep -i noto` in Docker). Discovered filenames hardcoded in `pipeline/pdf/fonts.py NOTO_CANDIDATES` constant before Wave 1.
 
 5. **3+ column PDF triggering multi_column_degraded**
    - What we know: histogram gap algorithm will produce 2+ gaps for 3+ columns
    - What's unclear: Will some 2-column PDFs with uneven column widths produce 2 gaps and trigger false `multi_column_degraded`?
    - Recommendation: Test with arXiv 2-column PDF. If false positives occur, raise `gap_min_bins` or apply a "gap must be in middle 60% of page width" filter.
+   - **RESOLVED:** Resolved by Wave 0 fixture coverage — plan 03-02 includes 2-column arXiv-style PDF fixture; if false positive observed, raise `gap_min_bins` to 4 (currently 3) or filter `gap.center_pct in [0.4, 0.6]` per FAQ guidance. No code change unless test fails.
 
 ---
 
