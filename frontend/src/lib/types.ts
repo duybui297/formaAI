@@ -54,7 +54,13 @@ export interface JobSummary {
 }
 
 // --- Phase 2 types ---
-export type FlagType = "overflow" | "glossary_violation" | "placeholder_mismatch" | "llm_refusal"
+export type FlagType =
+  | "overflow"
+  | "glossary_violation"
+  | "placeholder_mismatch"
+  | "llm_refusal"
+  | "smartart"
+  | "multi_column_degraded"
 export type FlagSeverity = "info" | "warn" | "block"
 
 export interface SegmentFlag {
@@ -74,6 +80,7 @@ export interface Segment {
   translated_text: string | null
   edited_text: string | null
   expansion_ratio: number | null
+  structural_position?: string | null
   flags: SegmentFlag[]
 }
 

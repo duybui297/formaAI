@@ -11,10 +11,8 @@ import { CloudUpload } from "lucide-react"
 import { detectTrackedChanges } from "@/lib/detectTrackedChanges"
 
 const MAX_SIZE_BYTES = 25 * 1024 * 1024
-// Phase 1 scope: DOCX only. PDF + PPTX pipelines land in later phases and
-// the backend rejects them with 422, so the client-side allowlist stays in
-// sync to avoid the "silently accept, server rejects" UX that WR-02 flagged.
-const ALLOWED_EXTS = new Set([".docx"])
+// Phase 3: PPTX and native PDF pipelines added. Keep allowlist in sync with backend.
+const ALLOWED_EXTS = new Set([".docx", ".pptx", ".pdf"])
 
 function getExt(filename: string): string {
   return filename.slice(filename.lastIndexOf(".")).toLowerCase()
@@ -49,7 +47,7 @@ export function UploadForm() {
   const handleFile = useCallback(async (f: File) => {
     const ext = getExt(f.name)
     if (!ALLOWED_EXTS.has(ext)) {
-      const msg = "Unsupported file type. Phase 1 accepts .docx only."
+      const msg = "Unsupported file type. Accepted formats: .docx, .pptx, .pdf"
       setError(msg)
       toast({ variant: "destructive", description: msg })
       return
@@ -68,8 +66,8 @@ export function UploadForm() {
     setShowTrackedModal(false)
     setDetecting(true)
 
-    // B4 Option A: detect tracked changes before any upload
-    const hasTC = await detectTrackedChanges(f)
+    // B4 Option A: detect tracked changes before any upload (DOCX only — PPTX/PDF have no TC)
+    const hasTC = ext === ".docx" ? await detectTrackedChanges(f) : false
     setHasTrackedChanges(hasTC)
     setDetecting(false)
   }, [toast])
@@ -163,7 +161,7 @@ export function UploadForm() {
       ? "Release to upload"
       : dragState === "multi"
       ? "One file at a time only"
-      : "Drop your DOCX here (PDF & PPTX coming soon)"
+      : "Drop your document here — DOCX, PPTX, or native PDF"
 
   return (
     <>
@@ -197,7 +195,7 @@ export function UploadForm() {
         <input
           id="file-input"
           type="file"
-          accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+          accept=".docx,.pptx,.pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/pdf"
           className="hidden"
           onChange={e => {
             const f = e.target.files?.[0]
