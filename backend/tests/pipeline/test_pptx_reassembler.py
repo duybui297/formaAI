@@ -117,6 +117,39 @@ def test_smartart_write_back_skipped(simple_pptx):
     assert isinstance(overflow_results, list), "overflow_results must be a list"
 
 
+def test_autofit_skipped_for_auto_height_shape(tmp_path):
+    """Gap 1: shapes with height=0 (auto-height) must not apply TEXT_TO_FIT_SHAPE."""
+    from pptx import Presentation
+    from pptx.util import Inches
+    from app.pipeline.pptx.reassembler import detect_pptx_overflow
+    prs = Presentation()
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    txBox = slide.shapes.add_textbox(Inches(1), Inches(1), Inches(4), Inches(0))
+    # Simulate auto-height: height set to 0
+    txBox._element.spPr.xfrm.ext.cy = 0
+    source = "Hello world"
+    translated = "Xin chào thế giới hôm nay"  # ~20% longer, shrink=0.83 >= 0.7
+    result = detect_pptx_overflow(txBox, source, translated)
+    assert result["overflow"] is False
+    assert result["auto_adjusted"] is False, "Auto-height shapes must not apply auto-fit"
+
+
+def test_paragraph_dominant_font_pt_returns_max_run_size():
+    """_paragraph_dominant_font_pt returns max run font size in pts, defaults 18pt."""
+    from pptx import Presentation
+    from pptx.util import Inches, Pt
+    from app.pipeline.pptx.reassembler import _paragraph_dominant_font_pt
+    prs = Presentation()
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    txBox = slide.shapes.add_textbox(Inches(1), Inches(1), Inches(4), Inches(1))
+    para = txBox.text_frame.paragraphs[0]
+    run = para.add_run()
+    run.text = "Heading text"
+    run.font.size = Pt(24)
+    result = _paragraph_dominant_font_pt(para)
+    assert abs(result - 24.0) < 0.1, f"Expected 24pt, got {result}"
+
+
 def test_reassemble_pptx_bullet_paragraph_preserves_bullet_format(simple_pptx, tmp_path):
     """PPTX-01: bullet paragraph level is preserved through run-merge write-back."""
     from pptx import Presentation
