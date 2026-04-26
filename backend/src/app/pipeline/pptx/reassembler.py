@@ -16,8 +16,10 @@ from __future__ import annotations
 import unicodedata
 from typing import TYPE_CHECKING
 
+from pptx.enum.shapes import MSO_SHAPE_TYPE
 from pptx.enum.text import MSO_AUTO_SIZE
 
+from app.pipeline.pptx.smartart import is_smartart
 from app.pipeline.segment import Segment
 
 if TYPE_CHECKING:
@@ -211,10 +213,6 @@ def _write_back_shapes(
     Returns list of overflow_result dicts for segments that need overflow/auto-adjusted flags.
     SmartArt positions (ending in '.smartart') are skipped silently (D-03-01).
     """
-    from pptx.enum.shapes import MSO_SHAPE_TYPE  # noqa: PLC0415
-
-    from app.pipeline.pptx.smartart import is_smartart  # noqa: PLC0415
-
     overflow_results: list[dict] = []  # type: ignore[type-arg]
 
     for shape_idx, shape in enumerate(shapes):
