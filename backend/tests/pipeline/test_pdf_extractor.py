@@ -159,25 +159,57 @@ def test_spans_to_html_merges_consecutive_same_style_runs():
     assert "<b>Open</b>" not in html, "Should not have separate <b> tags"
 
 
-def test_spans_to_html_inserts_br_before_inline_label_after_period():
-    """Multi-label paragraph 'Background: ... Objectives: ...' inside a single
-    block must get `<br>` before the second (and any subsequent) inline label."""
+def test_spans_to_html_inserts_br_on_paragraph_line_gap():
+    """Spatial signal: when consecutive lines in a block have a y-gap that
+    exceeds 1.2x the median line gap, a <br> is emitted. This is the BMC
+    abstract scenario where 'Methods:' and 'Results:' sit on lines with
+    extra leading between them — visual paragraph break in source."""
     from app.pipeline.pdf.extractor import spans_to_html
 
+    # 3 lines: normal gap (12pt) between L0 and L1, big gap (16pt) before L2
     block = {
         "lines": [
-            {"spans": [
-                {"text": "Background:", "size": 10.0, "flags": 4, "font": "AdvTT99c4c969"},
-                {"text": " Missing data is a pervasive problem in clinical research. ", "size": 10.0, "flags": 4, "font": "AdvTTb5929f4c"},
-                {"text": "Objectives:", "size": 10.0, "flags": 4, "font": "AdvTT99c4c969"},
-                {"text": " This study aimed to evaluate accuracy of GAIN.", "size": 10.0, "flags": 4, "font": "AdvTTb5929f4c"},
+            {"bbox": (0, 100, 200, 110), "spans": [
+                {"text": "Methods:", "size": 10.0, "flags": 4, "font": "AdvTT99c4c969"},
+                {"text": " Two real world clinical datasets.", "size": 10.0, "flags": 4, "font": "AdvTTb5929f4c"},
+            ]},
+            {"bbox": (0, 112, 200, 122), "spans": [
+                {"text": "More body text on the next line.", "size": 10.0, "flags": 4, "font": "AdvTTb5929f4c"},
+            ]},
+            {"bbox": (0, 128, 200, 138), "spans": [
+                {"text": "Results:", "size": 10.0, "flags": 4, "font": "AdvTT99c4c969"},
+                {"text": " GAIN was the most accurate.", "size": 10.0, "flags": 4, "font": "AdvTTb5929f4c"},
             ]},
         ]
     }
     html = spans_to_html(block)
-    assert "<br><b>Objectives:</b>" in html, f"Expected <br> before Objectives:; got {html!r}"
-    # Background: at start of block must NOT be preceded by <br>
-    assert html.startswith("<b>Background:</b>"), f"Block must start with bold label; got {html!r}"
+    assert "<br>" in html, f"Expected paragraph break from line-gap; got {html!r}"
+    # The break must come BEFORE the Results label (between L1 and L2)
+    br_pos = html.find("<br>")
+    results_pos = html.find("<b>Results:</b>")
+    assert br_pos < results_pos, f"<br> must precede Results; got {html!r}"
+
+
+def test_spans_to_html_no_br_when_line_gap_is_uniform():
+    """Spatial signal must NOT fire when all line gaps are roughly uniform —
+    that's regular line wrap, not a paragraph break."""
+    from app.pipeline.pdf.extractor import spans_to_html
+
+    block = {
+        "lines": [
+            {"bbox": (0, 100, 200, 110), "spans": [
+                {"text": "First line.", "size": 10.0, "flags": 4, "font": "Body"},
+            ]},
+            {"bbox": (0, 112, 200, 122), "spans": [
+                {"text": "Second line.", "size": 10.0, "flags": 4, "font": "Body"},
+            ]},
+            {"bbox": (0, 124, 200, 134), "spans": [
+                {"text": "Third line.", "size": 10.0, "flags": 4, "font": "Body"},
+            ]},
+        ]
+    }
+    html = spans_to_html(block)
+    assert "<br>" not in html, f"Uniform line gaps must NOT emit <br>; got {html!r}"
 
 
 def test_spans_to_html_block_leading_heading_gets_break_before_body():

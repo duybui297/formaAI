@@ -260,24 +260,50 @@ def spans_to_html(block: dict, page_body_pt: float | None = None) -> str:
     # 'Methods:' labels are inline-bold).
     block_body_font = _block_body_font(block, block_body_pt)
 
+    # Compute a paragraph-break threshold from the median line-to-line gap
+    # within the block. Lines whose top-edge gap exceeds this threshold are
+    # treated as paragraph boundaries — this is a document-agnostic signal
+    # that works regardless of bold/italic markup.
+    lines = block.get("lines", [])
+    line_gaps: list[float] = []
+    for i in range(1, len(lines)):
+        prev_y = lines[i - 1].get("bbox", (0, 0, 0, 0))[1]
+        cur_y = lines[i].get("bbox", (0, 0, 0, 0))[1]
+        gap = cur_y - prev_y
+        if gap > 0:
+            line_gaps.append(gap)
+
+    para_gap_threshold = 0.0
+    if line_gaps:
+        # Threshold = 1.2x the minimum line gap. Min is more robust than median
+        # on short blocks (2-3 lines): a single paragraph-break outlier doesn't
+        # skew the baseline. 1.2x leaves room for ~10% leading jitter without
+        # firing.
+        para_gap_threshold = min(line_gaps) * 1.2
+
     # Pass 1 — collect spans as (text, style) tuples where style is one of
     # 'h1', 'h2', 'b', 'i', 'bi', or '' (plain). Adjacent spans with the same
     # style are merged into a single run so e.g. "Open Access" doesn't end up
     # as <b>Open</b><b> </b><b>Access</b>.
-    runs: list[tuple[str, str]] = []  # (text, style)
+    runs: list[tuple[str, str]] = []  # (text, style); style 'br' = paragraph break
 
     def _push(text: str, style: str) -> None:
-        if runs and runs[-1][1] == style:
+        if runs and runs[-1][1] == style and style != "br":
             runs[-1] = (runs[-1][0] + text, style)
         else:
             runs.append((text, style))
 
-    for line_idx, line in enumerate(block.get("lines", [])):
+    for line_idx, line in enumerate(lines):
         if line_idx > 0 and runs:
-            # PDF line breaks inside a block are visually a space — keep as
-            # a plain-style space so adjacent same-style runs across lines
-            # still merge into one tag where appropriate.
-            _push(" ", "")
+            prev_y = lines[line_idx - 1].get("bbox", (0, 0, 0, 0))[1]
+            cur_y = line.get("bbox", (0, 0, 0, 0))[1]
+            gap = cur_y - prev_y
+            if para_gap_threshold > 0 and gap > para_gap_threshold:
+                # Visual paragraph break in source → emit <br>
+                _push("", "br")
+            else:
+                # Normal line wrap → space
+                _push(" ", "")
         for span in line.get("spans", []):
             text = span.get("text", "")
             if not text:
@@ -322,37 +348,32 @@ def spans_to_html(block: dict, page_body_pt: float | None = None) -> str:
                 style = ""
             _push(text, style)
 
-    # Pass 2 — render runs with line-break heuristic. Insert a <br> before a
-    # bold run that looks like an inline section label or a new list item:
-    #   - Run is NOT at the start of the block
-    #   - Run is bold (style 'b' or 'bi')
-    #   - Either ends with `:` (label like 'Background:') OR ends with `.` (list
-    #     item like 'Supplementary Table 1.')
-    #   - The preceding non-empty run ends with a sentence terminator
-    #     `. ? ! :` so we don't break inside running prose
-    # This catches multi-label abstract paragraphs and supplementary lists
-    # while leaving inline bold words inside a sentence untouched.
+    # Pass 2 — render runs.
+    # Three line-break sources, in priority order:
+    #   1. Spatial line-gap (`br` style from Pass 1) — general, works for any
+    #      document. Catches paragraph breaks visible as extra leading.
+    #   2. Block-leading bold heading + body — bold run that opens the block
+    #      and does NOT end with `:` is a section header; the body that follows
+    #      gets a <br>. Covers single-line heading+body blocks.
+    #   3. Bold-list separator — bold run mid-block that ends with `:` or `.`
+    #      AND follows a sentence terminator. Catches list-style runs like
+    #      "Item 1. ... <b>Item 2.</b> ... <b>Item 3.</b> ..." where source
+    #      keeps everything on the same line. Conservative: only fires on bold
+    #      runs that look like list/label markers.
     parts: list[str] = []
     seen_visible_content = False
-    prev_run_stripped = ""
     last_emitted_was_block_leading_heading = False
+    prev_run_stripped = ""
     for text, style in runs:
         stripped = text.strip()
-        prev_terminates = prev_run_stripped.endswith((".", "?", "!", ":"))
-        looks_like_inline_label = (
-            style in ("b", "bi")
-            and seen_visible_content
-            and prev_terminates
-            and 2 <= len(stripped) <= 80
-            and stripped.endswith((":", "."))
-        )
-        if looks_like_inline_label:
-            parts.append("<br>")
 
-        # Block-leading heading detection: a bold run that opens the block
-        # AND does NOT end with `:` is a section header (e.g.
-        # 'Acknowledgements', 'Supplementary Information', 'Funding').
-        # Inline labels ending with `:` (e.g. 'Background:') stay inline.
+        if style == "br":
+            if seen_visible_content:
+                parts.append("<br>")
+                last_emitted_was_block_leading_heading = False
+            continue
+
+        # Block-leading heading detection
         is_block_leading_heading = (
             style in ("b", "bi", "h1", "h2")
             and not seen_visible_content
@@ -362,12 +383,24 @@ def spans_to_html(block: dict, page_body_pt: float | None = None) -> str:
         )
 
         # Body run that follows a block-leading heading → insert <br>
-        # before this run so the heading and body sit on separate lines.
         if last_emitted_was_block_leading_heading and stripped and style not in ("h1", "h2"):
-            # Suppress the break if this run is itself another heading-style
-            # run that should stay adjacent (rare).
             parts.append("<br>")
             last_emitted_was_block_leading_heading = False
+
+        # Bold-list separator — same-line list items where each item is bold
+        # and ends with `.` or `:` after a sentence terminator in the prior run.
+        prev_terminates = prev_run_stripped.endswith((".", "?", "!", ":"))
+        looks_like_list_separator = (
+            style in ("b", "bi")
+            and seen_visible_content
+            and prev_terminates
+            and 2 <= len(stripped) <= 80
+            and stripped.endswith((":", "."))
+            # Don't double-break if we just emitted one
+            and (not parts or not parts[-1].endswith("<br>"))
+        )
+        if looks_like_list_separator:
+            parts.append("<br>")
 
         escaped = _html.escape(text)
         if style == "h1":
