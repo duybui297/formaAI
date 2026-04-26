@@ -33,10 +33,15 @@ from app.pipeline.pdf.columns import cluster_columns
 from app.pipeline.pdf.fonts import build_noto_archive_and_css
 from app.pipeline.segment import Segment
 
-# Minimum rect height (in PDF points) required to safely redact + reinsert.
-# Below this, insert_htmlbox cannot fit a line even at scale_low=0.7 and we
-# end up with a blank cell. Empirical threshold from PoC test PDFs.
+# Minimum rect dimensions (in PDF points) required to safely redact + reinsert.
+# Below either threshold, insert_htmlbox cannot fit even one glyph at scale_low=0.7
+# and the cell ends up blank. Empirical thresholds from PoC test PDFs.
+#
+# Height < 6pt: typical of dense table rows where the bbox hugs visible glyphs.
+# Width  < 20pt: typical of rotated / vertically-stacked column strips in
+#                academic-paper tables where each "block" is one narrow column.
 _MIN_RECT_HEIGHT_PT = 6.0
+_MIN_RECT_WIDTH_PT = 20.0
 
 
 def reassemble_pdf(
@@ -102,15 +107,17 @@ def reassemble_pdf(
             if block is None:
                 continue
             bbox = block["bbox"]
+            rect_w = bbox[2] - bbox[0]
             rect_h = bbox[3] - bbox[1]
-            if rect_h < _MIN_RECT_HEIGHT_PT:
-                # Too short to safely fit any line — flag and skip both
-                # redact and reinsert (preserves source text visibly).
+            if rect_h < _MIN_RECT_HEIGHT_PT or rect_w < _MIN_RECT_WIDTH_PT:
+                # Too short or too narrow to safely fit text — flag and skip
+                # both redact and reinsert (preserves source visibly).
                 overflow_flags.append({
                     "segment_id": seg.id,
                     "overflow": True,
                     "scale_applied": 0.0,
                     "reason": "rect_too_small",
+                    "rect_width": round(rect_w, 2),
                     "rect_height": round(rect_h, 2),
                 })
                 continue
