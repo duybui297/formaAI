@@ -58,6 +58,7 @@ def _segment_to_dict(s: Segment) -> dict:
         "translated_text": s.translated_text,
         "edited_text": s.edited_text,
         "expansion_ratio": s.expansion_ratio,
+        "structural_position": s.structural_position,
         "flags": [_flag_to_dict(f) for f in (s.flags or [])],
     }
 
