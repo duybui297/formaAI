@@ -47,12 +47,42 @@ def _write_paragraph_runs(paragraph, translated_text: str) -> None:
         run.text = ""
 
 
-def detect_pptx_overflow(shape, source_text: str, translated_text: str) -> dict:  # type: ignore[type-arg]
+def _paragraph_dominant_font_pt(paragraph) -> float:
+    """
+    Return the largest font size (in points) across all runs in the paragraph.
+
+    Falls back to 18.0pt if no run has an explicit font.size set (EMU units,
+    None means "inherit from theme"). This is used to estimate whether the
+    translated text fits in the shape without auto-fit.
+
+    python-pptx: run.font.size is in EMUs (914400 EMU = 1 inch = 72pt).
+    Conversion: pt = emu / 12700
+    """
+    max_pt = 0.0
+    for run in paragraph.runs:
+        size_emu = run.font.size
+        if size_emu is not None and size_emu > 0:
+            pt = size_emu / 12700
+            if pt > max_pt:
+                max_pt = pt
+    return max_pt if max_pt > 0 else 18.0  # default theme font size
+
+
+def detect_pptx_overflow(
+    shape, source_text: str, translated_text: str, paragraph=None
+) -> dict:  # type: ignore[type-arg]
     """
     Measure whether translated text causes overflow in a shape's text frame.
 
     Uses character-count ratio as proxy for font-size shrink factor (D-03-02).
     Avoids requiring a rendering engine (text_frame.autofit_text() fails headless).
+
+    Args:
+        shape: python-pptx shape or cell object
+        source_text: original source text for the paragraph
+        translated_text: translated text to write back
+        paragraph: optional python-pptx paragraph object (unused in ratio logic,
+                   reserved for future per-paragraph font-budget estimation)
 
     Returns dict:
       overflow: bool      — True if shrink_factor < 0.7
@@ -64,8 +94,19 @@ def detect_pptx_overflow(shape, source_text: str, translated_text: str) -> dict:
     char_ratio = len(translated_text) / max(len(source_text), 1)
     shrink_factor = 1.0 / char_ratio if char_ratio > 0 else 1.0
 
+    # Capture dominant font size for the paragraph (used in future height-budget logic)
+    _dominant_font_pt = _paragraph_dominant_font_pt(paragraph) if paragraph is not None else 18.0
+
     if char_ratio <= 1.0:
         # Text got shorter or same length — no overflow concern
+        return {"overflow": False, "auto_adjusted": False, "char_ratio": round(char_ratio, 3)}
+
+    # Shape-height guard: shapes with height == 0 (auto-height) already reflow
+    # naturally. Applying TEXT_TO_FIT_SHAPE to them fights the auto-height setting
+    # and forces a shrink. Skip auto-fit for auto-height shapes.
+    shape_height_emu = getattr(shape, "height", None)
+    if shape_height_emu is not None and shape_height_emu == 0:
+        # Auto-height shape — never apply auto-fit; no overflow concern either
         return {"overflow": False, "auto_adjusted": False, "char_ratio": round(char_ratio, 3)}
 
     if shrink_factor >= 0.7:
@@ -96,7 +137,7 @@ def _write_back_text_frame(
         translated = translated_map.get(seg.id, seg.source_text)
         _write_paragraph_runs(para, translated)
         # Overflow detection + auto-fit per D-03-02
-        result = detect_pptx_overflow(shape, seg.source_text, translated)
+        result = detect_pptx_overflow(shape, seg.source_text, translated, paragraph=para)
         if result["overflow"] or result["auto_adjusted"]:
             overflow_results.append({"segment_id": seg.id, **result})
     return overflow_results
@@ -119,7 +160,7 @@ def _write_back_table(
                 translated = translated_map.get(seg.id, seg.source_text)
                 _write_paragraph_runs(para, translated)
                 # LAYOUT-02: detect overflow for table cells (mirrors _write_back_text_frame)
-                result = detect_pptx_overflow(cell, seg.source_text, translated)
+                result = detect_pptx_overflow(cell, seg.source_text, translated, paragraph=para)
                 if result["overflow"] or result["auto_adjusted"]:
                     overflow_results.append({"segment_id": seg.id, **result})
     return overflow_results
