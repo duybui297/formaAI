@@ -111,9 +111,9 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 03.1-01-PLAN.md — PPTX: shape-height guard + per-paragraph font budget in detect_pptx_overflow (gap 1)
-- [ ] 03.1-02-PLAN.md — PDF: rect-vs-image collision detection in reassembler (gap 2)
-- [ ] 03.1-03-PLAN.md — PDF: font-size heading detection in spans_to_html + CSS heading rules (gap 3)
+- [x] 03.1-01-PLAN.md — PPTX: shape-height guard + per-paragraph font budget in detect_pptx_overflow (gap 1)
+- [x] 03.1-02-PLAN.md — PDF: rect-vs-image collision detection in reassembler (gap 2)
+- [x] 03.1-03-PLAN.md — PDF: font-size heading detection in spans_to_html + CSS heading rules (gap 3)
 
 **UI hint**: no
 
