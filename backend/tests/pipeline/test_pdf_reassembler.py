@@ -140,3 +140,16 @@ def test_clip_rect_away_from_images_no_overlap_unchanged():
     image_rect = pymupdf.Rect(150, 100, 300, 120)
     result = _clip_rect_away_from_images(text_rect, [image_rect])
     assert result.x1 == pytest.approx(140.0, abs=0.1), "No overlap — rect must be unchanged"
+
+
+def test_clip_rect_away_from_images_clips_left_edge():
+    """WR-01: text rect is clipped when image overlaps from the left (wide figure case)."""
+    import pymupdf
+    from app.pipeline.pdf.reassembler import _clip_rect_away_from_images
+
+    # Image starts left of (or at) the text rect's left edge and extends into it
+    text_rect = pymupdf.Rect(100, 100, 200, 120)
+    image_rect = pymupdf.Rect(50, 90, 180, 130)
+    result = _clip_rect_away_from_images(text_rect, [image_rect])
+    assert result.x0 == pytest.approx(180.0, abs=0.1), f"Left edge should be clipped to 180, got {result.x0}"
+    assert result.x1 == pytest.approx(200.0, abs=0.1), "Right edge must be unchanged"

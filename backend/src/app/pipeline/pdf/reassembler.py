@@ -68,10 +68,13 @@ def _clip_rect_away_from_images(
     for img in image_rects:
         if not clipped.intersects(img):
             continue
-        # Image is to the right of rect center: clip right edge
-        if img.x0 > clipped.x0 and img.x0 < clipped.x1:
-            clipped = pymupdf.Rect(clipped.x0, clipped.y0, img.x0, clipped.y1)
-        # Image is below rect center: clip bottom edge
+        # Image overlaps from the right: clip right edge to image's left edge
+        if img.x0 > clipped.x0:
+            clipped = pymupdf.Rect(clipped.x0, clipped.y0, min(clipped.x1, img.x0), clipped.y1)
+        # Image overlaps from the left: clip left edge to image's right edge
+        elif img.x1 < clipped.x1:
+            clipped = pymupdf.Rect(max(clipped.x0, img.x1), clipped.y0, clipped.x1, clipped.y1)
+        # Image is below rect: clip bottom edge
         if img.y0 > clipped.y0 and img.y0 < clipped.y1:
             clipped = pymupdf.Rect(clipped.x0, clipped.y0, clipped.x1, img.y0)
     return clipped
