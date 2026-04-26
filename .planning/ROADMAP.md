@@ -125,10 +125,13 @@ Plans:
   1. Tables detected via `page.find_tables()` produce per-cell segments (one segment per cell) instead of one fused block per row; reassembly redacts and reinserts each cell into its own bbox so column structure is preserved on translation
   2. Spans whose font is outside Noto coverage (math/symbol subsets like `AdvP*`, `CMSY*`, `STIX*`, `MathFont*`) are flagged as `glyph_passthrough` and emitted unchanged in the output PDF — no redact, no reinsert, original glyphs visible — instead of being translated and rendered as missing-glyph boxes
   3. UAT items pertaining to Table 2 parsing and page-3/10 formula rendering on job `932530eb` move from issue → resolved on the BMC academic-paper test fixture
-**Plans**: TBD (planning step computes)
+**Plans**: 4 plans
 
 Plans:
-- (to be planned)
+- [x] 03.2-01-PLAN.md — Segment.kind field + _is_math_font predicate + math_passthrough emission in extractor (TDD)
+- [x] 03.2-02-PLAN.md — Cell-aware table extraction via find_tables() + per-cell Segment emit (TDD)
+- [x] 03.2-03-PLAN.md — Reassembler kind-aware dispatch: table_cell redact+reinsert, math_passthrough skip
+- [x] 03.2-04-PLAN.md — Worker passthrough filter before batch pack + BMC paper integration round-trip test
 
 **UI hint**: no
 
@@ -163,5 +166,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 2. Review UX + Glossary | 0/14 | Not started | - |
 | 3. PPTX + Native PDF | 0/7 | Not started | - |
 | 3.1. PPTX + PDF Polish (gap closure) | 0/3 | Not started | - |
+| 3.2. PDF table + formula fidelity | 0/4 | Not started | - |
 | 4. Scanned PDF (OCR) | 0/TBD | Not started | - |
 | 5. Demo Hardening | 0/TBD | Not started | - |
