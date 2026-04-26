@@ -612,10 +612,14 @@ async def _run_translation(ctx: dict, session, job_id: str) -> None:
                 # multi_column_degraded: segments on degraded pages have "page.N.block.B" position
                 # L3: "col" absent in structural_position == degraded page
                 # (extractor writes page.N.block.B for degraded, page.N.col.C.block.B otherwise)
+                # WR-02 fix: explicitly restrict to kind=="text" so table_cell segments
+                # (whose positions contain "col") are excluded by kind, not by coincidence
+                # of position format — guards against future format changes like "cell" instead of "col".
                 _degraded_seg_ids = {
                     s.id for s in segments
-                    if "col" not in s.structural_position
-                    and s.structural_position.startswith("page.")
+                    if s.structural_position.startswith("page.")
+                    and s.kind == "text"
+                    and "col" not in s.structural_position
                 }
                 for _seg_id in _degraded_seg_ids:
                     _pdf_db_flags.append(SegmentFlag(
