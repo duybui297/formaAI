@@ -16,6 +16,10 @@ _engine_kwargs: dict = {"echo": False}
 if not _db_url.startswith("sqlite"):
     _engine_kwargs["pool_size"] = 5
     _engine_kwargs["max_overflow"] = 10
+    # Disable asyncpg prepared-statement cache so we don't hit
+    # InvalidCachedStatementError after Alembic migrations alter columns
+    # the pool already cached plans for. Acceptable PoC tradeoff.
+    _engine_kwargs["connect_args"] = {"statement_cache_size": 0}
 engine = create_async_engine(_db_url, **_engine_kwargs)
 
 # expire_on_commit=False: prevents lazy-load errors after commit in async context

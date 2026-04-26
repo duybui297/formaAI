@@ -84,6 +84,9 @@ async def startup(ctx: dict) -> None:
         settings.database_url.get_secret_value(),
         pool_size=5,
         pool_pre_ping=True,
+        # Disable asyncpg prepared-statement cache so post-migration DDL
+        # doesn't poison cached plans (InvalidCachedStatementError).
+        connect_args={"statement_cache_size": 0},
     )
     ctx["session_factory"] = async_sessionmaker(ctx["engine"], expire_on_commit=False)
     ctx["redis"] = Redis.from_url(settings.redis_url, decode_responses=True)
