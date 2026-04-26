@@ -73,11 +73,6 @@ def test_overflow_db_flag_persisted(tmp_path):
     import pymupdf
     from app.pipeline.pdf.reassembler import reassemble_pdf
 
-    # Build a PDF with a very small bbox
-    doc = pymupdf.open()
-    page = doc.new_page()
-    page.insert_text((72, 72), "Hi")
-
     # Extract segments
     from app.pipeline.pdf.extractor import extract_pdf_segments
     doc2 = pymupdf.open()
