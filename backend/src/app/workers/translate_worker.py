@@ -337,12 +337,18 @@ async def _run_translation(ctx: dict, session, job_id: str) -> None:
 
         # ----------------------------------------------------------------
         # STAGE 2: Batch pack (D-07)
+        # Phase 03.2: Split segments by kind before batch packing.
+        # math_passthrough segments skip the LLM entirely — identity translation.
+        # table_cell and text segments flow through pack_into_batches as before.
         # ----------------------------------------------------------------
-        batches = pack_into_batches(segments, budget_tokens=settings.token_budget)
+        _translatable = [s for s in segments if getattr(s, "kind", "text") != "math_passthrough"]
+        batches = pack_into_batches(_translatable, budget_tokens=settings.token_budget)
 
         # Gap 1 fix: persist ORM Segment rows so run_post_check can UPDATE/INSERT against them.
         # segments here are app.pipeline.segment.Segment dataclass objects (not ORM). We create
         # ORM instances from them and commit once before the translate loop.
+        # Phase 03.2: passthrough segments get source_text as their initial translated_text
+        # so DB rows are immediately consistent (reassembler skips them anyway via kind check).
         orm_segments: list[SegmentORM] = [
             SegmentORM(
                 id=seg.id,
@@ -353,7 +359,7 @@ async def _run_translation(ctx: dict, session, job_id: str) -> None:
                 is_comment=seg.is_comment,
                 is_inserted=seg.is_inserted,
                 is_deleted=seg.is_deleted,
-                translated_text=None,
+                translated_text=seg.source_text if getattr(seg, "kind", "text") == "math_passthrough" else None,
                 edited_text=None,
                 expansion_ratio=None,
                 run_index=seg.run_index,          # gap-closure 02-10: None for para-level, int for run-level
@@ -387,11 +393,20 @@ async def _run_translation(ctx: dict, session, job_id: str) -> None:
         sem = asyncio.Semaphore(settings.worker_concurrency)
         translated_map: dict[str, str] = {}  # segment_id → translated_text
 
-        # Map each batch back to its source Segment objects
+        # Phase 03.2: pre-populate translated_map for math_passthrough segments.
+        # getattr guard: Segment.kind exists after Plan 01; guard protects DOCX/PPTX
+        # segments which also use this worker (they have kind="text" by default).
+        for _seg in segments:
+            if getattr(_seg, "kind", "text") == "math_passthrough":
+                translated_map[_seg.id] = _seg.source_text
+
+        # Map each batch back to its source Segment objects.
+        # NOTE: batches were packed from _translatable (non-passthrough only),
+        # so batch_seg_groups must index into _translatable, not segments.
         batch_seg_groups: list[list] = []
         offset = 0
         for batch in batches:
-            batch_seg_groups.append(segments[offset : offset + len(batch)])
+            batch_seg_groups.append(_translatable[offset : offset + len(batch)])
             offset += len(batch)
 
         # WR-01 fix: per-batch done counts (list indexed by batch_id) — avoids
