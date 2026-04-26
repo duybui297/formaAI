@@ -172,8 +172,8 @@ def reassemble_pdf(
         # ----------------------------------------------------------------
         for _seg, block in active_pairs:
             rect = pymupdf.Rect(block["bbox"])
-            # fill=False → transparent redaction (preserves background color/graphics)
-            page.add_redact_annot(rect, fill=False)
+            # fill=None → transparent redaction (preserves background color/graphics)
+            page.add_redact_annot(rect, fill=None)
 
         # ----------------------------------------------------------------
         # Pass 2: Apply redactions (images + vector graphics preserved)
