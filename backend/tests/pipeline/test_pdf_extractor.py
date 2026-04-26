@@ -186,3 +186,172 @@ def test_extract_pdf_segments_all_segments_have_kind_field(single_col_pdf):
         f"Expected all normal-PDF segments to be kind='text', got: "
         f"{[seg.kind for seg in segments]}"
     )
+
+
+# --- Phase 03.2 Plan 02: Table cell extraction via find_tables() ---
+
+
+@pytest.fixture(scope="module")
+def table_pdf(tmp_path_factory):
+    """
+    Synthetic PDF with a 2-row × 3-column table drawn via PyMuPDF line primitives.
+    Cell text:
+      Row 0: "A1", "B1", "C1"
+      Row 1: "A2", "B2", "C2"
+    """
+    import pymupdf
+    doc = pymupdf.open()
+    page = doc.new_page(width=400, height=300)
+    # Table at (50, 50) → (350, 150), two rows, three columns
+    col_w = 100.0  # (350-50) / 3
+    row_h = 50.0   # (150-50) / 2
+    x0, y0 = 50, 50
+    # Insert cell text at cell centres
+    cells = [
+        ("A1", (x0 + col_w*0 + 10, y0 + row_h*0 + 30)),
+        ("B1", (x0 + col_w*1 + 10, y0 + row_h*0 + 30)),
+        ("C1", (x0 + col_w*2 + 10, y0 + row_h*0 + 30)),
+        ("A2", (x0 + col_w*0 + 10, y0 + row_h*1 + 30)),
+        ("B2", (x0 + col_w*1 + 10, y0 + row_h*1 + 30)),
+        ("C2", (x0 + col_w*2 + 10, y0 + row_h*1 + 30)),
+    ]
+    for text, pos in cells:
+        page.insert_text(pos, text, fontsize=11)
+    # Draw table grid lines so find_tables() can detect the table
+    shape = page.new_shape()
+    for row in range(3):  # 3 horizontal lines (top, mid, bottom)
+        y = y0 + row * row_h
+        shape.draw_line((x0, y), (x0 + col_w*3, y))
+    for col in range(4):  # 4 vertical lines
+        x = x0 + col * col_w
+        shape.draw_line((x, y0), (x, y0 + row_h*2))
+    shape.finish(color=(0, 0, 0), width=0.5)
+    shape.commit()
+    path = tmp_path_factory.mktemp("pdf_table_fixtures") / "table.pdf"
+    doc.save(str(path))
+    return path
+
+
+def test_table_cells_emit_one_segment_per_cell(table_pdf):
+    """
+    03.2-02 RED: Pages with tables detected by find_tables() emit one Segment per cell
+    with kind='table_cell', not one fused block per row.
+    """
+    import pymupdf
+    from app.pipeline.pdf.extractor import extract_pdf_segments
+
+    doc = pymupdf.open(str(table_pdf))
+    segments = extract_pdf_segments(doc, job_id="test-table-cells")
+    table_segs = [s for s in segments if s.kind == "table_cell"]
+
+    # find_tables() must detect the drawn grid and emit at least 4 cell segments
+    # (allows for merged/empty cells detected differently across environments)
+    assert len(table_segs) >= 4, (
+        f"Expected >=4 table_cell segments for a 2×3 table, got {len(table_segs)}. "
+        f"All segments: {[(s.kind, s.source_text, s.structural_position) for s in segments]}"
+    )
+
+
+def test_table_cell_structural_position_format(table_pdf):
+    """
+    03.2-02 RED: Each table_cell segment must have structural_position matching
+    'page.N.table.T.row.R.col.C'.
+    """
+    import re
+    import pymupdf
+    from app.pipeline.pdf.extractor import extract_pdf_segments
+
+    doc = pymupdf.open(str(table_pdf))
+    segments = extract_pdf_segments(doc, job_id="test-table-pos")
+    table_segs = [s for s in segments if s.kind == "table_cell"]
+
+    pattern = re.compile(r"^page\.\d+\.table\.\d+\.row\.\d+\.col\.\d+$")
+    for seg in table_segs:
+        assert pattern.match(seg.structural_position), (
+            f"table_cell structural_position {seg.structural_position!r} "
+            f"does not match expected pattern 'page.N.table.T.row.R.col.C'"
+        )
+
+
+def test_non_table_blocks_still_kind_text(tmp_path_factory):
+    """
+    03.2-02 RED: Non-table blocks on the same page as a table continue to
+    produce kind='text' segments.
+    """
+    import pymupdf
+    from app.pipeline.pdf.extractor import extract_pdf_segments
+
+    doc = pymupdf.open()
+    page = doc.new_page(width=400, height=300)
+
+    # Plain text paragraph above the table
+    page.insert_text((72, 20), "This is a title paragraph above the table", fontsize=14)
+
+    # Same 2×3 table grid
+    col_w = 100.0
+    row_h = 50.0
+    x0, y0 = 50, 50
+    for text, pos in [
+        ("A1", (x0 + col_w*0 + 10, y0 + row_h*0 + 30)),
+        ("B1", (x0 + col_w*1 + 10, y0 + row_h*0 + 30)),
+        ("C1", (x0 + col_w*2 + 10, y0 + row_h*0 + 30)),
+        ("A2", (x0 + col_w*0 + 10, y0 + row_h*1 + 30)),
+        ("B2", (x0 + col_w*1 + 10, y0 + row_h*1 + 30)),
+        ("C2", (x0 + col_w*2 + 10, y0 + row_h*1 + 30)),
+    ]:
+        page.insert_text(pos, text, fontsize=11)
+    shape = page.new_shape()
+    for row in range(3):
+        y = y0 + row * row_h
+        shape.draw_line((x0, y), (x0 + col_w*3, y))
+    for col in range(4):
+        x = x0 + col * col_w
+        shape.draw_line((x, y0), (x, y0 + row_h*2))
+    shape.finish(color=(0, 0, 0), width=0.5)
+    shape.commit()
+
+    path = tmp_path_factory.mktemp("pdf_mixed_fixtures") / "mixed.pdf"
+    doc.save(str(path))
+
+    doc2 = pymupdf.open(str(path))
+    segments = extract_pdf_segments(doc2, job_id="test-mixed")
+
+    text_segs = [s for s in segments if s.kind == "text"]
+    table_segs = [s for s in segments if s.kind == "table_cell"]
+
+    assert len(text_segs) >= 1, (
+        f"Expected >=1 kind='text' segment for the paragraph, got none. "
+        f"All: {[(s.kind, s.source_text) for s in segments]}"
+    )
+    assert len(table_segs) >= 1, (
+        f"Expected >=1 kind='table_cell' segment from the table, got none. "
+        f"All: {[(s.kind, s.source_text) for s in segments]}"
+    )
+
+
+def test_zero_table_page_behavior_unchanged(single_col_pdf):
+    """
+    03.2-02 RED: Pages without tables (find_tables() returns empty) behave
+    identically to pre-03.2 — all segments have kind='text', structural_position
+    uses the existing 'page.N.col.C.block.B' or 'page.N.block.B' format.
+    """
+    import re
+    import pymupdf
+    from app.pipeline.pdf.extractor import extract_pdf_segments
+
+    doc = pymupdf.open(str(single_col_pdf))
+    segments = extract_pdf_segments(doc, job_id="test-zero-table")
+
+    # All segments must be kind='text' — no table_cell, no math_passthrough
+    assert all(s.kind == "text" for s in segments), (
+        f"Expected all kind='text' for no-table PDF, got: "
+        f"{[(s.kind, s.structural_position) for s in segments]}"
+    )
+
+    # structural_position must NOT contain 'table' (table-aware format)
+    table_pattern = re.compile(r"table\.")
+    for seg in segments:
+        assert not table_pattern.search(seg.structural_position), (
+            f"No-table PDF segment has 'table.' in structural_position: "
+            f"{seg.structural_position!r}"
+        )
