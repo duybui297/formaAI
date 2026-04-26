@@ -56,11 +56,21 @@ async def export_document(
             content={"code": "export_failed", "detail": f"Export failed: {exc}"},
         )
 
-    return FileResponse(
-        path=output_path,
-        media_type=(
+    suffix = Path(output_path).suffix.lower()
+    media_type = {
+        ".docx": (
             "application/vnd.openxmlformats-officedocument"
             ".wordprocessingml.document"
         ),
+        ".pptx": (
+            "application/vnd.openxmlformats-officedocument"
+            ".presentationml.presentation"
+        ),
+        ".pdf": "application/pdf",
+    }.get(suffix, "application/octet-stream")
+
+    return FileResponse(
+        path=output_path,
+        media_type=media_type,
         filename=Path(output_path).name,
     )

@@ -1,7 +1,13 @@
 """
-Export service: idempotent DOCX reassembly with advisory lock and atomic write.
+Export service: idempotent reassembly + download.
 
-REV-05: Export reassembles using edited_text ?? translated_text.
+DOCX (Phase 1): re-runs reassemble_docx_runs with edited_text ??
+translated_text so review-UI edits land in the export.
+PPTX / PDF (Phase 3 PoC): serves the worker's existing
+.data/jobs/<id>/output.<ext> as-is. Edit re-application for
+PPTX/PDF is a future feature.
+
+REV-05: DOCX export reassembles using edited_text ?? translated_text.
 REV-06: Export is idempotent — re-exporting produces same output; does not mutate segments.
 
 Advisory lock design (D-02-22):
@@ -9,7 +15,7 @@ Advisory lock design (D-02-22):
 - In-process lock is sufficient for single-uvicorn-process PoC
 - TODO(v2): upgrade to pg_advisory_lock if deploying multiple API workers
 
-Atomic write: doc.save(tmp_path) then os.replace(tmp_path, output_path)
+Atomic write (DOCX): doc.save(tmp_path) then os.replace(tmp_path, output_path)
 - Prevents a concurrent reader from seeing a half-written file during reassembly
 - os.replace is atomic on POSIX filesystems when src/dst are on same volume
 """
@@ -77,6 +83,23 @@ async def export_job(
                 f"Job {job_id} is in state '{job.status.value}' — "
                 "export requires 'done' or 'needs_review'"
             )
+
+        fmt = (job.input_format or "").lower()
+        if fmt in {"pptx", "pdf"}:
+            # PoC pass-through: worker already wrote output.{ext} during translation.
+            # Edit-aware reassembly for PPTX/PDF is a future feature.
+            output_path = str(Path(data_dir) / "jobs" / job_id / f"output.{fmt}")
+            if not os.path.exists(output_path):
+                raise ValueError(
+                    f"Job {job_id} output file missing: {output_path}"
+                )
+            log.info(
+                "export_passthrough",
+                job_id=job_id,
+                output_path=output_path,
+                format=fmt,
+            )
+            return output_path
 
         # Load segments ordered by seq_in_job (read snapshot — no mutation)
         seg_result = await session.execute(

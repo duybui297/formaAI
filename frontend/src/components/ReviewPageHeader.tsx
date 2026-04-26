@@ -34,12 +34,15 @@ export function ReviewPageHeader({ job }: ReviewPageHeaderProps) {
         toast({ title: detail, variant: "destructive" });
         return;
       }
-      // Trigger browser download
+      // Trigger browser download — preserve original extension so PPTX / PDF
+      // jobs get the correct filename (was hardcoded ".docx" before Phase 3).
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = job.original_filename.replace(/(\.\w+)?$/, "_translated.docx");
+      const extMatch = job.original_filename.match(/\.[^./\\]+$/);
+      const ext = extMatch ? extMatch[0] : ".docx";
+      a.download = job.original_filename.replace(/(\.\w+)?$/, `_translated${ext}`);
       a.click();
       // Defer revocation so Safari/Firefox finish reading the blob before it is released.
       setTimeout(() => URL.revokeObjectURL(url), 100);

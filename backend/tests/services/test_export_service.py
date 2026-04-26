@@ -355,3 +355,87 @@ async def test_export_advisory_lock_prevents_concurrent_corruption(session, tmp_
     # Both should return the same output path
     assert results[0] == results[1]
     assert os.path.exists(results[0])
+
+
+# ---------------------------------------------------------------------------
+# Phase 3: PPTX / PDF pass-through (PoC — worker output served as-is)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_export_pptx_passthrough_returns_worker_output(session, tmp_path):
+    """PPTX job: export returns the worker-written output.pptx path unchanged."""
+    from app.services.export_service import export_job
+
+    # Pre-create the worker output directory + file
+    output_dir = tmp_path / "jobs"
+    job_id = str(uuid.uuid4())
+    job_dir = output_dir / job_id
+    job_dir.mkdir(parents=True)
+    output_pptx = job_dir / "output.pptx"
+    output_pptx.write_bytes(b"PK\x03\x04stub-pptx-bytes")
+
+    job = Job(
+        id=job_id,
+        status=JobStatus.done,
+        source_lang="en",
+        target_lang="vi",
+        input_format="pptx",
+        input_path=str(tmp_path / "source.pptx"),
+        original_filename="deck.pptx",
+    )
+    session.add(job)
+    await session.commit()
+
+    result = await export_job(session, job_id, str(tmp_path))
+    assert result == str(output_pptx)
+
+
+@pytest.mark.asyncio
+async def test_export_pdf_passthrough_returns_worker_output(session, tmp_path):
+    """PDF job: export returns the worker-written output.pdf path unchanged."""
+    from app.services.export_service import export_job
+
+    output_dir = tmp_path / "jobs"
+    job_id = str(uuid.uuid4())
+    job_dir = output_dir / job_id
+    job_dir.mkdir(parents=True)
+    output_pdf = job_dir / "output.pdf"
+    output_pdf.write_bytes(b"%PDF-1.4 stub")
+
+    job = Job(
+        id=job_id,
+        status=JobStatus.done,
+        source_lang="en",
+        target_lang="vi",
+        input_format="pdf",
+        input_path=str(tmp_path / "source.pdf"),
+        original_filename="paper.pdf",
+    )
+    session.add(job)
+    await session.commit()
+
+    result = await export_job(session, job_id, str(tmp_path))
+    assert result == str(output_pdf)
+
+
+@pytest.mark.asyncio
+async def test_export_pdf_passthrough_raises_when_output_missing(session, tmp_path):
+    """PDF job whose output.pdf is missing on disk → ValueError."""
+    from app.services.export_service import export_job
+
+    job_id = str(uuid.uuid4())
+    job = Job(
+        id=job_id,
+        status=JobStatus.done,
+        source_lang="en",
+        target_lang="vi",
+        input_format="pdf",
+        input_path=str(tmp_path / "source.pdf"),
+        original_filename="paper.pdf",
+    )
+    session.add(job)
+    await session.commit()
+
+    with pytest.raises(ValueError, match="output file missing"):
+        await export_job(session, job_id, str(tmp_path))
