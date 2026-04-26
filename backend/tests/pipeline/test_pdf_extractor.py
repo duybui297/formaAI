@@ -74,3 +74,44 @@ def test_extract_pdf_segments_image_only_returns_empty(image_only_pdf):
     doc = pymupdf.open(str(image_only_pdf))
     segments = extract_pdf_segments(doc, job_id="test-pdf-imageonly")
     assert segments == []
+
+
+# --- Gap 3: PDF heading detection tests ---
+
+
+def test_detect_heading_level_classifies_h1_h2_body():
+    """Gap 3: _detect_heading_level returns correct heading level."""
+    from app.pipeline.pdf.extractor import _detect_heading_level
+    assert _detect_heading_level(24.0, 12.0) == 1, "24/12=2.0 >= 1.8 → h1"
+    assert _detect_heading_level(18.0, 12.0) == 2, "18/12=1.5 >= 1.4, < 1.8 → h2"
+    assert _detect_heading_level(12.0, 12.0) == 0, "12/12=1.0 < 1.4 → body"
+    assert _detect_heading_level(16.0, 12.0) == 0, "16/12=1.33 < 1.4 → body"
+
+
+def test_spans_to_html_emits_h1_for_large_font():
+    """Gap 3: spans_to_html wraps large-font spans in <h1>."""
+    from app.pipeline.pdf.extractor import spans_to_html
+    block = {
+        "lines": [
+            {"spans": [{"text": "Introduction", "size": 24.0, "flags": 0}]},
+            {"spans": [{"text": "Body text here.", "size": 12.0, "flags": 0}]},
+        ]
+    }
+    html = spans_to_html(block)
+    assert "<h1>" in html, f"Expected <h1> tag for 24pt span; got: {html!r}"
+    assert "Introduction" in html
+    assert "Body text here." in html
+
+
+def test_spans_to_html_no_heading_for_uniform_font():
+    """Gap 3: spans_to_html must not emit h1/h2 when all spans are same size."""
+    from app.pipeline.pdf.extractor import spans_to_html
+    block = {
+        "lines": [
+            {"spans": [{"text": "Normal paragraph text.", "size": 12.0, "flags": 0}]},
+            {"spans": [{"text": "More body text.", "size": 12.0, "flags": 0}]},
+        ]
+    }
+    html = spans_to_html(block)
+    assert "<h1>" not in html, "No h1 for uniform 12pt text"
+    assert "<h2>" not in html, "No h2 for uniform 12pt text"
