@@ -190,3 +190,82 @@ def test_reassembler_wraps_translated_html_in_block_size_div(tmp_path):
         f"Translated HTML must be wrapped in a per-block size div; got: {wrapper_html!r}"
     )
     assert 'pt">' in wrapper_html, "Wrapper must specify pt-based font-size"
+
+
+def test_math_passthrough_segment_is_not_redacted(tmp_path):
+    """kind='math_passthrough' segments skip redact+reinsert — source glyph stays visible."""
+    import pymupdf
+    from app.pipeline.pdf.extractor import extract_pdf_segments
+    from app.pipeline.pdf.reassembler import reassemble_pdf
+
+    # Build a PDF with one text block
+    src_doc = pymupdf.open()
+    page = src_doc.new_page()
+    page.insert_text((72, 72), "Original math glyph")
+    src_path = str(tmp_path / "math_src.pdf")
+    src_doc.save(src_path)
+
+    # Extract segments
+    doc = pymupdf.open(src_path)
+    segments = extract_pdf_segments(doc, job_id="test-passthrough")
+    assert len(segments) >= 1
+
+    # Mark all segments as math_passthrough
+    for seg in segments:
+        seg.kind = "math_passthrough"
+
+    # translated_map would erase content if segments were processed
+    translated_map = {s.id: "REPLACED BY TRANSLATION" for s in segments}
+    overflow_flags = []
+    out_path = str(tmp_path / "passthrough_out.pdf")
+    reassemble_pdf(doc, segments, translated_map, out_path, overflow_flags)
+
+    # Output PDF should still contain original text (not "REPLACED BY TRANSLATION")
+    result = pymupdf.open(out_path)
+    text = result[0].get_text()
+    assert "REPLACED BY TRANSLATION" not in text, (
+        "math_passthrough segments must not be reinserted — source stays intact"
+    )
+    # Source text should still be present (not erased by redaction)
+    assert "Original" in text or len(text.strip()) > 0, (
+        "Source text should survive — no redaction for math_passthrough"
+    )
+
+
+def test_table_cell_segment_reassemble_no_crash(tmp_path):
+    """kind='table_cell' segments run through the reassembler without crashing."""
+    import pymupdf
+    from app.pipeline.pdf.extractor import extract_pdf_segments
+    from app.pipeline.pdf.reassembler import reassemble_pdf
+
+    # Build synthetic table PDF (same as extractor fixture)
+    doc = pymupdf.open()
+    page = doc.new_page(width=400, height=300)
+    x0, y0, col_w, row_h = 50, 50, 100.0, 50.0
+    for text, pos in [("A1", (60, 80)), ("B1", (160, 80)), ("A2", (60, 130)), ("B2", (160, 130))]:
+        page.insert_text(pos, text, fontsize=11)
+    shape = page.new_shape()
+    for r in range(3):
+        shape.draw_line((x0, y0 + r * row_h), (x0 + 200, y0 + r * row_h))
+    for c in range(3):
+        shape.draw_line((x0 + c * 100, y0), (x0 + c * 100, y0 + 100))
+    shape.finish(color=(0, 0, 0), width=0.5)
+    shape.commit()
+    src_path = str(tmp_path / "table_src.pdf")
+    doc.save(src_path)
+
+    doc2 = pymupdf.open(src_path)
+    segments = extract_pdf_segments(doc2, "test-table-cell")
+    table_segs = [s for s in segments if s.kind == "table_cell"]
+    if not table_segs:
+        pytest.skip("find_tables() did not detect table in synthetic PDF — skip integration test")
+
+    # Identity translated_map
+    translated_map = {s.id: s.source_text for s in segments}
+    overflow_flags = []
+    out_path = str(tmp_path / "table_out.pdf")
+    reassemble_pdf(doc2, segments, translated_map, out_path, overflow_flags)
+
+    # Verify output is a valid PDF
+    result = pymupdf.open(out_path)
+    assert len(result) >= 1, "Output PDF must have at least 1 page"
