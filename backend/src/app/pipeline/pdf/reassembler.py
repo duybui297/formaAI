@@ -17,6 +17,13 @@ CRITICAL ORDERING (Pitfall #3 from RESEARCH.md):
 
 PITFALL: scale_low default is 0 — insert_htmlbox ALWAYS succeeds, never reports overflow.
   ALWAYS pass scale_low=0.7 to get spare_height < 0 signal when text still overflows at 70%.
+
+PITFALL: PyMuPDF's text-block bboxes hug visible glyphs and can be much shorter
+  than the typeset line height (especially for CJK rows in tables — observed 3.9pt
+  bboxes for 8-9pt fonts). Redact-then-reinsert into such a rect produces a blank
+  cell because insert_htmlbox cannot fit any line. We skip both the redact AND
+  the reinsert for these undersized rects, leaving the source text visible
+  (untranslated) and emit an overflow flag so the user knows.
 """
 from __future__ import annotations
 
@@ -25,6 +32,11 @@ import pymupdf
 from app.pipeline.pdf.columns import cluster_columns
 from app.pipeline.pdf.fonts import build_noto_archive_and_css
 from app.pipeline.segment import Segment
+
+# Minimum rect height (in PDF points) required to safely redact + reinsert.
+# Below this, insert_htmlbox cannot fit a line even at scale_low=0.7 and we
+# end up with a blank cell. Empirical threshold from PoC test PDFs.
+_MIN_RECT_HEIGHT_PT = 6.0
 
 
 def reassemble_pdf(
@@ -82,21 +94,36 @@ def reassemble_pdf(
                     pos = f"page.{page_num}.col.{col_idx}.block.{block_idx}"
                 pos_to_block[pos] = block
 
-        # Match segments to blocks
-        seg_block_pairs: list[tuple[Segment, dict]] = []
+        # Match segments to blocks. Partition into "active" (safe to redact +
+        # reinsert) and "skipped" (rect too small — leave source untranslated).
+        active_pairs: list[tuple[Segment, dict]] = []
         for seg in page_segs:
             block = pos_to_block.get(seg.structural_position)
-            if block is not None:
-                seg_block_pairs.append((seg, block))
+            if block is None:
+                continue
+            bbox = block["bbox"]
+            rect_h = bbox[3] - bbox[1]
+            if rect_h < _MIN_RECT_HEIGHT_PT:
+                # Too short to safely fit any line — flag and skip both
+                # redact and reinsert (preserves source text visibly).
+                overflow_flags.append({
+                    "segment_id": seg.id,
+                    "overflow": True,
+                    "scale_applied": 0.0,
+                    "reason": "rect_too_small",
+                    "rect_height": round(rect_h, 2),
+                })
+                continue
+            active_pairs.append((seg, block))
 
-        if not seg_block_pairs:
+        if not active_pairs:
             continue
 
         # ----------------------------------------------------------------
         # Pass 1: Mark ALL text blocks for redaction
         # Must precede apply_redactions — see RESEARCH.md Pitfall #3
         # ----------------------------------------------------------------
-        for _seg, block in seg_block_pairs:
+        for _seg, block in active_pairs:
             rect = pymupdf.Rect(block["bbox"])
             # fill=False → transparent redaction (preserves background color/graphics)
             page.add_redact_annot(rect, fill=False)
@@ -115,7 +142,7 @@ def reassemble_pdf(
         # Pass 3: Insert translated HTML into each block's rect
         # scale_low=0.7: MUST be set — default 0 never reports overflow (Pitfall #2)
         # ----------------------------------------------------------------
-        for seg, block in seg_block_pairs:
+        for seg, block in active_pairs:
             translated_html = translated_map.get(seg.id, seg.source_text)
             rect = pymupdf.Rect(block["bbox"])
 
