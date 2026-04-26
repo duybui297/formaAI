@@ -31,6 +31,61 @@ def _nfc(s: str) -> str:
     return unicodedata.normalize("NFC", s)
 
 
+def _detect_heading_level(span_font_size: float, body_font_size: float) -> int:
+    """
+    Classify a span's font size relative to the block's body font size.
+
+    Returns:
+      1 → h1 (span_font_size >= body_font_size * 1.8)
+      2 → h2 (span_font_size >= body_font_size * 1.4 and < 1.8x)
+      0 → body text (below 1.4x threshold)
+
+    Gap 3 (UAT Test 7): Font-size-threshold approach avoids cluster analysis overhead.
+      - Academic papers: section titles typically 14-18pt on 10-12pt body → ratio 1.4-1.5
+      - Document headings: 18-24pt on 12pt body → ratio 1.5-2.0
+      - T-03.1-05 guard: body_font_size <= 0 returns 0 (body) to handle malicious PDFs
+    """
+    if body_font_size <= 0:
+        return 0
+    ratio = span_font_size / body_font_size
+    if ratio >= 1.8:
+        return 1
+    if ratio >= 1.4:
+        return 2
+    return 0
+
+
+def _body_font_size(block: dict) -> float:
+    """
+    Estimate the body font size for a block by finding the mode (most common)
+    font size across all spans.
+
+    Rounds to 0.5pt precision to group near-identical sizes (e.g. 11.9 and 12.0).
+    Falls back to 12.0 if block is empty or all spans have size <= 0.
+
+    Tie-breaking: when multiple sizes share the highest count, the smallest size
+    is returned — body text is always the smallest and most frequent size in a block.
+    This is correct for real PDFs where heading spans (large, few) coexist with
+    body spans (small, many), and also handles synthetic test blocks where each
+    size appears exactly once.
+    """
+    from collections import Counter  # noqa: PLC0415
+
+    sizes: list[float] = []
+    for line in block.get("lines", []):
+        for span in line.get("spans", []):
+            size = span.get("size", 0.0)
+            if size > 0:
+                sizes.append(round(size * 2) / 2)  # round to 0.5pt
+    if not sizes:
+        return 12.0
+    counter = Counter(sizes)
+    max_count = counter.most_common(1)[0][1]
+    # Among all sizes with the highest count, pick the smallest (body baseline)
+    candidates = [sz for sz, cnt in counter.items() if cnt == max_count]
+    return min(candidates)
+
+
 def spans_to_html(block: dict) -> str:
     """
     Convert a page.get_text("dict") text block to minimal HTML.
@@ -40,9 +95,14 @@ def spans_to_html(block: dict) -> str:
       bit 1 (0x02 = 2):  italic
     [VERIFIED: Context7 /websites/pymupdf_readthedocs_io_en — span flags documentation]
 
+    Gap 3 (UAT Test 7): Emits <h1>/<h2> for spans whose font size is significantly
+    larger than the block's body font size (via _detect_heading_level).
+    Heading spans do NOT get an additional <b> wrapper — <h1>/<h2> carry bold weight.
+
     Accepts blocks from get_text("dict") format where each span has a "text" key.
     Returns plain-text (no HTML tags) if no formatting detected — valid HTML input.
     """
+    body_pt = _body_font_size(block)
     parts: list[str] = []
     for line in block.get("lines", []):
         for span in line.get("spans", []):
@@ -53,7 +113,17 @@ def spans_to_html(block: dict) -> str:
             flags = span.get("flags", 0)
             is_bold = bool(flags & (2**4))
             is_italic = bool(flags & (2**1))
-            if is_bold and is_italic:
+            span_size = span.get("size", 0.0)
+            heading_level = _detect_heading_level(span_size, body_pt)
+
+            if heading_level == 1:
+                # h1: italic still applies if set; skip <b> — <h1> carries bold weight
+                inner = f"<i>{escaped}</i>" if is_italic else escaped
+                parts.append(f"<h1>{inner}</h1>")
+            elif heading_level == 2:
+                inner = f"<i>{escaped}</i>" if is_italic else escaped
+                parts.append(f"<h2>{inner}</h2>")
+            elif is_bold and is_italic:
                 parts.append(f"<b><i>{escaped}</i></b>")
             elif is_bold:
                 parts.append(f"<b>{escaped}</b>")

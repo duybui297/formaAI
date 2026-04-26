@@ -108,5 +108,7 @@ def build_noto_archive_and_css() -> tuple[pymupdf.Archive, str]:
         font-family: noto, noto-cjk, sans-serif;
         font-size: 10pt;
     }}
+    h1 {{ font-size: 1.6em; font-weight: bold; margin-bottom: 0.2em; }}
+    h2 {{ font-size: 1.3em; font-weight: bold; margin-bottom: 0.1em; }}
     """
     return arch, css
