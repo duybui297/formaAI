@@ -117,3 +117,26 @@ def test_auto_adjusted_metadata_in_details(tmp_path):
     reassemble_pdf(doc, segments, translated_map, output_path, overflow_flags=overflow_flags)
     # No crash and overflow_flags is a list
     assert isinstance(overflow_flags, list)
+
+
+def test_clip_rect_away_from_images_clips_right_edge():
+    """Gap 2: text rect is clipped when image overlaps from the right."""
+    import pymupdf
+    from app.pipeline.pdf.reassembler import _clip_rect_away_from_images
+
+    text_rect = pymupdf.Rect(10, 100, 200, 120)
+    image_rect = pymupdf.Rect(150, 90, 300, 130)
+    result = _clip_rect_away_from_images(text_rect, [image_rect])
+    assert result.x1 == pytest.approx(150.0, abs=0.1), f"Right edge should be clipped to 150, got {result.x1}"
+    assert result.x0 == pytest.approx(10.0, abs=0.1), "Left edge must be unchanged"
+
+
+def test_clip_rect_away_from_images_no_overlap_unchanged():
+    """Gap 2: rect with no image overlap is returned unchanged."""
+    import pymupdf
+    from app.pipeline.pdf.reassembler import _clip_rect_away_from_images
+
+    text_rect = pymupdf.Rect(10, 100, 140, 120)
+    image_rect = pymupdf.Rect(150, 100, 300, 120)
+    result = _clip_rect_away_from_images(text_rect, [image_rect])
+    assert result.x1 == pytest.approx(140.0, abs=0.1), "No overlap — rect must be unchanged"
