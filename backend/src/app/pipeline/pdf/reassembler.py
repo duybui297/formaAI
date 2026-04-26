@@ -143,10 +143,68 @@ def reassemble_pdf(
                     pos = f"page.{page_num}.col.{col_idx}.block.{block_idx}"
                 pos_to_block[pos] = block
 
+        # Recover cell bboxes for table_cell segments by re-running find_tables()
+        # (same source doc, same page — table structure is stable between extract and reassemble)
+        table_cell_bboxes: dict[str, pymupdf.Rect] = {}
+        try:
+            finder = page.find_tables()
+            for t_idx, tbl in enumerate(finder.tables):
+                for r in range(tbl.row_count):
+                    for c in range(tbl.col_count):
+                        cell_idx = r * tbl.col_count + c
+                        if cell_idx >= len(tbl.cells):
+                            continue
+                        cell = tbl.cells[cell_idx]
+                        if cell is None:
+                            continue
+                        pos_key = f"page.{page_num}.table.{t_idx}.row.{r}.col.{c}"
+                        table_cell_bboxes[pos_key] = pymupdf.Rect(cell)
+        except Exception as exc:  # noqa: BLE001
+            import structlog as _sl  # noqa: PLC0415
+            _sl.get_logger().warning("reassembler_find_tables_failed", page=page_num, error=str(exc))
+
         # Match segments to blocks. Partition into "active" (safe to redact +
         # reinsert) and "skipped" (rect too small — leave source untranslated).
+        # kind-aware dispatch:
+        #   math_passthrough → skip entirely (source glyphs stay intact)
+        #   table_cell       → cell bbox from find_tables(); synthetic block dict
+        #   text (default)   → existing pos_to_block lookup (unchanged)
         active_pairs: list[tuple[Segment, dict]] = []
         for seg in page_segs:
+            # math_passthrough: skip both redact and reinsert — source page region stays intact
+            if seg.kind == "math_passthrough":
+                continue
+
+            if seg.kind == "table_cell":
+                cell_rect = table_cell_bboxes.get(seg.structural_position)
+                if cell_rect is None:
+                    # find_tables() missed this cell — skip silently
+                    continue
+                rect_w = cell_rect.width
+                rect_h = cell_rect.height
+                if rect_h < _MIN_RECT_HEIGHT_PT or rect_w < _MIN_RECT_WIDTH_PT:
+                    overflow_flags.append({
+                        "segment_id": seg.id,
+                        "overflow": True,
+                        "auto_adjusted": False,
+                        "scale_applied": 0.0,
+                        "reason": "table_cell_rect_too_small",
+                        "rect_width": round(rect_w, 2),
+                        "rect_height": round(rect_h, 2),
+                    })
+                    continue
+                # Create a minimal synthetic "block" dict compatible with Pass 1/3.
+                # bbox tuple (x0, y0, x1, y1) works with pymupdf.Rect(block["bbox"]).
+                # _body_font_size() returns 12.0 fallback for empty "lines" list —
+                # acceptable for table cells per CONTEXT.md deferred items.
+                synthetic_block = {
+                    "bbox": (cell_rect.x0, cell_rect.y0, cell_rect.x1, cell_rect.y1),
+                    "lines": [],
+                }
+                active_pairs.append((seg, synthetic_block))
+                continue
+
+            # Default: kind == "text" — existing pos_to_block lookup (unchanged)
             block = pos_to_block.get(seg.structural_position)
             if block is None:
                 continue
