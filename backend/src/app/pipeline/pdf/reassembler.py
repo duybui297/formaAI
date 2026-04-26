@@ -44,6 +44,39 @@ _MIN_RECT_HEIGHT_PT = 6.0
 _MIN_RECT_WIDTH_PT = 20.0
 
 
+def _clip_rect_away_from_images(
+    rect: pymupdf.Rect,
+    image_rects: list[pymupdf.Rect],
+) -> pymupdf.Rect:
+    """
+    Shrink rect to avoid overlapping adjacent image blocks.
+
+    Strategy:
+    - For each image rect that intersects the text rect:
+        - Image to the right: clip text rect's right edge to image's left edge
+        - Image below: clip text rect's bottom edge to image's top edge
+    - Returns the (possibly clipped) rect. If no overlap, returns the original rect unchanged.
+
+    Does NOT clip left or top edges — captions typically extend right or down
+    when translated text expands, not left or up.
+
+    PPTX-analog: mirrors the auto-fit shape-height guard; same conservative principle.
+
+    Gap 2 fix (PDF-02/PDF-03): caption text no longer overflows into adjacent image area.
+    """
+    clipped = pymupdf.Rect(rect)  # copy
+    for img in image_rects:
+        if not clipped.intersects(img):
+            continue
+        # Image is to the right of rect center: clip right edge
+        if img.x0 > clipped.x0 and img.x0 < clipped.x1:
+            clipped = pymupdf.Rect(clipped.x0, clipped.y0, img.x0, clipped.y1)
+        # Image is below rect center: clip bottom edge
+        if img.y0 > clipped.y0 and img.y0 < clipped.y1:
+            clipped = pymupdf.Rect(clipped.x0, clipped.y0, clipped.x1, img.y0)
+    return clipped
+
+
 def reassemble_pdf(
     doc: pymupdf.Document,
     segments: list[Segment],
@@ -85,6 +118,13 @@ def reassemble_pdf(
         text_blocks = [b for b in raw_blocks if b["type"] == 0]
         if not text_blocks:
             continue
+
+        # Collect image block rects for collision detection (Gap 2 fix — PDF-02/PDF-03)
+        image_rects = [
+            pymupdf.Rect(b["bbox"])
+            for b in raw_blocks
+            if b["type"] == 1
+        ]
 
         column_groups, is_degraded = cluster_columns(text_blocks, page.rect.width)
 
@@ -148,14 +188,31 @@ def reassemble_pdf(
         # ----------------------------------------------------------------
         # Pass 3: Insert translated HTML into each block's rect
         # scale_low=0.7: MUST be set — default 0 never reports overflow (Pitfall #2)
+        # Gap 2 fix: clip rect away from adjacent images before inserting
+        # NOTE: Pass 1 redaction still uses the ORIGINAL rect to fully erase source text.
         # ----------------------------------------------------------------
         for seg, block in active_pairs:
             translated_html = translated_map.get(seg.id, seg.source_text)
             rect = pymupdf.Rect(block["bbox"])
 
+            # Gap 2 fix: clip rect to avoid overlapping adjacent images
+            safe_rect = _clip_rect_away_from_images(rect, image_rects)
+            rect_w = safe_rect.width
+            rect_h = safe_rect.height
+            if rect_h < _MIN_RECT_HEIGHT_PT or rect_w < _MIN_RECT_WIDTH_PT:
+                overflow_flags.append({
+                    "segment_id": seg.id,
+                    "overflow": True,
+                    "scale_applied": 0.0,
+                    "reason": "image_collision",
+                    "rect_width": round(rect_w, 2),
+                    "rect_height": round(rect_h, 2),
+                })
+                continue
+
             try:
                 spare_height, scale = page.insert_htmlbox(
-                    rect,
+                    safe_rect,  # use clipped rect, not original rect
                     translated_html,
                     css=css,
                     archive=arch,
