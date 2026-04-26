@@ -117,6 +117,21 @@ Plans:
 
 **UI hint**: no
 
+### Phase 3.2: PDF table + formula fidelity
+**Goal**: Close the two architectural PDF gaps surfaced after Phase 3.1 UAT — table rows are extracted as fused single blocks (cells collapse on translation, e.g. Table 2 in BMC paper) and math/symbol glyphs from non-Noto fonts (e.g. `AdvP*`, `CMSY*`) corrupt or disappear when reinserted. Add cell-aware table extraction and a math-glyph passthrough so academic-paper PDFs survive translation with their tabular and equation structure intact.
+**Depends on**: Phase 3.1
+**Requirements**: PDF-02, PDF-03, LAYOUT-02
+**Success Criteria** (what must be TRUE):
+  1. Tables detected via `page.find_tables()` produce per-cell segments (one segment per cell) instead of one fused block per row; reassembly redacts and reinserts each cell into its own bbox so column structure is preserved on translation
+  2. Spans whose font is outside Noto coverage (math/symbol subsets like `AdvP*`, `CMSY*`, `STIX*`, `MathFont*`) are flagged as `glyph_passthrough` and emitted unchanged in the output PDF — no redact, no reinsert, original glyphs visible — instead of being translated and rendered as missing-glyph boxes
+  3. UAT items pertaining to Table 2 parsing and page-3/10 formula rendering on job `932530eb` move from issue → resolved on the BMC academic-paper test fixture
+**Plans**: TBD (planning step computes)
+
+Plans:
+- (to be planned)
+
+**UI hint**: no
+
 ### Phase 4: Scanned PDF (OCR)
 **Goal**: Scanned PDFs are handled through a three-stage pipeline (OCR → translate → compose) using PaddleOCR PP-OCRv5, producing a bilingual side-by-side PDF where the original page image appears on the left and the translated text on the right; low-confidence OCR regions are flagged for manual review.
 **Depends on**: Phase 3
