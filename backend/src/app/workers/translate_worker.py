@@ -430,6 +430,14 @@ async def _run_translation(ctx: dict, session, job_id: str) -> None:
                 # WR-06 fix: only update the in-memory map here; DB writes are
                 # moved outside the gather so all coroutines never share a session
                 # concurrently (SQLAlchemy async sessions are not coroutine-safe).
+                if len(results) != len(batch_segs):
+                    log.warning(
+                        "batch_result_count_mismatch",
+                        job_id=job_id,
+                        batch=batch_id,
+                        expected=len(batch_segs),
+                        got=len(results),
+                    )
                 for seg, translated in zip(batch_segs, results):
                     translated_map[seg.id] = translated
 
