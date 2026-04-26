@@ -140,6 +140,29 @@ def test_is_italic_font_detects_dot_i_suffix():
     assert _is_italic_font("") is False
 
 
+def test_spans_to_html_bold_via_variant_font_within_block():
+    """Inline-bold labels in academic abstracts ('Background:', 'Methods:')
+    use a different subset font than the body — same flags=4, same size=10pt,
+    but different font name (e.g. AdvTT99c4c969 for the label vs
+    AdvTTb5929f4c for the body). spans_to_html must wrap these in <b>."""
+    from app.pipeline.pdf.extractor import spans_to_html
+
+    block = {
+        "lines": [
+            {"spans": [
+                {"text": "Background:", "size": 10.0, "flags": 4, "font": "AdvTT99c4c969"},
+                {"text": " Missing data is", "size": 10.0, "flags": 4, "font": "AdvTTb5929f4c"},
+                {"text": " pervasive.", "size": 10.0, "flags": 4, "font": "AdvTTb5929f4c"},
+            ]},
+        ]
+    }
+    html = spans_to_html(block)
+    assert "<b>Background:</b>" in html, f"Expected inline <b>; got {html!r}"
+    # Body text must NOT be bolded
+    assert "<b> Missing data is</b>" not in html
+    assert "<b> pervasive.</b>" not in html
+
+
 def test_spans_to_html_bold_via_font_name_when_flags_miss_bit():
     """When PDF span flags don't carry the bold bit (flags=4 = serifed only)
     but the font name encodes bold via `.B`, spans_to_html still wraps in

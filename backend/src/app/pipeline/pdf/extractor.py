@@ -175,6 +175,27 @@ def _is_italic_font(font_name: str) -> bool:
     )
 
 
+def _block_body_font(block: dict, block_body_pt: float) -> str:
+    """
+    Return the most common font name among spans whose size matches the
+    block's body size. Used by spans_to_html to flag variant-font spans
+    (different font at the same size = likely bold/italic variant).
+    """
+    from collections import Counter  # noqa: PLC0415
+
+    font_counts: Counter[str] = Counter()
+    for line in block.get("lines", []):
+        for span in line.get("spans", []):
+            size = span.get("size", 0.0)
+            if size > 0 and abs(round(size * 2) / 2 - block_body_pt) < 0.6:
+                name = span.get("font", "")
+                if name:
+                    font_counts[name] += 1
+    if not font_counts:
+        return ""
+    return font_counts.most_common(1)[0][0]
+
+
 def _page_body_font_size(text_blocks: list[dict]) -> float:
     """
     Estimate the page-level body font size by finding the modal size across
@@ -224,6 +245,14 @@ def spans_to_html(block: dict, page_body_pt: float | None = None) -> str:
     page_pt = page_body_pt if page_body_pt and page_body_pt > 0 else block_body_pt
     block_heading_level = _detect_heading_level(block_body_pt, page_pt)
 
+    # Detect the block's primary body font — the most common font name across
+    # spans whose size matches the block body size. Spans inside the same
+    # block that use a DIFFERENT font name at the same size are likely a
+    # bold/italic variant in disguise (subset fonts that don't carry .B/.I
+    # suffixes — common in academic-paper PDFs where 'Background:' /
+    # 'Methods:' labels are inline-bold).
+    block_body_font = _block_body_font(block, block_body_pt)
+
     parts: list[str] = []
     for line in block.get("lines", []):
         for span in line.get("spans", []):
@@ -233,9 +262,24 @@ def spans_to_html(block: dict, page_body_pt: float | None = None) -> str:
             escaped = _html.escape(text)  # prevent injection of <, >, & from PDF text
             flags = span.get("flags", 0)
             font_name = span.get("font", "")
+            span_size = span.get("size", 0.0)
+            # Bold/italic detection layers (in priority order):
+            #  1. PDF span flag bit
+            #  2. Font-name suffix / keyword
+            #  3. Variant font in body-size span (different font from block
+            #     primary at the same size → treat as bold)
             is_bold = bool(flags & (2**4)) or _is_bold_font(font_name)
             is_italic = bool(flags & (2**1)) or _is_italic_font(font_name)
-            span_size = span.get("size", 0.0)
+            if (
+                not is_bold
+                and not is_italic
+                and block_body_font
+                and font_name
+                and font_name != block_body_font
+                and abs(span_size - block_body_pt) < 0.6  # same size as body (within 0.5pt rounding)
+                and not _is_math_font(font_name)
+            ):
+                is_bold = True
             # Per-span heading level (mixed-size block); fall back to block-level
             heading_level = (
                 _detect_heading_level(span_size, block_body_pt)
