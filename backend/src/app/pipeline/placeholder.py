@@ -27,6 +27,10 @@ _PROTECTED_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"<%=?\s*[^%]+%>"),
     re.compile(r"\d{4}-\d{2}-\d{2}(?:T[\d:Z.+\-]+)?"),
     re.compile(r"v\d+\.\d+[\.\d\w\-]*"),
+    # PDF format-fidelity: protect HTML markup tags emitted by spans_to_html
+    # (<b>, </b>, <i>, </i>, <h1>, </h1>, <h2>, </h2>, <span style="...">)
+    # so Qwen-MT preserves them verbatim instead of stripping during translation.
+    re.compile(r"</?[a-zA-Z][^>]*>"),
 ]
 
 _PLACEHOLDER_RE: re.Pattern[str] = re.compile(r"⟦T(\d+)⟧")

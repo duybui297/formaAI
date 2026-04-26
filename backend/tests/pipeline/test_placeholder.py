@@ -118,6 +118,46 @@ def test_extract_iso_date():
     assert "2026-04-23" in tokens.values()
 
 
+def test_extract_html_tags_b_i_h1_h2():
+    """PDF round-trip: <b>/<i>/<h1>/<h2> tags emitted by spans_to_html must
+    be masked as placeholders so Qwen-MT preserves them. Without this,
+    Qwen strips markup and bold/italic/heading formatting is lost in
+    the translated PDF."""
+    text = "<h1>Title</h1> with <b>bold</b> and <i>italic</i> words"
+    masked, tokens = extract_placeholders(text)
+    # Each tag (open + close) should be its own placeholder
+    for tag in ("<h1>", "</h1>", "<b>", "</b>", "<i>", "</i>"):
+        assert tag not in masked, f"Tag {tag!r} should be masked, got {masked!r}"
+        assert tag in tokens.values(), f"Tag {tag!r} should be tracked in tokens"
+    # Translatable text must remain visible
+    assert "Title" in masked
+    assert "bold" in masked
+    assert "italic" in masked
+    assert "words" in masked
+
+
+def test_html_tags_round_trip_through_restore():
+    """Round-trip: extract → simulate translation → restore preserves tags."""
+    from app.pipeline.placeholder import restore_placeholders
+
+    source = "Read <b>this</b> carefully"
+    masked, tokens = extract_placeholders(source)
+    # Simulate Qwen output: keeps placeholder markers, translates plain text
+    fake_translated = masked.replace("Read", "Đọc").replace("this", "điều này").replace("carefully", "cẩn thận")
+    restored = restore_placeholders(fake_translated, tokens)
+    assert restored == "Đọc <b>điều này</b> cẩn thận"
+
+
+def test_extract_html_tag_with_inline_style():
+    """The reassembler wraps translated HTML in <div style="font-size:Npt">.
+    Inline-style tags must also be masked."""
+    text = '<div style="font-size:9.2pt">body text</div>'
+    masked, tokens = extract_placeholders(text)
+    assert '<div style="font-size:9.2pt">' in tokens.values()
+    assert "</div>" in tokens.values()
+    assert "body text" in masked
+
+
 def test_extract_multiple_tokens_in_same_text():
     """URL + email in same text → two distinct markers ⟦T0⟧ and ⟦T1⟧ (or higher)."""
     text = "See https://aicore.vn and email me@aicore.vn"
