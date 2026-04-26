@@ -158,6 +158,7 @@ def reassemble_pdf(
                 overflow_flags.append({
                     "segment_id": seg.id,
                     "overflow": True,
+                    "auto_adjusted": False,
                     "scale_applied": 0.0,
                     "reason": "rect_too_small",
                     "rect_width": round(rect_w, 2),
@@ -206,6 +207,7 @@ def reassemble_pdf(
                 overflow_flags.append({
                     "segment_id": seg.id,
                     "overflow": True,
+                    "auto_adjusted": False,
                     "scale_applied": 0.0,
                     "reason": "image_collision",
                     "rect_width": round(rect_w, 2),
@@ -234,6 +236,7 @@ def reassemble_pdf(
                 overflow_flags.append({
                     "segment_id": seg.id,
                     "overflow": True,
+                    "auto_adjusted": False,
                     "scale_applied": 0.0,
                     "error": str(exc),
                 })
@@ -245,6 +248,7 @@ def reassemble_pdf(
                 overflow_flags.append({
                     "segment_id": seg.id,
                     "overflow": True,
+                    "auto_adjusted": False,
                     "scale_applied": round(scale, 3),
                 })
             elif scale < 1.0:
