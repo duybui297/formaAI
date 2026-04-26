@@ -219,7 +219,61 @@ def extract_pdf_segments(doc: pymupdf.Document, job_id: str) -> list[Segment]:
         if not text_blocks:
             continue
 
-        column_groups, is_degraded = cluster_columns(text_blocks, page.rect.width)
+        # --- Table cell extraction (CONTEXT.md: find_tables() cell walk) ---
+        # Runs before the non-table block walk. Collects table bbox regions so
+        # that overlapping blocks can be filtered from the non-table walk, preventing
+        # double-emission of table content.
+        table_block_bboxes: list[pymupdf.Rect] = []
+
+        try:
+            finder = page.find_tables()
+            for table_idx, table in enumerate(finder.tables):
+                table_rect = pymupdf.Rect(table.bbox)
+                table_block_bboxes.append(table_rect)
+
+                for r in range(table.row_count):
+                    for c in range(table.col_count):
+                        cell_idx = r * table.col_count + c
+                        if cell_idx >= len(table.cells):
+                            continue
+                        cell = table.cells[cell_idx]
+                        if cell is None:
+                            continue  # merged cell — skip
+                        cell_rect = pymupdf.Rect(cell)
+                        # Get cell text — page.get_textbox clips to the rect
+                        raw = _nfc(page.get_textbox(cell_rect).strip())
+                        if not raw:
+                            continue
+                        pos = f"page.{page_num}.table.{table_idx}.row.{r}.col.{c}"
+                        segments.append(Segment.from_text(
+                            source_text=raw,
+                            structural_position=pos,
+                            seq_in_job=seq,
+                            kind="table_cell",
+                        ))
+                        seq += 1
+        except Exception as _table_exc:  # noqa: BLE001
+            # T-03.2-02-1: malformed PDF — fall through to non-table block walk
+            import logging as _logging
+            _logging.getLogger(__name__).warning(
+                "find_tables() failed on page %d: %s", page_num, _table_exc
+            )
+            table_block_bboxes = []  # reset so no blocks are filtered
+
+        # Filter out blocks whose bbox intersects any detected table region.
+        # These blocks are already handled by the cell walk above (T-03.2-02-3).
+        non_table_blocks = [
+            b for b in text_blocks
+            if not any(
+                pymupdf.Rect(b["bbox"]).intersects(tr)
+                for tr in table_block_bboxes
+            )
+        ]
+
+        if not non_table_blocks:
+            continue
+
+        column_groups, is_degraded = cluster_columns(non_table_blocks, page.rect.width)
 
         for col_idx, col_blocks in enumerate(column_groups):
             for block_idx, block in enumerate(col_blocks):
