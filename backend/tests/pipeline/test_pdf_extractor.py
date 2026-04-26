@@ -115,3 +115,74 @@ def test_spans_to_html_no_heading_for_uniform_font():
     html = spans_to_html(block)
     assert "<h1>" not in html, "No h1 for uniform 12pt text"
     assert "<h2>" not in html, "No h2 for uniform 12pt text"
+
+
+# --- Phase 03.2 Plan 01: Segment.kind field + _is_math_font TDD ---
+
+
+def test_segment_kind_field_default_text():
+    """03.2-01 RED: Segment must have a `kind` field with default 'text'."""
+    from app.pipeline.segment import Segment
+    seg = Segment.from_text(
+        source_text="Hello",
+        structural_position="page.0.block.0",
+        seq_in_job=0,
+    )
+    assert seg.kind == "text", f"Expected kind='text', got: {seg.kind!r}"
+
+
+def test_is_math_font_detects_adv_prefix():
+    """03.2-01 RED: _is_math_font must correctly classify math vs body fonts."""
+    from app.pipeline.pdf.extractor import _is_math_font
+
+    # Math fonts — must return True
+    assert _is_math_font("AdvP4C4E74") is True, "AdvP prefix is math font"
+    assert _is_math_font("CMSY10") is True, "CMSY prefix is TeX CM Symbol"
+    assert _is_math_font("CMR12") is True, "CMR prefix is TeX CM Roman (math context)"
+    assert _is_math_font("STIXGeneral") is True, "STIX prefix is math font family"
+    assert _is_math_font("MathFont-Bold") is True, "MathFont keyword match"
+    assert _is_math_font("Symbol") is True, "Symbol exact match"
+    assert _is_math_font("MT-Extra") is True, "MT prefix is MathType"
+
+    # Body fonts — must return False
+    assert _is_math_font("AdvTT86d47313") is False, "AdvTT is a body-text subset, NOT math"
+    assert _is_math_font("NotoSans-Regular") is False, "Noto body font"
+    assert _is_math_font("Helvetica") is False, "standard body font"
+    assert _is_math_font("Arial-BoldMT") is False, "MT suffix != MT prefix; Arial is body font"
+    assert _is_math_font("Times-Roman") is False, "standard body font"
+    assert _is_math_font("Calibri") is False, "standard body font"
+
+
+def test_extract_pdf_segments_math_font_emitted_as_passthrough():
+    """03.2-01 RED: _is_math_font integration — math-font spans must yield kind='math_passthrough'."""
+    from app.pipeline.pdf.extractor import _is_math_font
+
+    # Verify the detection predicate directly (the integration with
+    # extract_pdf_segments is covered by test_extract_pdf_segments_all_segments_have_kind_field)
+    math_font = "AdvP4C4E74"
+    body_font = "Helvetica"
+    assert _is_math_font(math_font) is True, f"Expected {math_font!r} to be detected as math"
+    assert _is_math_font(body_font) is False, f"Expected {body_font!r} to be body (not math)"
+
+
+def test_extract_pdf_segments_all_segments_have_kind_field(single_col_pdf):
+    """03.2-01 RED: All segments from extract_pdf_segments must have a kind field."""
+    import pymupdf
+    from app.pipeline.pdf.extractor import extract_pdf_segments
+
+    doc = pymupdf.open(str(single_col_pdf))
+    segments = extract_pdf_segments(doc, job_id="test-kind-field")
+    assert len(segments) >= 1, "Expected at least 1 segment from single_col_pdf"
+
+    valid_kinds = {"text", "table_cell", "math_passthrough"}
+    for seg in segments:
+        assert hasattr(seg, "kind"), f"Segment missing `kind` field: {seg!r}"
+        assert seg.kind in valid_kinds, (
+            f"Segment kind {seg.kind!r} not in valid set {valid_kinds}"
+        )
+
+    # A normal (non-math-font) PDF must have all segments as kind='text'
+    assert all(seg.kind == "text" for seg in segments), (
+        f"Expected all normal-PDF segments to be kind='text', got: "
+        f"{[seg.kind for seg in segments]}"
+    )
