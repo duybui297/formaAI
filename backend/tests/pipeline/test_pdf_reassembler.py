@@ -148,3 +148,45 @@ def test_clip_rect_away_from_images_clips_left_edge():
     result = _clip_rect_away_from_images(text_rect, [image_rect])
     assert result.x0 == pytest.approx(180.0, abs=0.1), f"Left edge should be clipped to 180, got {result.x0}"
     assert result.x1 == pytest.approx(200.0, abs=0.1), "Right edge must be unchanged"
+
+
+def test_reassembler_wraps_translated_html_in_block_size_div(tmp_path):
+    """PDF format-fidelity: reassembler wraps translated HTML in a per-block
+    <div style="font-size:Npt"> so heading em sizes resolve and body text
+    renders at the original block's size (not PyMuPDF's 16pt default)."""
+    import pymupdf
+    from app.pipeline.pdf.extractor import extract_pdf_segments
+    from app.pipeline.pdf.reassembler import reassemble_pdf
+
+    # Build a PDF with a 9.2pt body block — typical academic-paper size
+    doc = pymupdf.open()
+    page = doc.new_page()
+    page.insert_text((72, 72), "Body text at original size", fontsize=9.2)
+    src_path = tmp_path / "src.pdf"
+    doc.save(str(src_path))
+
+    doc2 = pymupdf.open(str(src_path))
+    segments = extract_pdf_segments(doc2, job_id="size-test")
+    assert segments, "Need at least 1 segment"
+
+    # Capture the html passed to insert_htmlbox
+    captured: list[str] = []
+    real_insert = pymupdf.Page.insert_htmlbox
+
+    def spy(self, rect, html, **kw):
+        captured.append(html)
+        return real_insert(self, rect, html, **kw)
+
+    pymupdf.Page.insert_htmlbox = spy
+    try:
+        out = str(tmp_path / "out.pdf")
+        reassemble_pdf(doc2, segments, {s.id: s.source_text for s in segments}, out, overflow_flags=[])
+    finally:
+        pymupdf.Page.insert_htmlbox = real_insert
+
+    assert captured, "insert_htmlbox should have been called at least once"
+    wrapper_html = captured[0]
+    assert '<div style="font-size:' in wrapper_html, (
+        f"Translated HTML must be wrapped in a per-block size div; got: {wrapper_html!r}"
+    )
+    assert 'pt">' in wrapper_html, "Wrapper must specify pt-based font-size"

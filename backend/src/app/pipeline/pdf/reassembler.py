@@ -30,6 +30,7 @@ from __future__ import annotations
 import pymupdf
 
 from app.pipeline.pdf.columns import cluster_columns
+from app.pipeline.pdf.extractor import _body_font_size
 from app.pipeline.pdf.fonts import build_noto_archive_and_css
 from app.pipeline.segment import Segment
 
@@ -199,6 +200,12 @@ def reassemble_pdf(
             translated_html = translated_map.get(seg.id, seg.source_text)
             rect = pymupdf.Rect(block["bbox"])
 
+            # Wrap translated HTML in a per-block size container so headings (em)
+            # and body text render at the original block's body font size instead
+            # of PyMuPDF's browser-default 16pt or a hard-coded global override.
+            body_pt = _body_font_size(block)
+            sized_html = f'<div style="font-size:{body_pt:.1f}pt">{translated_html}</div>'
+
             # Gap 2 fix: clip rect to avoid overlapping adjacent images
             safe_rect = _clip_rect_away_from_images(rect, image_rects)
             rect_w = safe_rect.width
@@ -218,7 +225,7 @@ def reassemble_pdf(
             try:
                 spare_height, scale = page.insert_htmlbox(
                     safe_rect,  # use clipped rect, not original rect
-                    translated_html,
+                    sized_html,
                     css=css,
                     archive=arch,
                     scale_low=0.7,  # D-03-02: stop scaling at 70%; spare_height<0 if overflows

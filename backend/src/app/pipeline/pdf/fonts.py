@@ -85,6 +85,14 @@ def build_noto_archive_and_css() -> tuple[pymupdf.Archive, str]:
     italic = italic_result[1] if italic_result else "NotoSans-Italic.ttf"
     cjk = cjk_result[1] if cjk_result else "NotoSansCJK-Regular.ttc"
 
+    # CSS strategy:
+    # - * sets font-family only; font-size is supplied by reassembler per-block
+    #   via a <div style="font-size:Npt"> wrapper computed from the source block's
+    #   body font size. This preserves original sizing across heterogeneous PDFs
+    #   (academic 9.2pt body, slide-style 14pt body, etc.) instead of forcing 10pt.
+    # - Explicit b/i rules guarantee that <b>/<i> tags emitted by spans_to_html
+    #   render bold/italic in PyMuPDF's htmlbox renderer.
+    # - Heading sizes use em so they scale with the per-block body size.
     css = f"""
     @font-face {{
         font-family: noto;
@@ -104,11 +112,10 @@ def build_noto_archive_and_css() -> tuple[pymupdf.Archive, str]:
         font-family: noto-cjk;
         src: url({cjk});
     }}
-    * {{
-        font-family: noto, noto-cjk, sans-serif;
-        font-size: 10pt;
-    }}
-    h1 {{ font-size: 1.6em; font-weight: bold; margin-bottom: 0.2em; }}
-    h2 {{ font-size: 1.3em; font-weight: bold; margin-bottom: 0.1em; }}
+    * {{ font-family: noto, noto-cjk, sans-serif; }}
+    b, strong {{ font-weight: bold; }}
+    i, em {{ font-style: italic; }}
+    h1 {{ font-size: 1.6em; font-weight: bold; margin: 0 0 0.2em 0; }}
+    h2 {{ font-size: 1.3em; font-weight: bold; margin: 0 0 0.1em 0; }}
     """
     return arch, css
