@@ -99,6 +99,24 @@ Plans:
 
 **UI hint**: yes
 
+### Phase 3.1: PPTX + PDF Polish (gap closure)
+**Goal**: Close the 3 deferred visual-fidelity gaps identified in Phase 3 UAT — PPTX layout shift on translation, PDF caption-overlapping-image, and PDF heading hierarchy preservation. Tighten visual quality so the PoC demo lands without "almost" qualifiers.
+**Depends on**: Phase 3
+**Requirements**: PPTX-02, PPTX-04, PDF-02, PDF-03, LAYOUT-02, LAYOUT-03
+**Success Criteria** (what must be TRUE):
+  1. Translated PPTX preserves visual density on multi-run paragraphs without illegible auto-fit shrink (per-paragraph font budget OR redact-and-reinsert path for high-density slides)
+  2. Translated PDF captions stay inside their original rect when adjacent shape is an image (rect-vs-image collision detection or adaptive shrink before insert_htmlbox)
+  3. Translated PDF preserves heading hierarchy visually (font-size-based heading detection in extractor; <h1>/<h2> tags carried through reassembly)
+  4. UAT items 3, 6, 7 from Phase 3 03-UAT.md status updated from `failed` → `resolved`
+**Plans**: 3 plans
+
+Plans:
+- [ ] 03.1-01-PLAN.md — PPTX: shape-height guard + per-paragraph font budget in detect_pptx_overflow (gap 1)
+- [ ] 03.1-02-PLAN.md — PDF: rect-vs-image collision detection in reassembler (gap 2)
+- [ ] 03.1-03-PLAN.md — PDF: font-size heading detection in spans_to_html + CSS heading rules (gap 3)
+
+**UI hint**: no
+
 ### Phase 4: Scanned PDF (OCR)
 **Goal**: Scanned PDFs are handled through a three-stage pipeline (OCR → translate → compose) using PaddleOCR PP-OCRv5, producing a bilingual side-by-side PDF where the original page image appears on the left and the translated text on the right; low-confidence OCR regions are flagged for manual review.
 **Depends on**: Phase 3
@@ -129,5 +147,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 1. Foundation + DOCX Pipeline | 0/11 | Not started | - |
 | 2. Review UX + Glossary | 0/14 | Not started | - |
 | 3. PPTX + Native PDF | 0/7 | Not started | - |
+| 3.1. PPTX + PDF Polish (gap closure) | 0/3 | Not started | - |
 | 4. Scanned PDF (OCR) | 0/TBD | Not started | - |
 | 5. Demo Hardening | 0/TBD | Not started | - |
