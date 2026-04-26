@@ -18,6 +18,10 @@ const FLAG_BADGE_STYLES: Record<FlagType, string> = {
   multi_column_degraded: "bg-slate-100 text-slate-600 border-slate-300",
 };
 
+// M2 split: overflow + auto_adjusted=true is the informational AUTO-FIT case,
+// distinct from real (uncorrectable) Overflow. Same contract as FlagBadge.tsx.
+const AUTO_FIT_STYLE = "bg-slate-100 text-slate-600 border-slate-300";
+
 const FLAG_LABELS: Record<FlagType, string> = {
   overflow: "Overflow",
   glossary_violation: "Glossary",
@@ -27,15 +31,27 @@ const FLAG_LABELS: Record<FlagType, string> = {
   multi_column_degraded: "MULTI-COL",
 };
 
-function InlineFlagBadge({ flagType }: { flagType: FlagType }) {
+function InlineFlagBadge({
+  flagType,
+  details,
+}: {
+  flagType: FlagType;
+  details?: Record<string, unknown> | null;
+}) {
+  // M2 split: overflow + auto_adjusted=true → informational AUTO-FIT badge,
+  // not the warning-amber Overflow. Mirrors FlagBadge.tsx contract.
+  const isAutoFit =
+    flagType === "overflow" && details?.auto_adjusted === true;
+  const label = isAutoFit ? "AUTO-FIT" : FLAG_LABELS[flagType];
+  const style = isAutoFit ? AUTO_FIT_STYLE : FLAG_BADGE_STYLES[flagType];
   return (
     <span
       className={cn(
         "inline-block text-[10px] px-1.5 py-0.5 rounded border leading-tight",
-        FLAG_BADGE_STYLES[flagType]
+        style
       )}
     >
-      {FLAG_LABELS[flagType]}
+      {label}
     </span>
   );
 }
@@ -231,7 +247,11 @@ export function SegmentRow({
       {/* Flag cell */}
       <div className="w-20 flex-shrink-0 py-2 px-1 flex flex-col gap-1">
         {segment.flags.map((flag) => (
-          <InlineFlagBadge key={flag.id} flagType={flag.flag_type} />
+          <InlineFlagBadge
+            key={flag.id}
+            flagType={flag.flag_type}
+            details={flag.details}
+          />
         ))}
       </div>
     </div>
