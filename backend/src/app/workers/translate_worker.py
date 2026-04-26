@@ -342,6 +342,10 @@ async def _run_translation(ctx: dict, session, job_id: str) -> None:
         # table_cell and text segments flow through pack_into_batches as before.
         # ----------------------------------------------------------------
         _translatable = [s for s in segments if getattr(s, "kind", "text") != "math_passthrough"]
+        # Passthrough segments are "translated" by identity — count them as
+        # already-done so the FE progress reaches 100% instead of stalling
+        # at len(_translatable)/len(segments).
+        passthrough_count = len(segments) - len(_translatable)
         batches = pack_into_batches(_translatable, budget_tokens=settings.token_budget)
 
         # Gap 1 fix: persist ORM Segment rows so run_post_check can UPDATE/INSERT against them.
@@ -443,8 +447,10 @@ async def _run_translation(ctx: dict, session, job_id: str) -> None:
 
                 # WR-01: record this batch's count at its own index (safe — one
                 # writer per index), then compute running total for progress emit.
+                # Phase 03.2: passthrough_count is added so progress reflects
+                # all completed segments (LLM-translated + identity-passthrough).
                 batch_done_counts[batch_id] = len(batch_texts)
-                segments_done_now = sum(batch_done_counts)
+                segments_done_now = sum(batch_done_counts) + passthrough_count
                 await _publish_progress(
                     redis, job_id, "running", "translate",
                     segments_done_now, segments_total,
@@ -459,7 +465,7 @@ async def _run_translation(ctx: dict, session, job_id: str) -> None:
 
         # WR-06 fix: all DB writes happen sequentially here, after gather, on a
         # single session — no concurrent coroutines touching the session object.
-        segments_done = sum(batch_done_counts)
+        segments_done = sum(batch_done_counts) + passthrough_count
         for batch_id, batch_segs in enumerate(batch_seg_groups):
             for seg in batch_segs:
                 translated = translated_map.get(seg.id)

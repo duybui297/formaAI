@@ -136,23 +136,94 @@ def _body_font_size(block: dict) -> float:
     return min(candidates)
 
 
-def spans_to_html(block: dict) -> str:
+def _is_bold_font(font_name: str) -> bool:
+    """
+    Detect bold via font-name suffix when PDF flags don't carry the bold bit.
+
+    Subset fonts in academic PDFs often encode style via name suffix instead
+    of the get_text() flags field — e.g. `AdvTTaf7f9f4f.B` is the bold variant
+    of `AdvTTaf7f9f4f`. Spot-checked on the BMC paper (`flags=4` for "RESEARCH
+    ARTICLE" but font name ends in `.B`).
+    """
+    if not font_name:
+        return False
+    base = font_name.split("+")[-1]  # strip subset prefix `ABCDEF+...`
+    base_lower = base.lower()
+    return (
+        base.endswith(".B")
+        or base.endswith("-Bold")
+        or "bold" in base_lower
+        or "black" in base_lower
+        or "heavy" in base_lower
+    )
+
+
+def _is_italic_font(font_name: str) -> bool:
+    """
+    Detect italic via font-name suffix (mirrors `_is_bold_font`).
+    """
+    if not font_name:
+        return False
+    base = font_name.split("+")[-1]
+    base_lower = base.lower()
+    return (
+        base.endswith(".I")
+        or base.endswith("-Italic")
+        or base.endswith("-Oblique")
+        or "italic" in base_lower
+        or "oblique" in base_lower
+    )
+
+
+def _page_body_font_size(text_blocks: list[dict]) -> float:
+    """
+    Estimate the page-level body font size by finding the modal size across
+    every span in every text block on the page.
+
+    Page-level mode is required to detect heading-only blocks (uniform large
+    font) — per-block mode would compare a heading-only block against itself
+    and miss the heading classification.
+    """
+    from collections import Counter  # noqa: PLC0415
+
+    sizes: list[float] = []
+    for block in text_blocks:
+        for line in block.get("lines", []):
+            for span in line.get("spans", []):
+                size = span.get("size", 0.0)
+                if size > 0:
+                    sizes.append(round(size * 2) / 2)
+    if not sizes:
+        return 12.0
+    counter = Counter(sizes)
+    max_count = counter.most_common(1)[0][1]
+    candidates = [sz for sz, cnt in counter.items() if cnt == max_count]
+    return min(candidates)
+
+
+def spans_to_html(block: dict, page_body_pt: float | None = None) -> str:
     """
     Convert a page.get_text("dict") text block to minimal HTML.
 
-    Preserves bold (<b>) and italic (<i>) based on span flags:
-      bit 4 (0x10 = 16): bold
-      bit 1 (0x02 = 2):  italic
-    [VERIFIED: Context7 /websites/pymupdf_readthedocs_io_en — span flags documentation]
+    Preserves bold (<b>) and italic (<i>) based on span flags AND font-name suffix:
+      flags bit 4 (0x10 = 16): bold | flags bit 1 (0x02 = 2): italic
+      font-name `.B` / `-Bold` / contains "bold|black|heavy" → bold
+      font-name `.I` / `-Italic` / `-Oblique` / contains "italic|oblique" → italic
 
-    Gap 3 (UAT Test 7): Emits <h1>/<h2> for spans whose font size is significantly
-    larger than the block's body font size (via _detect_heading_level).
-    Heading spans do NOT get an additional <b> wrapper — <h1>/<h2> carry bold weight.
-
-    Accepts blocks from get_text("dict") format where each span has a "text" key.
-    Returns plain-text (no HTML tags) if no formatting detected — valid HTML input.
+    Heading detection (Gap 3 + page-level extension):
+      - Per-span: span size compared to block body size — catches inline headings
+      - Per-block: when caller passes `page_body_pt` and the entire block is
+        uniformly larger than the page body size, the whole block is wrapped
+        in <h1>/<h2>. This catches title-only blocks where per-block detection
+        fails (block has only one size = its own body baseline).
     """
-    body_pt = _body_font_size(block)
+    block_body_pt = _body_font_size(block)
+    # If a page-level body size is supplied, use it for the per-block heading
+    # check below — this catches title blocks (uniform large size) that the
+    # per-span check would miss.
+    page_pt = page_body_pt if page_body_pt and page_body_pt > 0 else block_body_pt
+    block_heading_level = _detect_heading_level(block_body_pt, page_pt)
+
     parts: list[str] = []
     for line in block.get("lines", []):
         for span in line.get("spans", []):
@@ -161,10 +232,15 @@ def spans_to_html(block: dict) -> str:
                 continue
             escaped = _html.escape(text)  # prevent injection of <, >, & from PDF text
             flags = span.get("flags", 0)
-            is_bold = bool(flags & (2**4))
-            is_italic = bool(flags & (2**1))
+            font_name = span.get("font", "")
+            is_bold = bool(flags & (2**4)) or _is_bold_font(font_name)
+            is_italic = bool(flags & (2**1)) or _is_italic_font(font_name)
             span_size = span.get("size", 0.0)
-            heading_level = _detect_heading_level(span_size, body_pt)
+            # Per-span heading level (mixed-size block); fall back to block-level
+            heading_level = (
+                _detect_heading_level(span_size, block_body_pt)
+                or block_heading_level
+            )
 
             if heading_level == 1:
                 # h1: italic still applies if set; skip <b> — <h1> carries bold weight
@@ -218,6 +294,10 @@ def extract_pdf_segments(doc: pymupdf.Document, job_id: str) -> list[Segment]:
 
         if not text_blocks:
             continue
+
+        # Page-level body font size — used by spans_to_html to detect title-only
+        # blocks (uniform large font) that per-block detection would miss.
+        page_body_pt = _page_body_font_size(text_blocks)
 
         # --- Table cell extraction (CONTEXT.md: find_tables() cell walk) ---
         # Runs before the non-table block walk. Collects table bbox regions so
@@ -320,7 +400,7 @@ def extract_pdf_segments(doc: pymupdf.Document, job_id: str) -> list[Segment]:
                 # Normal translatable block (existing path, unchanged).
                 # Block data from "dict" extraction already has "text" in spans.
                 # No need for per-block clip extraction — use block directly.
-                html = spans_to_html(block)
+                html = spans_to_html(block, page_body_pt=page_body_pt)
                 text = _nfc(html.strip())
                 if not text:
                     continue

@@ -117,6 +117,76 @@ def test_spans_to_html_no_heading_for_uniform_font():
     assert "<h2>" not in html, "No h2 for uniform 12pt text"
 
 
+def test_is_bold_font_detects_dot_b_suffix():
+    """Subset fonts in academic PDFs encode bold via `.B` suffix when the
+    PDF span flags don't carry the bold bit (verified on BMC paper)."""
+    from app.pipeline.pdf.extractor import _is_bold_font
+
+    assert _is_bold_font("AdvTTaf7f9f4f.B") is True, "`.B` suffix → bold"
+    assert _is_bold_font("ABCDEF+AdvTTaf7f9f4f.B") is True, "subset prefix stripped"
+    assert _is_bold_font("Helvetica-Bold") is True, "`-Bold` suffix → bold"
+    assert _is_bold_font("Roboto Black") is True, "`black` keyword → bold"
+    assert _is_bold_font("AdvTT86d47313") is False, "body font without bold marker"
+    assert _is_bold_font("") is False, "empty string is safe"
+
+
+def test_is_italic_font_detects_dot_i_suffix():
+    from app.pipeline.pdf.extractor import _is_italic_font
+
+    assert _is_italic_font("AdvTT8861b38f.I") is True, "`.I` suffix → italic"
+    assert _is_italic_font("Helvetica-Oblique") is True, "`-Oblique` → italic"
+    assert _is_italic_font("Times-Italic") is True, "`-Italic` → italic"
+    assert _is_italic_font("AdvTT86d47313") is False
+    assert _is_italic_font("") is False
+
+
+def test_spans_to_html_bold_via_font_name_when_flags_miss_bit():
+    """When PDF span flags don't carry the bold bit (flags=4 = serifed only)
+    but the font name encodes bold via `.B`, spans_to_html still wraps in
+    <b>. This is the BMC-paper scenario: 'RESEARCH ARTICLE' is visually bold
+    but flags=4."""
+    from app.pipeline.pdf.extractor import spans_to_html
+
+    block = {
+        "lines": [
+            {"spans": [{
+                "text": "RESEARCH ARTICLE",
+                "size": 13.0,
+                "flags": 4,
+                "font": "AdvTTaf7f9f4f.B",
+            }]},
+        ]
+    }
+    html = spans_to_html(block)
+    assert "<b>RESEARCH ARTICLE</b>" in html, f"Expected <b>; got {html!r}"
+
+
+def test_spans_to_html_page_level_heading_for_uniform_title_block():
+    """Title-only blocks (uniform large font) need page_body_pt to detect
+    them as headings. Per-block detection would compare a uniform block's
+    body size to itself (ratio = 1.0) and miss the heading."""
+    from app.pipeline.pdf.extractor import spans_to_html
+
+    title_block = {
+        "lines": [
+            {"spans": [{
+                "text": "Generative adversarial networks",
+                "size": 23.4,
+                "flags": 4,
+                "font": "AdvTTe45e47d2",
+            }]},
+        ]
+    }
+    # Without page_body_pt, no heading detected (current behavior)
+    html_without = spans_to_html(title_block)
+    assert "<h1>" not in html_without, (
+        "Without page_body_pt, uniform-size block has ratio=1.0 → no heading"
+    )
+    # With page_body_pt = 10, title at 23.4 → ratio 2.3 → h1
+    html_with = spans_to_html(title_block, page_body_pt=10.0)
+    assert "<h1>" in html_with, f"Expected <h1>; got {html_with!r}"
+
+
 # --- Phase 03.2 Plan 01: Segment.kind field + _is_math_font TDD ---
 
 
