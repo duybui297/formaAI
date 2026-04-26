@@ -140,6 +140,85 @@ def test_is_italic_font_detects_dot_i_suffix():
     assert _is_italic_font("") is False
 
 
+def test_spans_to_html_merges_consecutive_same_style_runs():
+    """`<b>Open</b><b> </b><b>Access</b>` is the bug we are fixing — adjacent
+    bold spans must coalesce into a single `<b>Open Access</b>`."""
+    from app.pipeline.pdf.extractor import spans_to_html
+
+    block = {
+        "lines": [
+            {"spans": [
+                {"text": "Open", "size": 10.0, "flags": 16, "font": "Helvetica-Bold"},
+                {"text": " ", "size": 10.0, "flags": 16, "font": "Helvetica-Bold"},
+                {"text": "Access", "size": 10.0, "flags": 16, "font": "Helvetica-Bold"},
+            ]},
+        ]
+    }
+    html = spans_to_html(block)
+    assert "<b>Open Access</b>" in html, f"Adjacent bold spans must merge; got {html!r}"
+    assert "<b>Open</b>" not in html, "Should not have separate <b> tags"
+
+
+def test_spans_to_html_inserts_br_before_inline_label_after_period():
+    """Multi-label paragraph 'Background: ... Objectives: ...' inside a single
+    block must get `<br>` before the second (and any subsequent) inline label."""
+    from app.pipeline.pdf.extractor import spans_to_html
+
+    block = {
+        "lines": [
+            {"spans": [
+                {"text": "Background:", "size": 10.0, "flags": 4, "font": "AdvTT99c4c969"},
+                {"text": " Missing data is a pervasive problem in clinical research. ", "size": 10.0, "flags": 4, "font": "AdvTTb5929f4c"},
+                {"text": "Objectives:", "size": 10.0, "flags": 4, "font": "AdvTT99c4c969"},
+                {"text": " This study aimed to evaluate accuracy of GAIN.", "size": 10.0, "flags": 4, "font": "AdvTTb5929f4c"},
+            ]},
+        ]
+    }
+    html = spans_to_html(block)
+    assert "<br><b>Objectives:</b>" in html, f"Expected <br> before Objectives:; got {html!r}"
+    # Background: at start of block must NOT be preceded by <br>
+    assert html.startswith("<b>Background:</b>"), f"Block must start with bold label; got {html!r}"
+
+
+def test_spans_to_html_block_leading_heading_gets_break_before_body():
+    """A bold run that opens the block AND does NOT end with `:` is a
+    section header — body text after it gets a `<br>` separator. Inline
+    labels ending with `:` (Background:) stay inline."""
+    from app.pipeline.pdf.extractor import spans_to_html
+
+    block = {
+        "lines": [
+            {"spans": [
+                {"text": "Acknowledgements", "size": 10.0, "flags": 4, "font": "AdvTT99c4c969"},
+                {"text": " We thank the Hong Kong Hospital Authority for the extraction of data from the HA computerized medical system.", "size": 10.0, "flags": 4, "font": "AdvTTb5929f4c"},
+            ]},
+        ]
+    }
+    html = spans_to_html(block)
+    assert "<b>Acknowledgements</b><br>" in html, (
+        f"Section header must be followed by <br>; got {html!r}"
+    )
+
+
+def test_spans_to_html_inline_label_no_leading_break():
+    """`<b>Background:</b> body text` must NOT get a `<br>` after the label
+    — it's an inline label, not a block header."""
+    from app.pipeline.pdf.extractor import spans_to_html
+
+    block = {
+        "lines": [
+            {"spans": [
+                {"text": "Background:", "size": 10.0, "flags": 4, "font": "AdvTT99c4c969"},
+                {"text": " Missing data is pervasive.", "size": 10.0, "flags": 4, "font": "AdvTTb5929f4c"},
+            ]},
+        ]
+    }
+    html = spans_to_html(block)
+    assert "<b>Background:</b><br>" not in html, (
+        f"Inline label should NOT be followed by <br>; got {html!r}"
+    )
+
+
 def test_spans_to_html_bold_via_variant_font_within_block():
     """Inline-bold labels in academic abstracts ('Background:', 'Methods:')
     use a different subset font than the body — same flags=4, same size=10pt,

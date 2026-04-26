@@ -178,22 +178,29 @@ def _is_italic_font(font_name: str) -> bool:
 def _block_body_font(block: dict, block_body_pt: float) -> str:
     """
     Return the most common font name among spans whose size matches the
-    block's body size. Used by spans_to_html to flag variant-font spans
-    (different font at the same size = likely bold/italic variant).
+    block's body size, weighted by character count. Used by spans_to_html
+    to flag variant-font spans (different font at the same size = likely
+    bold/italic variant).
+
+    Weighting by character count (not span count) keeps the body font
+    winning in academic-paper blocks where label spans like "Background:"
+    appear roughly as often as the surrounding body span chunks but
+    contribute far fewer characters overall.
     """
     from collections import Counter  # noqa: PLC0415
 
-    font_counts: Counter[str] = Counter()
+    font_chars: Counter[str] = Counter()
     for line in block.get("lines", []):
         for span in line.get("spans", []):
             size = span.get("size", 0.0)
             if size > 0 and abs(round(size * 2) / 2 - block_body_pt) < 0.6:
                 name = span.get("font", "")
-                if name:
-                    font_counts[name] += 1
-    if not font_counts:
+                text = span.get("text", "") or ""
+                if name and text:
+                    font_chars[name] += len(text)
+    if not font_chars:
         return ""
-    return font_counts.most_common(1)[0][0]
+    return font_chars.most_common(1)[0][0]
 
 
 def _page_body_font_size(text_blocks: list[dict]) -> float:
@@ -253,13 +260,28 @@ def spans_to_html(block: dict, page_body_pt: float | None = None) -> str:
     # 'Methods:' labels are inline-bold).
     block_body_font = _block_body_font(block, block_body_pt)
 
-    parts: list[str] = []
-    for line in block.get("lines", []):
+    # Pass 1 — collect spans as (text, style) tuples where style is one of
+    # 'h1', 'h2', 'b', 'i', 'bi', or '' (plain). Adjacent spans with the same
+    # style are merged into a single run so e.g. "Open Access" doesn't end up
+    # as <b>Open</b><b> </b><b>Access</b>.
+    runs: list[tuple[str, str]] = []  # (text, style)
+
+    def _push(text: str, style: str) -> None:
+        if runs and runs[-1][1] == style:
+            runs[-1] = (runs[-1][0] + text, style)
+        else:
+            runs.append((text, style))
+
+    for line_idx, line in enumerate(block.get("lines", [])):
+        if line_idx > 0 and runs:
+            # PDF line breaks inside a block are visually a space — keep as
+            # a plain-style space so adjacent same-style runs across lines
+            # still merge into one tag where appropriate.
+            _push(" ", "")
         for span in line.get("spans", []):
             text = span.get("text", "")
             if not text:
                 continue
-            escaped = _html.escape(text)  # prevent injection of <, >, & from PDF text
             flags = span.get("flags", 0)
             font_name = span.get("font", "")
             span_size = span.get("size", 0.0)
@@ -276,32 +298,95 @@ def spans_to_html(block: dict, page_body_pt: float | None = None) -> str:
                 and block_body_font
                 and font_name
                 and font_name != block_body_font
-                and abs(span_size - block_body_pt) < 0.6  # same size as body (within 0.5pt rounding)
+                and abs(span_size - block_body_pt) < 0.6  # same size as body
                 and not _is_math_font(font_name)
             ):
                 is_bold = True
+
             # Per-span heading level (mixed-size block); fall back to block-level
             heading_level = (
                 _detect_heading_level(span_size, block_body_pt)
                 or block_heading_level
             )
-
             if heading_level == 1:
-                # h1: italic still applies if set; skip <b> — <h1> carries bold weight
-                inner = f"<i>{escaped}</i>" if is_italic else escaped
-                parts.append(f"<h1>{inner}</h1>")
+                style = "h1"
             elif heading_level == 2:
-                inner = f"<i>{escaped}</i>" if is_italic else escaped
-                parts.append(f"<h2>{inner}</h2>")
+                style = "h2"
             elif is_bold and is_italic:
-                parts.append(f"<b><i>{escaped}</i></b>")
+                style = "bi"
             elif is_bold:
-                parts.append(f"<b>{escaped}</b>")
+                style = "b"
             elif is_italic:
-                parts.append(f"<i>{escaped}</i>")
+                style = "i"
             else:
-                parts.append(escaped)
-        parts.append(" ")  # line separator
+                style = ""
+            _push(text, style)
+
+    # Pass 2 — render runs with line-break heuristic. Insert a <br> before a
+    # bold run that looks like an inline section label or a new list item:
+    #   - Run is NOT at the start of the block
+    #   - Run is bold (style 'b' or 'bi')
+    #   - Either ends with `:` (label like 'Background:') OR ends with `.` (list
+    #     item like 'Supplementary Table 1.')
+    #   - The preceding non-empty run ends with a sentence terminator
+    #     `. ? ! :` so we don't break inside running prose
+    # This catches multi-label abstract paragraphs and supplementary lists
+    # while leaving inline bold words inside a sentence untouched.
+    parts: list[str] = []
+    seen_visible_content = False
+    prev_run_stripped = ""
+    last_emitted_was_block_leading_heading = False
+    for text, style in runs:
+        stripped = text.strip()
+        prev_terminates = prev_run_stripped.endswith((".", "?", "!", ":"))
+        looks_like_inline_label = (
+            style in ("b", "bi")
+            and seen_visible_content
+            and prev_terminates
+            and 2 <= len(stripped) <= 80
+            and stripped.endswith((":", "."))
+        )
+        if looks_like_inline_label:
+            parts.append("<br>")
+
+        # Block-leading heading detection: a bold run that opens the block
+        # AND does NOT end with `:` is a section header (e.g.
+        # 'Acknowledgements', 'Supplementary Information', 'Funding').
+        # Inline labels ending with `:` (e.g. 'Background:') stay inline.
+        is_block_leading_heading = (
+            style in ("b", "bi", "h1", "h2")
+            and not seen_visible_content
+            and stripped
+            and not stripped.endswith(":")
+            and len(stripped) >= 3
+        )
+
+        # Body run that follows a block-leading heading → insert <br>
+        # before this run so the heading and body sit on separate lines.
+        if last_emitted_was_block_leading_heading and stripped and style not in ("h1", "h2"):
+            # Suppress the break if this run is itself another heading-style
+            # run that should stay adjacent (rare).
+            parts.append("<br>")
+            last_emitted_was_block_leading_heading = False
+
+        escaped = _html.escape(text)
+        if style == "h1":
+            parts.append(f"<h1>{escaped}</h1>")
+        elif style == "h2":
+            parts.append(f"<h2>{escaped}</h2>")
+        elif style == "bi":
+            parts.append(f"<b><i>{escaped}</i></b>")
+        elif style == "b":
+            parts.append(f"<b>{escaped}</b>")
+        elif style == "i":
+            parts.append(f"<i>{escaped}</i>")
+        else:
+            parts.append(escaped)
+        if stripped:
+            seen_visible_content = True
+            prev_run_stripped = stripped
+            if is_block_leading_heading:
+                last_emitted_was_block_leading_heading = True
     return "".join(parts).strip()
 
 
