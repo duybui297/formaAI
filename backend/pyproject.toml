@@ -19,7 +19,6 @@ dependencies = [
     "alembic>=1.13",
     "arq==0.27.0",
     "redis[hiredis]>=5.0",
-    "pytest-cov>=7.1.0",
 ]
 
 [project.optional-dependencies]
