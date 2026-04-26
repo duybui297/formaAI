@@ -9,7 +9,7 @@ source:
   - 03-06-SUMMARY.md
   - 03-07-SUMMARY.md
 started: 2026-04-26T03:49:00Z
-updated: 2026-04-26T18:30:00Z
+updated: 2026-04-26T19:30:00Z
 ---
 
 ## Current Test
@@ -250,7 +250,7 @@ blocked: 0
 ## Gaps
 
 - truth: "Translated PPTX preserves visual layout (text density, component spacing) close to source"
-  status: failed
+  status: resolved
   reason: "User reported: the layout, space of text and components still not right (can check .data/jobs/7026c344-a5bd-4e2b-8042-24c79f001dc3)"
   severity: minor
   test: 3
@@ -267,7 +267,7 @@ blocked: 0
   debug_session: ""
 
 - truth: "Native PDF translation preserves layout, table content, and image-caption positioning"
-  status: failed
+  status: resolved
   reason: "User reported caption overlapping image (post 3 hotfixes). Tables OK after rect-guard fallback, but show mixed JP source + VI translation."
   severity: minor
   test: 6
@@ -288,7 +288,7 @@ blocked: 0
     - "Min rect-height guard: skip redact+reinsert below 6pt (commit 8810e76)"
 
 - truth: "Academic-paper PDF preserves table content + heading hierarchy on translation"
-  status: failed
+  status: resolved
   reason: "User reported: tables 1 + 2 blank in output; headings (#1, #2) lose visual hierarchy."
   severity: minor
   test: 7
