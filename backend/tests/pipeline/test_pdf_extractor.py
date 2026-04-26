@@ -251,6 +251,32 @@ def test_spans_to_html_inline_label_no_leading_break():
     )
 
 
+def test_spans_to_html_bold_via_variant_font_when_size_differs():
+    """BMC sub-section headers (e.g. 'Study setting and datasets',
+    'Experiments on HT-data') sit on their own line at 9.2pt while the
+    block body is 9.8pt. The variant-font check must tolerate small size
+    differences (≤ 1pt) so sub-headers still get wrapped in <b>."""
+    from app.pipeline.pdf.extractor import spans_to_html
+
+    block = {
+        "lines": [
+            {"bbox": (0, 100, 200, 110), "spans": [
+                {"text": "Sub-section header", "size": 9.2, "flags": 4, "font": "AdvTT99c4c969"},
+            ]},
+            {"bbox": (0, 112, 200, 122), "spans": [
+                {"text": "Body text starts here and continues.", "size": 9.8, "flags": 4, "font": "AdvTT86d47313"},
+            ]},
+            {"bbox": (0, 124, 200, 134), "spans": [
+                {"text": "Body text continues on this line as well.", "size": 9.8, "flags": 4, "font": "AdvTT86d47313"},
+            ]},
+        ]
+    }
+    html = spans_to_html(block)
+    assert "<b>Sub-section header</b>" in html, (
+        f"Variant font at body-1pt size should be bold; got {html!r}"
+    )
+
+
 def test_spans_to_html_bold_via_variant_font_within_block():
     """Inline-bold labels in academic abstracts ('Background:', 'Methods:')
     use a different subset font than the body — same flags=4, same size=10pt,

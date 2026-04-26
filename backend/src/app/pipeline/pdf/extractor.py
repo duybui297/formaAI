@@ -324,7 +324,7 @@ def spans_to_html(block: dict, page_body_pt: float | None = None) -> str:
                 and block_body_font
                 and font_name
                 and font_name != block_body_font
-                and abs(span_size - block_body_pt) < 0.6  # same size as body
+                and abs(span_size - block_body_pt) <= 1.0  # same size as body
                 and not _is_math_font(font_name)
             ):
                 is_bold = True
