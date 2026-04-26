@@ -41,6 +41,7 @@ class Segment:
     translated_text: str | None = None
     run_index: int | None = None  # run slot in paragraph (None = paragraph-level segment)
     run_group_size: int = 1  # consecutive same-format runs merged into this segment
+    kind: str = "text"  # "text" | "table_cell" | "math_passthrough"
 
     @classmethod
     def from_text(

@@ -18,12 +18,62 @@ PITFALL: image blocks (type==1) have no "lines" key — ALWAYS filter type==0 on
 from __future__ import annotations
 
 import html as _html
+import re as _re
 import unicodedata
 
 import pymupdf
 
 from app.pipeline.pdf.columns import cluster_columns
 from app.pipeline.segment import Segment
+
+# ---------------------------------------------------------------------------
+# Math / symbol font detection
+# ---------------------------------------------------------------------------
+
+# Passthrough prefixes — subsets associated with math/symbol encoding.
+# NOTE: AdvTT* (body-text subsets carrying Latin/CJK glyphs) are NOT in this
+# list — they translate correctly with Noto fonts.
+_MATH_FONT_PREFIXES = (
+    "AdvP",      # math/symbol subset prefix (AdvP4C4E74, etc.)
+    "CMSY",      # TeX Computer Modern Symbol
+    "CMR",       # TeX Computer Modern Roman (used in math mode)
+    "STIX",      # STIX math fonts
+    "MathFont",  # generic MathFont* naming
+    "MT",        # MathType fonts (MT-Extra, MT-Symbol, etc.)
+)
+
+# Exact match for legacy symbol fonts
+_MATH_FONT_EXACT: frozenset[str] = frozenset({"Symbol", "ZapfDingbats", "Wingdings"})
+
+# Keyword pattern: any font whose name contains "math", "symbol", or "glyph"
+_MATH_FONT_PATTERN = _re.compile(r"math|symbol|glyph", _re.IGNORECASE)
+
+
+def _is_math_font(font_name: str) -> bool:
+    """
+    Return True if font_name belongs to a math/symbol encoding that Noto cannot represent.
+
+    Passthrough condition: font is a math/symbol subset whose glyphs are
+    encoded outside Unicode ranges covered by Noto Sans / Noto Sans CJK.
+    Translating these spans and reinserting via insert_htmlbox produces
+    missing-glyph boxes — so we skip redact+reinsert entirely.
+
+    Body-font subsets that look similar (AdvTT*) are NOT math fonts —
+    they carry Latin/CJK glyphs in a custom encoding and translate correctly.
+
+    CONTEXT.md D-03.2 font allowlist: body fonts to pass through as "text":
+      Noto*, Helvetica*, Times*, Arial*, Calibri*, Cambria*, MyriadPro*,
+      Roboto*, Liberation*, DejaVu*, Open Sans*, AdvTT* (body subsets).
+    """
+    if font_name in _MATH_FONT_EXACT:
+        return True
+    # Strip PSNAME subset prefix (e.g. "ABCDEF+AdvP4C4E74" → "AdvP4C4E74")
+    base = font_name.split("+")[-1] if "+" in font_name else font_name
+    if base.startswith(_MATH_FONT_PREFIXES):
+        return True
+    if _MATH_FONT_PATTERN.search(base):
+        return True
+    return False
 
 
 def _nfc(s: str) -> str:
@@ -173,18 +223,53 @@ def extract_pdf_segments(doc: pymupdf.Document, job_id: str) -> list[Segment]:
 
         for col_idx, col_blocks in enumerate(column_groups):
             for block_idx, block in enumerate(col_blocks):
+                # Build structural_position first — used by both paths.
+                if is_degraded:
+                    pos = f"page.{page_num}.block.{block_idx}"
+                else:
+                    pos = f"page.{page_num}.col.{col_idx}.block.{block_idx}"
+
+                # Check if ANY non-empty span in this block uses a math/symbol font.
+                # If so, emit the whole block as math_passthrough (skip translation).
+                # Math-font blocks in real PDFs are standalone symbol blocks, not
+                # mixed with translatable text, so whole-block passthrough is correct.
+                all_spans: list[dict] = [
+                    span
+                    for line in block.get("lines", [])
+                    for span in line.get("spans", [])
+                ]
+                has_math_font = any(
+                    _is_math_font(span.get("font", ""))
+                    for span in all_spans
+                    if span.get("text", "").strip()
+                )
+
+                if has_math_font:
+                    # CONTEXT.md: math_passthrough — source glyphs stay visible,
+                    # translation skipped; reassembler leaves region untouched.
+                    raw_text = _nfc(" ".join(
+                        span.get("text", "")
+                        for line in block.get("lines", [])
+                        for span in line.get("spans", [])
+                    ).strip())
+                    if not raw_text:
+                        continue
+                    segments.append(Segment.from_text(
+                        source_text=raw_text,
+                        structural_position=pos,
+                        seq_in_job=seq,
+                        kind="math_passthrough",
+                    ))
+                    seq += 1
+                    continue  # skip normal spans_to_html path for this block
+
+                # Normal translatable block (existing path, unchanged).
                 # Block data from "dict" extraction already has "text" in spans.
                 # No need for per-block clip extraction — use block directly.
                 html = spans_to_html(block)
                 text = _nfc(html.strip())
                 if not text:
                     continue
-
-                # Build structural_position
-                if is_degraded:
-                    pos = f"page.{page_num}.block.{block_idx}"
-                else:
-                    pos = f"page.{page_num}.col.{col_idx}.block.{block_idx}"
 
                 segments.append(Segment.from_text(
                     source_text=text,
