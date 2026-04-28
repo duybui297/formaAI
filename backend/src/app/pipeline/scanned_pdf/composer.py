@@ -23,7 +23,12 @@ from app.pipeline.segment import Segment
 log = structlog.get_logger()
 
 _NOTO_SANS = "/backend/fonts/NotoSans-Regular.ttf"
-_NOTO_CJK = "/backend/fonts/NotoSansCJK-Regular.ttc"
+# D-04-27: prefer Sans CJK when bundled; accept Serif CJK as alternate when
+# Sans variant is unavailable (Google Fonts ships Serif CJK as a default download).
+_NOTO_CJK_CANDIDATES = (
+    "/backend/fonts/NotoSansCJK-Regular.ttc",
+    "/backend/fonts/NotoSerifCJK-Regular.ttc",
+)
 
 # Font size range for fit-to-region (D-04-29)
 _MIN_FONT_PT = 8.0
@@ -74,7 +79,10 @@ def _init_pdf():
 
     # Register Noto fonts when available (D-04-27)
     noto_available = os.path.exists(_NOTO_SANS)
-    noto_cjk_available = os.path.exists(_NOTO_CJK)
+    noto_cjk_path = next(
+        (p for p in _NOTO_CJK_CANDIDATES if os.path.exists(p)),
+        None,
+    )
 
     if noto_available:
         pdf.add_font("NotoSans", fname=_NOTO_SANS)
@@ -83,11 +91,11 @@ def _init_pdf():
         log.debug("noto_sans_font_missing_using_fallback", path=_NOTO_SANS)
         primary_font = "Helvetica"  # built-in fpdf2 fallback
 
-    if noto_cjk_available:
-        pdf.add_font("NotoSansCJK", fname=_NOTO_CJK)
-        pdf.set_fallback_fonts(["NotoSansCJK"])
+    if noto_cjk_path:
+        pdf.add_font("NotoCJK", fname=noto_cjk_path)
+        pdf.set_fallback_fonts(["NotoCJK"])
     else:
-        log.debug("noto_cjk_font_missing", path=_NOTO_CJK)
+        log.debug("noto_cjk_font_missing", candidates=_NOTO_CJK_CANDIDATES)
 
     return pdf, primary_font
 

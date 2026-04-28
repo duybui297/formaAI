@@ -29,7 +29,7 @@ RUN python -m pip install "paddleocr>=3.5,<4" "fpdf2>=2.7,<3"
 
 # Phase 4: Bundle Noto fonts for fpdf2 explicit-path registration (D-04-27)
 # System apt Noto fonts remain for PyMuPDF; this bundle ensures fpdf2 path works
-COPY backend/fonts/ /backend/fonts/
+COPY fonts/ /backend/fonts/
 
 # Phase 4: Bake PP-StructureV3 models at build time (D-04-15)
 # Models download to /paddle_models (~700MB-1GB). Prevents demo-day cold-start.
