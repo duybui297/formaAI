@@ -272,15 +272,27 @@ export function SegmentRow({
           {imageError ? (
             <p className="text-xs text-slate-400 italic p-2">Image not available</p>
           ) : (
-            <img
-              src={`/api/jobs/${jobId}/pages/${pageNum}.png`}
-              className="w-full object-none"
-              style={{
-                objectPosition: `-${segment.region_bbox[0] * 100}% -${segment.region_bbox[1] * 100}%`,
-              }}
-              alt={`Page ${parseInt(pageNum, 10) + 1} image crop for segment ${segment.seq_in_job}`}
-              onError={() => setImageError(true)}
-            />
+            // WR-06 fix: render full page image with region highlight overlay.
+            // objectPosition % on object-none does not map normalized bbox coords
+            // to correct pixel offsets — use a relative wrapper + absolute overlay instead.
+            <div className="relative w-full">
+              <img
+                src={`/api/jobs/${jobId}/pages/${pageNum}.png`}
+                className="w-full block"
+                alt={`Page ${parseInt(pageNum, 10) + 1} for segment ${segment.seq_in_job}`}
+                onError={() => setImageError(true)}
+              />
+              <div
+                className="absolute border-2 border-amber-400 bg-amber-200/20 pointer-events-none"
+                style={{
+                  left: `${segment.region_bbox[0] * 100}%`,
+                  top: `${segment.region_bbox[1] * 100}%`,
+                  width: `${(segment.region_bbox[2] - segment.region_bbox[0]) * 100}%`,
+                  height: `${(segment.region_bbox[3] - segment.region_bbox[1]) * 100}%`,
+                }}
+                aria-hidden="true"
+              />
+            </div>
           )}
         </div>
       )}
