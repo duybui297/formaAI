@@ -9,6 +9,7 @@ os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
 os.environ.setdefault("DATA_DIR", "/tmp")
 
+import numpy as np
 import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -196,3 +197,75 @@ def make_segment_flag(db_session):
         return f
 
     return _make
+
+
+# ---------------------------------------------------------------------------
+# Phase 4: PaddleOCR mock fixtures (D-04-28)
+# ---------------------------------------------------------------------------
+
+def _make_bbox(x0: int, y0: int, x1: int, y1: int) -> np.ndarray:
+    """Create a PaddleOCR block_bbox polygon array (4,2) from an axis-aligned rect."""
+    return np.array([[x0, y0], [x1, y0], [x1, y1], [x0, y1]], dtype=np.int16)
+
+
+@pytest.fixture
+def mock_ppstructurev3():
+    """Canned PP-StructureV3 output for unit tests (D-04-28). No real PaddleOCR needed.
+
+    Returns a mock pipeline whose .predict() returns one result with two text blocks:
+    - block 0: paragraph_title "Tiêu đề đoạn văn" (confidence ~0.89)
+    - block 1: text "Nội dung đoạn văn về dịch thuật AI." (confidence ~0.89)
+    Page-mean confidence = mean([0.92, 0.85, 0.91]) ≈ 0.893 → above 0.7 threshold.
+    """
+    mock_res = MagicMock()
+    mock_res.json = {
+        "layout_parsing_result": {
+            "parsing_res_list": [
+                {
+                    "block_bbox": _make_bbox(10, 10, 200, 40),
+                    "block_label": "paragraph_title",
+                    "block_content": "Tiêu đề đoạn văn",
+                    "block_id": 0,
+                    "block_order": 0,
+                },
+                {
+                    "block_bbox": _make_bbox(10, 50, 400, 150),
+                    "block_label": "text",
+                    "block_content": "Nội dung đoạn văn về dịch thuật AI.",
+                    "block_id": 1,
+                    "block_order": 1,
+                },
+            ]
+        },
+        "overall_ocr_res": {"rec_scores": [0.92, 0.85, 0.91]},
+    }
+    mock_pipeline = MagicMock()
+    mock_pipeline.predict.return_value = [mock_res]
+    return mock_pipeline
+
+
+@pytest.fixture
+def low_confidence_mock_ppstructurev3():
+    """PP-StructureV3 output with low confidence (mean < 0.7) for OCR-02 tests.
+
+    Page-mean confidence = mean([0.45, 0.38, 0.52]) ≈ 0.45 → below 0.7 threshold.
+    Triggers needs_review banner (D-04-02).
+    """
+    mock_res = MagicMock()
+    mock_res.json = {
+        "layout_parsing_result": {
+            "parsing_res_list": [
+                {
+                    "block_bbox": _make_bbox(10, 10, 200, 40),
+                    "block_label": "text",
+                    "block_content": "Blurry scanned text",
+                    "block_id": 0,
+                    "block_order": 0,
+                },
+            ]
+        },
+        "overall_ocr_res": {"rec_scores": [0.45, 0.38, 0.52]},  # mean ≈ 0.45 < 0.7
+    }
+    mock_pipeline = MagicMock()
+    mock_pipeline.predict.return_value = [mock_res]
+    return mock_pipeline

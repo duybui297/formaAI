@@ -18,6 +18,25 @@ COPY pyproject.toml .
 # Install all dependencies (including test extras) into the system Python
 RUN uv pip install --system -e ".[test]"
 
+# Phase 4: PaddleOCR CPU + fpdf2 install (D-04-16)
+# paddlepaddle MUST be installed from Alibaba index (standard PyPI version is a stub)
+# Threat model T-04-02: explicit -i flag prevents wrong-index install
+RUN python -m pip install paddlepaddle==3.0.0 \
+    -i https://www.paddlepaddle.org.cn/packages/stable/cpu/
+
+# paddleocr[all] includes PP-StructureV3 layout analysis dependencies
+RUN python -m pip install "paddleocr>=3.5,<4" "fpdf2>=2.7,<3"
+
+# Phase 4: Bundle Noto fonts for fpdf2 explicit-path registration (D-04-27)
+# System apt Noto fonts remain for PyMuPDF; this bundle ensures fpdf2 path works
+COPY backend/fonts/ /backend/fonts/
+
+# Phase 4: Bake PP-StructureV3 models at build time (D-04-15)
+# Models download to /paddle_models (~700MB-1GB). Prevents demo-day cold-start.
+# Threat model T-04-03: pinned paddlepaddle==3.0.0; no runtime model downloads.
+ENV PADDLEOCR_HOME=/paddle_models
+RUN python -c "from paddleocr import PPStructureV3; PPStructureV3(device='cpu', use_doc_orientation_classify=False, use_doc_unwarping=False, use_seal_recognition=False, use_chart_recognition=False)"
+
 # Copy alembic config — needed by `alembic current/upgrade` invoked via docker exec
 COPY alembic.ini .
 
