@@ -180,6 +180,7 @@ def make_segment_flag(db_session):
 
     async def _make(
         segment_id: str,
+        segment_job_id: str,
         flag_type: str = "overflow",
         severity: str = "warn",
         details: dict | None = None,
@@ -188,6 +189,7 @@ def make_segment_flag(db_session):
         f = SegmentFlag(
             id=str(uuid.uuid4()),
             segment_id=segment_id,
+            segment_job_id=segment_job_id,
             flag_type=FlagType(flag_type),
             severity=FlagSeverity(severity),
             details=details or {},
