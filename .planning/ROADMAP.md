@@ -150,7 +150,7 @@ Plans:
 - [x] 04-02-PLAN.md — OCR pipeline module: detector, extractor, composer, segment_to_md
 - [x] 04-03-PLAN.md — Worker dispatch, API integration, SSE extension, download endpoint
 - [x] 04-04-PLAN.md — Frontend OCR UI: confidence chip, image preview, source edit, banner, download menu
-- [ ] 04-05-PLAN.md — Integration tests, round-trip tests, coverage gate (80%)
+- [x] 04-05-PLAN.md — Integration tests, round-trip tests, coverage gate (80%)
 
 ### Phase 5: Demo Hardening
 **Goal**: The demo is hardened for the AICore presentation: a curated set of real documents is pre-translated as a backup, a smoke script validates the full stack is live, and a README + one-page walkthrough ensures Thu can run the demo confidently without debugging on stage. This is the go/no-go gate.
