@@ -791,6 +791,22 @@ async def _run_translation(ctx: dict, session, job_id: str) -> None:
                             severity=FlagSeverity.warn,
                             details=_details,
                         ))
+                # WR-04 fix: emit ocr_page_error flags for failed OCR pages so the
+                # "OCR ERR" filter chip in ReviewFilterBar can locate them.
+                for _seg in segments:
+                    if (
+                        getattr(_seg, "kind", None) == "ocr_text"
+                        and getattr(_seg, "confidence", None) == 0.0
+                        and _seg.source_text == "[OCR failed for this page]"
+                    ):
+                        _ocr_db_flags.append(SegmentFlag(
+                            segment_id=_seg.id,
+                            segment_job_id=job_id,
+                            flag_type=FlagType.ocr_page_error,
+                            severity=FlagSeverity.warn,
+                            details={"page": _seg.structural_position},
+                        ))
+
                 if _ocr_db_flags:
                     session.add_all(_ocr_db_flags)
                     await session.flush()
