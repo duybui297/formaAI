@@ -556,9 +556,10 @@ async def _run_translation(ctx: dict, session, job_id: str) -> None:
                 if translated is None:
                     continue
                 # Gap 1: persist translated_text to DB
+                # WR-01 fix: include job_id in WHERE to guard compound PK (id, job_id)
                 await session.execute(
                     sa_update(SegmentORM)
-                    .where(SegmentORM.id == seg.id)
+                    .where(SegmentORM.job_id == job_id, SegmentORM.id == seg.id)
                     .values(translated_text=translated)
                 )
             await session.flush()
