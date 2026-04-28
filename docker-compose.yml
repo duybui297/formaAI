@@ -1,35 +1,28 @@
+x-backend-base: &backend-base
+  image: ai-translation-backend:dev
+  build:
+    context: ./backend
+    dockerfile: Dockerfile
+  volumes:
+    - ./backend/src:/backend/src
+    - ./.data:/data
+  env_file: .env
+  environment:
+    - DATA_DIR=/data
+  depends_on:
+    - postgres
+    - redis
+
 services:
   api:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
+    <<: *backend-base
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-    volumes:
-      - ./backend/src:/backend/src
-      - ./.data:/data
-    env_file: .env
-    environment:
-      - DATA_DIR=/data
     ports:
       - "8000:8000"
-    depends_on:
-      - postgres
-      - redis
 
   worker:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
+    <<: *backend-base
     command: arq app.workers.translate_worker.WorkerSettings
-    volumes:
-      - ./backend/src:/backend/src
-      - ./.data:/data
-    env_file: .env
-    environment:
-      - DATA_DIR=/data
-    depends_on:
-      - postgres
-      - redis
 
   web:
     build:
