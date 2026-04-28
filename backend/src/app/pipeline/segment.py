@@ -41,7 +41,13 @@ class Segment:
     translated_text: str | None = None
     run_index: int | None = None  # run slot in paragraph (None = paragraph-level segment)
     run_group_size: int = 1  # consecutive same-format runs merged into this segment
-    kind: str = "text"  # "text" | "table_cell" | "math_passthrough"
+    kind: str = "text"  # "text" | "table_cell" | "math_passthrough" | "ocr_text"
+
+    # Phase 4 OCR fields (D-04-26)
+    confidence: float | None = None  # page-mean PaddleOCR rec_score
+    region_bbox: tuple[float, float, float, float] | None = None  # [x0,y0,x1,y1] normalized [0,1]
+    region_label: str | None = None  # PP-StructureV3 block_label e.g. "doc_title","text","table"
+    edited_source_text: str | None = None  # D-04-03: reviewer-corrected OCR source text
 
     @classmethod
     def from_text(

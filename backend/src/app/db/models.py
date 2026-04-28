@@ -23,7 +23,9 @@ class JobStatus(str, enum.Enum):
 
 class JobStage(str, enum.Enum):
     parse = "parse"
+    ocr = "ocr"          # Phase 4: OCR stage (after parse, before translate)
     translate = "translate"
+    compose = "compose"  # Phase 4: compose stage (after translate, before reassemble)
     reassemble = "reassemble"
     done = "done"
     failed = "failed"
@@ -137,6 +139,12 @@ class Segment(Base):
     edited_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     expansion_ratio: Mapped[float | None] = mapped_column(Float, nullable=True)
 
+    # Phase 4 OCR columns (D-04-26)
+    confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    region_bbox: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # [x0,y0,x1,y1] floats in [0,1]
+    region_label: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    edited_source_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     flags: Mapped[list["SegmentFlag"]] = relationship(
         "SegmentFlag", back_populates="segment", lazy="selectin"
     )
@@ -155,6 +163,8 @@ class FlagType(str, enum.Enum):
     llm_refusal = "llm_refusal"
     smartart = "smartart"                                    # D-03-01: PPTX SmartArt detected, write-back skipped
     multi_column_degraded = "multi_column_degraded"          # D-03-03: 3+ PDF columns, flat reading order applied
+    figure_passthrough = "figure_passthrough"                # Phase 4 D-04-24: image/chart block passed through untouched
+    ocr_page_error = "ocr_page_error"                        # Phase 4 D-04-31: per-page OCR failure, placeholder inserted
 
 
 class FlagSeverity(str, enum.Enum):
