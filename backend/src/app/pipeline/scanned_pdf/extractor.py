@@ -206,7 +206,16 @@ async def extract_scanned_pdf_segments(
 
         for block in sorted_blocks:
             block_label = block.get("block_label", "text")
-            block_content = block.get("block_content", "").strip()
+            block_content_raw = block.get("block_content", "").strip()
+            # PaddleOCR detects each visual line separately and joins with "\n"
+            # within a block. For translation + PDF compose, treat the block
+            # as flowing prose: collapse single newlines to spaces. Preserve
+            # paragraph breaks (blank lines) in case the layout actually has them.
+            block_content = "\n\n".join(
+                " ".join(line.strip() for line in para.splitlines() if line.strip())
+                for para in block_content_raw.split("\n\n")
+                if para.strip()
+            )
             block_bbox_raw = block.get("block_bbox")
             block_id = block.get("block_id", seq)
 
