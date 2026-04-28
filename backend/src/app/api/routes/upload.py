@@ -46,6 +46,7 @@ async def upload_document(
     target_lang: str = Form(...),
     tracked_changes_action: str | None = Form(None),
     glossary_id: str | None = Form(None),
+    is_scanned_override: bool | None = Form(None),
     session: AsyncSession = Depends(get_session),
     arq_pool=Depends(get_arq_pool),
 ) -> dict:
@@ -110,6 +111,32 @@ async def upload_document(
         chunks.append(chunk)
     content: bytes = b"".join(chunks)
 
+    # --- D-04-17: Scanned PDF detection ---
+    is_scanned = False
+    if ext == ".pdf":
+        if is_scanned_override is not None:
+            is_scanned = is_scanned_override
+        else:
+            try:
+                import pymupdf  # noqa: PLC0415
+                from app.pipeline.scanned_pdf.detector import detect_scanned_pdf  # noqa: PLC0415
+
+                _settings = request.app.state.settings
+                _probe_doc = pymupdf.open(stream=content, filetype="pdf")
+                is_scanned = detect_scanned_pdf(
+                    _probe_doc,
+                    threshold=_settings.ocr_text_density_threshold,
+                )
+                _probe_doc.close()
+            except Exception:
+                is_scanned = False  # Detection failure → treat as native; worker handles real errors
+
+    # Determine effective input format
+    if ext == ".pdf" and is_scanned:
+        input_format = "scanned_pdf"
+    else:
+        input_format = ext.lstrip(".")  # "docx", "pptx", "pdf"
+
     # --- DOCX tracked-changes probe (DOCX-04 / D-13) ---
     has_tracked = False
     if ext == ".docx":
@@ -136,7 +163,7 @@ async def upload_document(
         session=session,
         source_lang=source_lang,
         target_lang=target_lang,
-        input_format=ext.lstrip("."),
+        input_format=input_format,
         # input_path is set after we know job.id — use placeholder, update below
         input_path="",
         original_filename=filename,
@@ -164,4 +191,5 @@ async def upload_document(
     return {
         "job_id": job.id,
         "has_tracked_changes": has_tracked,
+        "is_scanned": is_scanned,
     }

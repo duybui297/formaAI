@@ -32,6 +32,8 @@ _REVIEWABLE_STATUSES = frozenset({JobStatus.done, JobStatus.needs_review})
 class SegmentPatchRequest(BaseModel, frozen=True):
     # edited_text=None clears the edit; Field(...) makes it required (not optional)
     edited_text: str | None = Field(default=..., max_length=10_000)
+    # Phase 4 (D-04-12): reviewer-corrected OCR source text
+    edited_source_text: str | None = Field(default=None, max_length=10_000)
 
 
 # ---------------------------------------------------------------------------
@@ -60,6 +62,11 @@ def _segment_to_dict(s: Segment) -> dict:
         "expansion_ratio": s.expansion_ratio,
         "structural_position": s.structural_position,
         "flags": [_flag_to_dict(f) for f in (s.flags or [])],
+        # Phase 4 OCR fields (D-04-12, D-04-26)
+        "confidence": getattr(s, "confidence", None),
+        "region_bbox": getattr(s, "region_bbox", None),
+        "region_label": getattr(s, "region_label", None),
+        "edited_source_text": getattr(s, "edited_source_text", None),
     }
 
 
@@ -137,14 +144,19 @@ async def patch_segment(
             ),
         )
 
+    values_to_update: dict = {"edited_text": body.edited_text}
+    # D-04-12: update edited_source_text when provided (not None)
+    if body.edited_source_text is not None:
+        values_to_update["edited_source_text"] = body.edited_source_text
+
     await session.execute(
         update(Segment)
         .where(Segment.job_id == job_id, Segment.id == segment_id)
-        .values(edited_text=body.edited_text)
+        .values(**values_to_update)
     )
     await session.commit()
 
-    return {"segment_id": segment_id, "edited_text": body.edited_text}
+    return {"segment_id": segment_id, "edited_text": body.edited_text, "edited_source_text": body.edited_source_text}
 
 
 @router.post("/jobs/{job_id}/segments/{segment_id}/regenerate", status_code=200)
@@ -178,10 +190,17 @@ async def regenerate_segment(
 
     glossary = await load_glossary_terms_for_job(session, job.glossary_id)
 
+    # D-04-25: use reviewer-corrected OCR source if available; fall back to original source_text
+    source_for_regen = (
+        seg.edited_source_text
+        if getattr(seg, "edited_source_text", None)
+        else seg.source_text
+    )
+
     llm_client = request.app.state.llm_client
     translated_list = await translate_batch(
         client=llm_client,
-        segments=[seg.source_text],
+        segments=[source_for_regen],
         source_lang=job.source_lang,
         target_lang=job.target_lang,
         glossary=glossary,

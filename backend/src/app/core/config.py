@@ -33,6 +33,11 @@ class Settings(BaseSettings):
     # Worker batch concurrency (D-17: 4 concurrent DashScope calls per job)
     worker_concurrency: int = 4
 
+    # Phase 4: OCR configuration (D-04-06, D-04-10, D-04-17)
+    ocr_page_dpi: int = Field(default=300, alias="OCR_PAGE_DPI")
+    ocr_page_concurrency: int = Field(default=1, alias="OCR_PAGE_CONCURRENCY")
+    ocr_text_density_threshold: float = Field(default=50.0, alias="OCR_TEXT_DENSITY_THRESHOLD")
+
     # D-02-12: per-language-pair expansion ratio thresholds (LAYOUT-01)
     # JSON string env var: EXPANSION_RATIO_THRESHOLDS
     # Format: {"src->tgt": float, ...} e.g. {"en->vi": 1.3, "vi->en": 0.9}
