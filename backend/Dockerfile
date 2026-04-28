@@ -26,8 +26,11 @@ RUN uv pip install --system -e ".[test]"
 RUN python -m pip install paddlepaddle==3.0.0 \
     -i https://www.paddlepaddle.org.cn/packages/stable/cpu/
 
-# paddleocr[all] includes PP-StructureV3 layout analysis dependencies
-RUN python -m pip install "paddleocr>=3.5,<4" "fpdf2>=2.7,<3"
+# paddleocr base + paddlex[ocr] extras (PP-StructureV3 pipeline dependencies)
+# paddlex[ocr] pulls in lanms, opencv, layout/table/orientation models, etc.
+RUN python -m pip install "paddleocr>=3.5,<4" "fpdf2>=2.7,<3" && \
+    PADDLEX_VERSION=$(python -c "import paddlex; print(paddlex.__version__)") && \
+    python -m pip install "paddlex[ocr]==${PADDLEX_VERSION}"
 
 # Phase 4: Bundle Noto fonts for fpdf2 explicit-path registration (D-04-27)
 # System apt Noto fonts remain for PyMuPDF; this bundle ensures fpdf2 path works
