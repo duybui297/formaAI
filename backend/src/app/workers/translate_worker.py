@@ -35,6 +35,7 @@ from app.db.models import (  # Gap 1: ORM model for DB persistence
     FlagSeverity,
     FlagType,
     JobStage,
+    JobStatus,
     Segment as SegmentORM,
     SegmentFlag,
 )
@@ -90,6 +91,23 @@ async def startup(ctx: dict) -> None:
     )
     ctx["session_factory"] = async_sessionmaker(ctx["engine"], expire_on_commit=False)
     ctx["redis"] = Redis.from_url(settings.redis_url, decode_responses=True)
+
+    # D-04-05: PPStructureV3 singleton for scanned_pdf jobs (D-04-15 model bake)
+    # Import inside startup() to avoid module-level crash when paddleocr is absent (T-04-12)
+    try:
+        from paddleocr import PPStructureV3  # noqa: PLC0415
+        ctx["ocr_pipeline"] = PPStructureV3(
+            device="cpu",
+            use_doc_orientation_classify=False,
+            use_doc_unwarping=False,
+            use_seal_recognition=False,
+            use_chart_recognition=False,
+        )
+        log.info("ppstructurev3_initialized")
+    except ImportError:
+        ctx["ocr_pipeline"] = None
+        log.warning("paddleocr_not_available", msg="Scanned PDF jobs will fail at runtime")
+
     log.info("worker_started")
 
 
@@ -200,12 +218,17 @@ async def _publish_progress(
     retry_count: int,
     last_message: str,
     error: dict | None = None,
+    stage_progress: dict | None = None,
+    low_confidence_pages: list[int] | None = None,
 ) -> None:
     """
     Publish D-10 progress payload to Redis pub/sub channel `job:{job_id}`.
 
     The SSE endpoint in the API service subscribes and forwards these events
     to the frontend via EventSourceResponse (D-09).
+
+    D-04-x SSE: stage_progress adds {stage, current, total} substructure.
+    D-04-02: low_confidence_pages lists page numbers with mean conf < 0.7.
     """
     payload: dict = {
         "status": status,
@@ -218,6 +241,10 @@ async def _publish_progress(
     }
     if error is not None:
         payload["error"] = error
+    if stage_progress is not None:
+        payload["stage_progress"] = stage_progress
+    if low_confidence_pages is not None:
+        payload["low_confidence_pages"] = low_confidence_pages
     await redis.publish(f"job:{job_id}", json.dumps(payload))
 
 
@@ -313,6 +340,57 @@ async def _run_translation(ctx: dict, session, job_id: str) -> None:
                 )
                 _format_ctx = {"type": "pdf", "doc": _pdf_doc}
 
+            case "scanned_pdf":
+                import pymupdf  # noqa: PLC0415
+                from app.pipeline.scanned_pdf.extractor import extract_scanned_pdf_segments  # noqa: PLC0415
+
+                _pdf_doc = pymupdf.open(job.input_path)
+                _pages_dir = os.path.join(settings.data_dir, "jobs", job_id, "pages")
+                os.makedirs(_pages_dir, exist_ok=True)
+                _ocr_pipeline = ctx.get("ocr_pipeline")
+                if _ocr_pipeline is None:
+                    raise RuntimeError(
+                        "PaddleOCR pipeline not initialized. Is paddleocr installed?"
+                    )
+
+                _total_pages = len(_pdf_doc)
+                _ocr_segments: list | None = None
+                _low_conf_pages: list[int] = []
+
+                for _attempt in range(3):  # OCR_MAX_RETRIES = 2 (D-04-30): 3 attempts total
+                    try:
+                        await _publish_progress(
+                            redis, job_id, "running", JobStage.ocr,
+                            0, _total_pages, 0, _attempt, "OCR starting",
+                            stage_progress={"stage": "ocr", "current": 0, "total": _total_pages},
+                        )
+                        _ocr_segments, _low_conf_pages = await extract_scanned_pdf_segments(
+                            _pdf_doc, job_id, _pages_dir, _ocr_pipeline,
+                            dpi=settings.ocr_page_dpi,
+                        )
+                        break
+                    except Exception as exc:
+                        if _attempt == 2:
+                            raise
+                        _wait = 2.0 ** (_attempt + 1)
+                        log.warning(
+                            "ocr_stage_retry",
+                            job_id=job_id,
+                            attempt=_attempt + 1,
+                            wait_s=_wait,
+                            error=str(exc),
+                        )
+                        await asyncio.sleep(_wait)
+
+                segments = _ocr_segments or []
+                _format_ctx = {
+                    "type": "scanned_pdf",
+                    "doc": _pdf_doc,
+                    "pages_dir": _pages_dir,
+                    "low_conf_pages": _low_conf_pages,
+                    "total_pages": _total_pages,
+                }
+
             case _:
                 raise ValueError(f"Unsupported format: {job.input_format!r}")
 
@@ -368,6 +446,12 @@ async def _run_translation(ctx: dict, session, job_id: str) -> None:
                 expansion_ratio=None,
                 run_index=seg.run_index,          # gap-closure 02-10: None for para-level, int for run-level
                 run_group_size=seg.run_group_size,  # gap-closure 02-10: defaults to 1 in dataclass
+                # Phase 4 OCR fields (D-04-26) — None for non-OCR segments
+                confidence=getattr(seg, "confidence", None),
+                region_bbox=(list(seg.region_bbox) if getattr(seg, "region_bbox", None) else None),
+                region_label=getattr(seg, "region_label", None),
+                # edited_source_text starts None; reviewer fills via PATCH (D-04-12)
+                edited_source_text=None,
             )
             for seg in segments
         ]
@@ -639,6 +723,87 @@ async def _run_translation(ctx: dict, session, job_id: str) -> None:
                 if _pdf_db_flags:
                     session.add_all(_pdf_db_flags)
                     await session.flush()
+
+            case "scanned_pdf":
+                from app.pipeline.scanned_pdf.composer import (  # noqa: PLC0415
+                    compose_bilingual_pdf,
+                    compose_translated_only_pdf,
+                )
+                from app.pipeline.scanned_pdf.segment_to_md import (  # noqa: PLC0415
+                    segments_to_markdown,
+                    md_to_docx,
+                )
+                _ocr_overflow_flags: list[dict] = []
+                _scanned_pages_dir = _format_ctx["pages_dir"]
+                _scanned_src_doc = _format_ctx["doc"]
+                _scanned_total_pages = _format_ctx.get("total_pages", 1)
+
+                for _attempt in range(3):  # COMPOSE_MAX_RETRIES = 2 (D-04-30): 3 attempts total
+                    try:
+                        await _publish_progress(
+                            redis, job_id, "running", JobStage.compose,
+                            0, _scanned_total_pages, 0, _attempt, "Composing outputs",
+                            stage_progress={"stage": "compose", "current": 0, "total": _scanned_total_pages},
+                        )
+                        compose_bilingual_pdf(
+                            segments,
+                            translated_map,
+                            _scanned_pages_dir,
+                            os.path.join(_out_dir, "output.pdf"),
+                            _ocr_overflow_flags,
+                            _scanned_src_doc,
+                        )
+                        compose_translated_only_pdf(
+                            segments,
+                            translated_map,
+                            os.path.join(_out_dir, "output-translated-only.pdf"),
+                            _scanned_src_doc,
+                        )
+                        _md_text = segments_to_markdown(segments)
+                        md_to_docx(_md_text, os.path.join(_out_dir, "output.docx"))
+                        break
+                    except Exception as exc:
+                        if _attempt == 2:
+                            raise
+                        _wait = 2.0 ** (_attempt + 1)
+                        log.warning(
+                            "compose_stage_retry",
+                            job_id=job_id,
+                            attempt=_attempt + 1,
+                            wait_s=_wait,
+                            error=str(exc),
+                        )
+                        await asyncio.sleep(_wait)
+
+                output_path = os.path.join(_out_dir, "output.pdf")
+
+                # Persist compose overflow flags (mirrors pdf overflow flag pattern)
+                _ocr_db_flags: list[SegmentFlag] = []
+                for _r in _ocr_overflow_flags:
+                    _seg_id = _r["segment_id"]
+                    _details = {k: v for k, v in _r.items() if k != "segment_id"}
+                    if _r.get("overflow"):
+                        _ocr_db_flags.append(SegmentFlag(
+                            segment_id=_seg_id,
+                            segment_job_id=job_id,
+                            flag_type=FlagType.overflow,
+                            severity=FlagSeverity.warn,
+                            details=_details,
+                        ))
+                if _ocr_db_flags:
+                    session.add_all(_ocr_db_flags)
+                    await session.flush()
+
+                # D-04-23: needs_review from low-confidence OCR pages
+                _low_conf_pages = _format_ctx.get("low_conf_pages", [])
+                if _low_conf_pages:
+                    job.status = JobStatus.needs_review
+                    await session.flush()
+                    log.info(
+                        "scanned_pdf_needs_review",
+                        job_id=job_id,
+                        low_confidence_pages=_low_conf_pages,
+                    )
 
         # JOB-03: running → done
         await transition_to_done(session, job_id, output_path=output_path)

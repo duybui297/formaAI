@@ -88,6 +88,91 @@ async def get_job_status(
     return _job_to_dict(job)
 
 
+@router.get("/jobs/{job_id}/artifacts")
+async def download_artifact(
+    job_id: str,
+    artifact: str,
+    session: AsyncSession = Depends(get_session),
+) -> FileResponse:
+    """D-04-22: Download one of three compose-stage artifacts.
+
+    artifact: bilingual_pdf | translated_pdf | translated_docx
+    T-04-09: artifact parameter validated against strict allowlist; path computed
+             from job_id (UUID from DB), never from user input.
+    T-04-11: 409 returned if job not in done/needs_review.
+    """
+    from app.core.config import get_settings  # noqa: PLC0415
+
+    job = await get_job(session, job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if job.status.value not in _DOWNLOADABLE_STATUSES:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Job is not yet complete (current status: {job.status.value})",
+        )
+
+    # T-04-09: strict allowlist — no user-controlled path components
+    _artifact_map: dict[str, tuple[str, str]] = {
+        "bilingual_pdf": (
+            "output.pdf",
+            "application/pdf",
+        ),
+        "translated_pdf": (
+            "output-translated-only.pdf",
+            "application/pdf",
+        ),
+        "translated_docx": (
+            "output.docx",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        ),
+    }
+    if artifact not in _artifact_map:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown artifact '{artifact}'. Use: {', '.join(_artifact_map)}",
+        )
+
+    settings = get_settings()
+    filename, media_type = _artifact_map[artifact]
+    file_path = os.path.join(settings.data_dir, "jobs", job_id, filename)
+    if not os.path.exists(file_path):
+        raise HTTPException(
+            status_code=404,
+            detail=f"Artifact '{artifact}' not found for this job",
+        )
+
+    return FileResponse(
+        path=file_path,
+        media_type=media_type,
+        filename=f"job-{job_id[:8]}-{filename}",
+    )
+
+
+@router.get("/jobs/{job_id}/pages/{page_n}.png")
+async def serve_page_image(
+    job_id: str,
+    page_n: int,
+) -> FileResponse:
+    """D-04-10/11: Serve cached page PNG for image-crop preview in review UI.
+
+    T-04-10: page_n is typed as int (FastAPI auto-validates); path constructed
+             from job_id (UUID from DB) + page_n (int) — no directory traversal.
+    """
+    from app.core.config import get_settings  # noqa: PLC0415
+
+    settings = get_settings()
+    file_path = os.path.join(
+        settings.data_dir, "jobs", job_id, "pages", f"page-{page_n}.png"
+    )
+    if not os.path.exists(file_path):
+        raise HTTPException(
+            status_code=404,
+            detail=f"Page {page_n} image not found",
+        )
+    return FileResponse(path=file_path, media_type="image/png")
+
+
 @router.get("/jobs/{job_id}/download")
 async def download_translated_file(
     job_id: str,
