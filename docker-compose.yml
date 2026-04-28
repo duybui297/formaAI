@@ -1,8 +1,5 @@
 x-backend-base: &backend-base
   image: ai-translation-backend:dev
-  build:
-    context: ./backend
-    dockerfile: Dockerfile
   volumes:
     - ./backend/src:/backend/src
     - ./.data:/data
@@ -14,8 +11,13 @@ x-backend-base: &backend-base
     - redis
 
 services:
+  # api owns the build; worker reuses the same image tag.
+  # Avoids docker-bake parallel-build race when listing both services in `compose build`.
   api:
     <<: *backend-base
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     ports:
       - "8000:8000"
