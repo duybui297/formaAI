@@ -41,7 +41,7 @@ COPY fonts/ /backend/fonts/
 # Models download to /paddle_models (~700MB-1GB). Prevents demo-day cold-start.
 # Threat model T-04-03: pinned paddlepaddle==3.0.0; no runtime model downloads.
 ENV PADDLEOCR_HOME=/paddle_models
-RUN python -c "from paddleocr import PPStructureV3; PPStructureV3(device='cpu', use_doc_orientation_classify=False, use_doc_unwarping=False, use_seal_recognition=False, use_chart_recognition=False)"
+RUN python -c "from paddleocr import PPStructureV3; PPStructureV3(device='cpu', text_detection_model_name='PP-OCRv5_mobile_det', text_recognition_model_name='PP-OCRv5_mobile_rec', use_doc_orientation_classify=False, use_doc_unwarping=False, use_textline_orientation=False, use_seal_recognition=False, use_chart_recognition=False, use_table_recognition=False, use_formula_recognition=False)"
 
 # Copy alembic config — needed by `alembic current/upgrade` invoked via docker exec
 COPY alembic.ini .

@@ -94,14 +94,22 @@ async def startup(ctx: dict) -> None:
 
     # D-04-05: PPStructureV3 singleton for scanned_pdf jobs (D-04-15 model bake)
     # Import inside startup() to avoid module-level crash when paddleocr is absent (T-04-12)
+    # Memory: use mobile OCR models + disable table/formula/seal/chart pipelines
+    # (Phase 4 PoC needs text+bbox only, not structured table/formula extraction).
+    # Server models + all sub-pipelines OOMs at ~2.5GB resident; mobile models cut this ~3x.
     try:
         from paddleocr import PPStructureV3  # noqa: PLC0415
         ctx["ocr_pipeline"] = PPStructureV3(
             device="cpu",
+            text_detection_model_name="PP-OCRv5_mobile_det",
+            text_recognition_model_name="PP-OCRv5_mobile_rec",
             use_doc_orientation_classify=False,
             use_doc_unwarping=False,
+            use_textline_orientation=False,
             use_seal_recognition=False,
             use_chart_recognition=False,
+            use_table_recognition=False,
+            use_formula_recognition=False,
         )
         log.info("ppstructurev3_initialized")
     except ImportError:
