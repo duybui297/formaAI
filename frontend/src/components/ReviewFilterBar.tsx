@@ -18,6 +18,11 @@ const FLAG_LABELS: Record<FlagType, string> = {
   glossary_violation: "Glossary violation",
   placeholder_mismatch: "Placeholder",
   llm_refusal: "Refusal",
+  smartart: "SmartArt",
+  multi_column_degraded: "Multi-col",
+  // Phase 4 additions (D-04-24, D-04-31)
+  figure_passthrough: "Figure",
+  ocr_page_error: "OCR Error",
 };
 
 const ALL_FLAGS: FlagType[] = [
@@ -25,6 +30,11 @@ const ALL_FLAGS: FlagType[] = [
   "glossary_violation",
   "placeholder_mismatch",
   "llm_refusal",
+  "smartart",
+  "multi_column_degraded",
+  // Phase 4 additions
+  "figure_passthrough",
+  "ocr_page_error",
 ];
 
 export function ReviewFilterBar({

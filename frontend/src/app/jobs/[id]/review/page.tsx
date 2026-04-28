@@ -1,6 +1,14 @@
 "use client";
 import { use, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { AlertTriangle, ChevronDown } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { NavBar } from "@/components/NavBar";
 import { KeyboardHelpPanel } from "@/components/KeyboardHelpPanel";
 import { ReviewFilterBar, type ReviewFilterType } from "@/components/ReviewFilterBar";
@@ -11,6 +19,7 @@ import {
 } from "@/components/SegmentTable";
 import { useSegments } from "@/hooks/useSegments";
 import { useReviewKeyboard } from "@/hooks/useReviewKeyboard";
+import { useToast } from "@/hooks/use-toast";
 import type { JobSummary } from "@/lib/types";
 import type { Segment } from "@/lib/review-types";
 
@@ -21,14 +30,16 @@ export default function ReviewPage({
   params: Promise<{ id: string }>;
 }) {
   const { id: jobId } = use(params);
+  const { toast } = useToast();
 
   const [focusedIndex, setFocusedIndex] = useState(0);
   const [activeFilter, setActiveFilter] = useState<ReviewFilterType>("all");
   const [helpOpen, setHelpOpen] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const tableRef = useRef<SegmentTableHandle>(null);
   const editingRefs = useRef<Map<string, HTMLTextAreaElement>>(new Map());
 
-  // Load job summary for header
+  // Load job summary for header (extended with low_confidence_pages — D-04-14)
   const { data: job } = useQuery<JobSummary>({
     queryKey: ["job", jobId],
     queryFn: () =>
@@ -80,6 +91,20 @@ export default function ReviewPage({
     onToggleHelp: () => setHelpOpen((prev) => !prev),
   });
 
+  // Phase 4: D-04-22 — Download menu handler
+  const handleDownload = (artifact: "bilingual_pdf" | "translated_pdf" | "translated_docx") => {
+    setDownloading(true);
+    const a = document.createElement("a");
+    a.href = `/api/jobs/${jobId}/download?artifact=${artifact}`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    // Reset downloading state after short delay (browser starts download async)
+    setTimeout(() => setDownloading(false), 1500);
+  };
+
+  const canDownload = ["done", "needs_review"].includes(job?.status ?? "");
+
   if (!job || isLoading) {
     return (
       <>
@@ -96,6 +121,66 @@ export default function ReviewPage({
       <NavBar />
       <div className="relative">
         <ReviewPageHeader job={job} />
+
+        {/* Phase 4: D-04-14 — Low-confidence banner */}
+        {job.low_confidence_pages && job.low_confidence_pages.length > 0 && (
+          <div className="flex items-start gap-3 mx-8 mb-4 mt-4 px-4 py-3 rounded-md border border-amber-300 bg-amber-50">
+            <AlertTriangle className="h-4 w-4 text-amber-600 mt-0.5 flex-shrink-0" />
+            <p className="text-sm text-amber-800">
+              <strong className="text-amber-900">Low OCR confidence:</strong>{" "}
+              Pages{" "}
+              {job.low_confidence_pages.map((n, i) => (
+                <span key={n}>
+                  <button
+                    type="button"
+                    className="font-semibold underline cursor-pointer text-amber-900 hover:text-amber-700"
+                    onClick={() => {
+                      const idx =
+                        filteredSegments.findIndex((s) =>
+                          s.structural_position?.startsWith(`page.${n}.`)
+                        ) ?? -1;
+                      if (idx >= 0 && tableRef.current) {
+                        tableRef.current.scrollToIndex(idx);
+                      }
+                    }}
+                  >
+                    {n + 1}
+                  </button>
+                  {i < (job.low_confidence_pages?.length ?? 0) - 1 ? ", " : ""}
+                </span>
+              ))}{" "}
+              have low OCR confidence — verify before export.
+            </p>
+          </div>
+        )}
+
+        {/* Phase 4: D-04-22 — Download dropdown menu */}
+        {canDownload && (
+          <div className="flex justify-end px-8 mb-2">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={downloading}
+                >
+                  Download <ChevronDown className="ml-1 h-3 w-3" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => handleDownload("bilingual_pdf")}>
+                  Bilingual PDF
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleDownload("translated_pdf")}>
+                  Translated PDF
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleDownload("translated_docx")}>
+                  Translated DOCX
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        )}
 
         <ReviewFilterBar
           segments={segments}

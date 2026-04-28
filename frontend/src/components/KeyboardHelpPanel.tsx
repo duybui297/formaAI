@@ -13,6 +13,8 @@ const SHORTCUTS: Array<{ key: string; action: string }> = [
   { key: "k", action: "Previous segment" },
   { key: "n", action: "Next flagged segment" },
   { key: "e", action: "Edit current segment" },
+  { key: "E", action: "Edit source text" },
+  { key: "i", action: "Show/hide image preview" },
   { key: "r", action: "Regenerate current segment" },
   { key: "Esc", action: "Blur text field" },
   { key: "? / Ctrl+Shift+P", action: "Toggle this panel" },

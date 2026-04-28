@@ -8,6 +8,9 @@ interface ReviewKeyboardOptions {
   onEdit: (index: number) => void;
   onRegenerate: (index: number) => void;
   onToggleHelp: () => void;
+  // Phase 4 additions (D-04-11, D-04-12)
+  onToggleImage?: (index: number) => void;
+  onEditSource?: (index: number) => void;
 }
 
 export function useReviewKeyboard({
@@ -18,6 +21,8 @@ export function useReviewKeyboard({
   onEdit,
   onRegenerate,
   onToggleHelp,
+  onToggleImage,
+  onEditSource,
 }: ReviewKeyboardOptions) {
   // j: next segment — disabled in form tags by default
   useHotkeys(
@@ -54,12 +59,29 @@ export function useReviewKeyboard({
     [focusedIndex, flaggedIndices]
   );
 
-  // e: focus target textarea of focused segment
+  // e: focus target textarea of focused segment (D-02-17 carry-forward)
   useHotkeys(
     "e",
     () => onEdit(focusedIndex),
     { preventDefault: true },
     [focusedIndex, onEdit]
+  );
+
+  // Phase 4: i — toggle image crop expand/collapse (D-04-11)
+  useHotkeys(
+    "i",
+    () => onToggleImage?.(focusedIndex),
+    { preventDefault: true },
+    [focusedIndex, onToggleImage]
+  );
+
+  // Phase 4: E (capital) — activate source-cell edit (D-04-12)
+  // shift+e fires for capital E in react-hotkeys-hook
+  useHotkeys(
+    "shift+e",
+    () => onEditSource?.(focusedIndex),
+    { preventDefault: true },
+    [focusedIndex, onEditSource]
   );
 
   // r: regenerate focused segment

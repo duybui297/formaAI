@@ -44,6 +44,12 @@ export function UploadForm() {
   // detecting: true while detectTrackedChanges() is in flight — blocks Submit
   const [detecting, setDetecting] = useState(false)
 
+  // Phase 4: D-04-17 — Scanned PDF detection + user override
+  // isScannedDetected: null = not yet detected / not a PDF; true/false = detection result
+  // isScannedOverride: null = use auto; true/false = user override
+  const [isScannedDetected, setIsScannedDetected] = useState<boolean | null>(null)
+  const [isScannedOverride, setIsScannedOverride] = useState<boolean | null>(null)
+
   const handleFile = useCallback(async (f: File) => {
     const ext = getExt(f.name)
     if (!ALLOWED_EXTS.has(ext)) {
@@ -64,6 +70,9 @@ export function UploadForm() {
     setTrackedAction(null)
     setHasTrackedChanges(false)
     setShowTrackedModal(false)
+    // Phase 4: reset scanned detection state on new file selection
+    setIsScannedDetected(null)
+    setIsScannedOverride(null)
     setDetecting(true)
 
     // B4 Option A: detect tracked changes before any upload (DOCX only — PPTX/PDF have no TC)
@@ -110,9 +119,19 @@ export function UploadForm() {
         if (glossaryId) {
           formData.append("glossary_id", glossaryId)
         }
+        // Phase 4: D-04-17 — send is_scanned_override only when user explicitly overrode
+        const effectiveScanned = isScannedOverride !== null ? isScannedOverride : isScannedDetected
+        if (effectiveScanned !== null) {
+          formData.append("is_scanned_override", String(effectiveScanned))
+        }
 
         const res = await fetch("/api/upload", { method: "POST", body: formData })
         const data = await res.json()
+
+        // Phase 4: D-04-17 — capture scanned detection result from upload response
+        if (res.ok && data.is_scanned !== undefined) {
+          setIsScannedDetected(data.is_scanned as boolean)
+        }
 
         if (!res.ok) {
           const msg = data.detail || data.error || "Upload failed. Please try again."
@@ -192,6 +211,28 @@ export function UploadForm() {
             </>
           )}
         </div>
+        {/* Phase 4: D-04-17 — Scanned PDF detection result + override toggle */}
+        {file && getExt(file.name) === ".pdf" && isScannedDetected !== null && (
+          <div className="flex items-center gap-1 mt-2 text-xs text-slate-600">
+            <span>
+              {isScannedOverride !== null
+                ? `Changed to: ${isScannedOverride ? "scanned" : "native"} PDF`
+                : `Detected: ${isScannedDetected ? "scanned" : "native"} PDF`}
+            </span>
+            <button
+              type="button"
+              className="text-xs text-violet-600 underline hover:text-violet-800 ml-1"
+              onClick={() =>
+                setIsScannedOverride((v) =>
+                  v === null ? !isScannedDetected : null
+                )
+              }
+            >
+              {isScannedOverride !== null ? "Reset to auto" : "Change"}
+            </button>
+          </div>
+        )}
+
         <input
           id="file-input"
           type="file"

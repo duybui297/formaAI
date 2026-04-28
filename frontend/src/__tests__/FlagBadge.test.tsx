@@ -14,7 +14,6 @@ describe("FlagBadge", () => {
   // These tests are RED until plan 05/06 extends FlagType union and FLAG_CONFIG
 
   it("renders smartart badge with orange styling and SMART label", () => {
-    // @ts-expect-error — FlagType union extended in plan 05/06
     render(<FlagBadge flagType="smartart" />)
     const badge = screen.getByText("SMART")
     expect(badge).toBeTruthy()
@@ -24,7 +23,6 @@ describe("FlagBadge", () => {
   })
 
   it("renders multi_column_degraded badge with slate styling and MULTI-COL label", () => {
-    // @ts-expect-error — FlagType union extended in plan 05/06
     render(<FlagBadge flagType="multi_column_degraded" />)
     const badge = screen.getByText("MULTI-COL")
     expect(badge).toBeTruthy()
@@ -48,7 +46,6 @@ describe("FlagBadge", () => {
     // When auto_adjusted=true, FlagBadge renders an AUTO-FIT info badge instead of warning
     // This test verifies the badge rendering contract from UI-SPEC overflow vs auto-adjusted rule.
     // Implementation: plan 03-06 will differentiate on flag.details?.auto_adjusted.
-    // @ts-expect-error — details prop added in plan 05/06
     render(<FlagBadge flagType="overflow" details={{ auto_adjusted: true }} />)
     // At minimum: component renders without throwing
     expect(document.body).toBeTruthy()

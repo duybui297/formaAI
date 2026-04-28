@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { Check, RefreshCw } from "lucide-react";
+import { useHotkeys } from "react-hotkeys-hook";
+import { Check, ChevronDown, ChevronUp, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useSegmentPatch, useSegmentRegenerate } from "@/hooks/useSegments";
@@ -16,6 +17,9 @@ const FLAG_BADGE_STYLES: Record<FlagType, string> = {
   llm_refusal: "bg-red-100 text-red-800 border-red-300",
   smartart: "bg-orange-100 text-orange-800 border-orange-300",
   multi_column_degraded: "bg-slate-100 text-slate-600 border-slate-300",
+  // Phase 4 additions (D-04-24, D-04-31)
+  figure_passthrough: "bg-slate-50 text-slate-600 border-slate-200",
+  ocr_page_error: "bg-amber-50 text-amber-700 border-amber-200",
 };
 
 // M2 split: overflow + auto_adjusted=true is the informational AUTO-FIT case,
@@ -29,6 +33,9 @@ const FLAG_LABELS: Record<FlagType, string> = {
   llm_refusal: "Refusal",
   smartart: "SMART",
   multi_column_degraded: "MULTI-COL",
+  // Phase 4 additions
+  figure_passthrough: "FIGURE",
+  ocr_page_error: "OCR ERR",
 };
 
 function InlineFlagBadge({
@@ -63,7 +70,54 @@ const LEFT_BORDER: Record<FlagType, string> = {
   llm_refusal: "border-l-red-500",
   smartart: "border-l-orange-500",
   multi_column_degraded: "border-l-slate-400",
+  // Phase 4 additions
+  figure_passthrough: "border-l-slate-300",
+  ocr_page_error: "border-l-amber-400",
 };
+
+// Phase 4: D-04-13 — Confidence chip with green/amber/red coloring
+function ConfidenceChip({ confidence }: { confidence: number | null }) {
+  if (confidence === null || confidence === undefined) return null;
+  const pct = Math.round(confidence * 100);
+  const colorClass =
+    pct >= 70
+      ? "text-green-700 bg-green-50 border-green-300"
+      : pct >= 50
+      ? "text-amber-700 bg-amber-50 border-amber-300"
+      : "text-red-700 bg-red-50 border-red-300";
+  return (
+    <span
+      className={cn(
+        "inline-block text-[10px] px-1.5 py-0.5 rounded border leading-tight",
+        colorClass
+      )}
+      aria-label={`OCR confidence: ${pct}%`}
+    >
+      {pct}%
+    </span>
+  );
+}
+
+// Phase 4: D-04-x SSE — Stage copy template
+const STAGE_COPY_TEMPLATE: Record<string, string> = {
+  ocr: "OCR'd {current}/{total} pages",
+  translate: "Translated {current}/{total} segments",
+  compose: "Composing page {current}/{total}",
+  reassemble: "Assembling outputs...",
+  parse: "Parsing document...",
+  done: "Done",
+  failed: "Failed",
+};
+
+export function formatStageCopy(
+  sp: { stage: string; current: number; total: number } | undefined
+): string {
+  if (!sp) return "";
+  const template = STAGE_COPY_TEMPLATE[sp.stage] ?? sp.stage;
+  return template
+    .replace("{current}", String(sp.current))
+    .replace("{total}", String(sp.total));
+}
 
 interface SegmentRowProps {
   segment: Segment;
@@ -71,6 +125,8 @@ interface SegmentRowProps {
   jobId: string;
   onFocus: () => void;
   textareaRef?: (el: HTMLTextAreaElement | null) => void;
+  onToggleImage?: () => void;
+  onActivateSourceEdit?: () => void;
 }
 
 export function SegmentRow({
@@ -79,6 +135,8 @@ export function SegmentRow({
   jobId,
   onFocus,
   textareaRef,
+  onToggleImage,
+  onActivateSourceEdit,
 }: SegmentRowProps) {
   // Display value: edited_text > translated_text > ""
   const displayValue =
@@ -94,6 +152,24 @@ export function SegmentRow({
   const savedTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const isMountedRef = useRef(true);
 
+  // Phase 4: D-04-12 — Source cell double-click edit state
+  const [sourceEditing, setSourceEditing] = useState(false);
+  const [localSourceValue, setLocalSourceValue] = useState(
+    segment.edited_source_text ?? segment.source_text
+  );
+  const sourceDebounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  // Phase 4: D-04-11 — Image preview expand/collapse state
+  // Auto-expand segments with confidence < 0.7 (amber + red tiers)
+  const [imageExpanded, setImageExpanded] = useState(
+    () => (segment.confidence ?? 1) < 0.7
+  );
+  const [imageError, setImageError] = useState(false);
+
+  // Extract page number from structural_position: "page.N.region.M" → N
+  const pageNum =
+    segment.structural_position?.match(/^page\.(\d+)\./)?.[1] ?? null;
+
   const patchMutation = useSegmentPatch(jobId);
   const regenerateMutation = useSegmentRegenerate(jobId);
 
@@ -105,6 +181,11 @@ export function SegmentRow({
         : (segment.translated_text ?? "");
     setLocalValue(newDisplay);
   }, [segment.edited_text, segment.translated_text]);
+
+  // Sync source value when segment data changes externally
+  useEffect(() => {
+    setLocalSourceValue(segment.edited_source_text ?? segment.source_text);
+  }, [segment.edited_source_text, segment.source_text]);
 
   const handleChange = (value: string) => {
     setLocalValue(value);
@@ -145,8 +226,26 @@ export function SegmentRow({
     return () => {
       clearTimeout(debounceRef.current);
       clearTimeout(savedTimerRef.current);
+      clearTimeout(sourceDebounceRef.current);
     };
   }, []);
+
+  // Phase 4: D-04-11 — "i" toggles image expand when this row is focused
+  useHotkeys(
+    "i",
+    () => setImageExpanded((v) => !v),
+    { enabled: isFocused, preventDefault: true },
+    [isFocused]
+  );
+
+  // Phase 4: D-04-12 — "shift+e" (capital E) activates source edit when focused
+  // Lowercase "e" remains for target edit (D-02-17 carry-forward, handled by useReviewKeyboard)
+  useHotkeys(
+    "shift+e",
+    () => setSourceEditing(true),
+    { enabled: isFocused, preventDefault: true },
+    [isFocused]
+  );
 
   const primaryFlag =
     segment.flags.length > 0 ? segment.flags[0].flag_type : null;
@@ -155,7 +254,7 @@ export function SegmentRow({
     <div
       data-focused={isFocused ? "true" : undefined}
       className={cn(
-        "flex border-b border-slate-100 border-l-4",
+        "flex flex-col border-b border-slate-100 border-l-4",
         isFocused ? "ring-2 ring-violet-500 bg-violet-50" : "",
         primaryFlag
           ? (LEFT_BORDER[primaryFlag] ?? "border-l-transparent")
@@ -164,95 +263,198 @@ export function SegmentRow({
       )}
       onClick={onFocus}
     >
-      {/* Sequence index */}
-      <div className="w-12 flex-shrink-0 py-2 px-1 text-xs text-slate-400 select-none">
-        {segment.seq_in_job}
-      </div>
-
-      {/* Source cell: monospace, read-only */}
-      <div
-        className="flex-[40] py-2 px-2 text-xs font-mono text-[#111111] bg-slate-50 border-r border-slate-100 select-text min-h-[48px] whitespace-pre-wrap"
-        style={{ fontFamily: "var(--font-pt-mono, monospace)" }}
-      >
-        {segment.structural_position && (
-          <span className="text-xs text-slate-400 font-mono mb-1 block select-none">
-            {formatBreadcrumb(segment.structural_position)}
-          </span>
-        )}
-        {segment.source_text}
-      </div>
-
-      {/* Target cell: editable textarea with debounce */}
-      <div className="flex-[50] flex flex-col py-1 px-2 min-h-[48px]">
-        <Textarea
-          ref={textareaRef ?? null}
-          value={localValue}
-          onChange={(e) => handleChange(e.target.value)}
-          className={cn(
-            "min-h-[48px] resize-none border-none shadow-none p-1 text-sm focus-visible:ring-2 focus-visible:ring-violet-500",
-            saveState === "saving" ? "ring-1 ring-dashed ring-slate-400" : ""
-          )}
-          placeholder="Translation…"
-        />
-
-        {/* Save state indicator + regenerate button row */}
-        <div className="flex items-center justify-between mt-1">
-          <span className="text-xs text-slate-400">
-            {saveState === "saving" && "Saving…"}
-            {saveState === "saved" && (
-              <span className="flex items-center gap-1">
-                <Check className="h-3 w-3" /> Saved
-              </span>
-            )}
-          </span>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-6 w-6"
-            title="Regenerate translation"
-            disabled={regenerateMutation.isPending}
-            onClick={(e) => {
-              e.stopPropagation();
-              regenerateMutation.mutate(segment.id);
-            }}
-          >
-            <RefreshCw
-              className={cn(
-                "h-3.5 w-3.5 text-violet-600",
-                regenerateMutation.isPending ? "animate-spin" : ""
-              )}
+      {/* Phase 4: D-04-11 — Image preview (above source/target cells) */}
+      {imageExpanded && pageNum !== null && segment.region_bbox && (
+        <div
+          id={`image-preview-${segment.id}`}
+          className="w-full border-b border-slate-100 bg-slate-50 overflow-hidden max-h-[200px]"
+        >
+          {imageError ? (
+            <p className="text-xs text-slate-400 italic p-2">Image not available</p>
+          ) : (
+            <img
+              src={`/api/jobs/${jobId}/pages/${pageNum}.png`}
+              className="w-full object-none"
+              style={{
+                objectPosition: `-${segment.region_bbox[0] * 100}% -${segment.region_bbox[1] * 100}%`,
+              }}
+              alt={`Page ${parseInt(pageNum, 10) + 1} image crop for segment ${segment.seq_in_job}`}
+              onError={() => setImageError(true)}
             />
-          </Button>
+          )}
+        </div>
+      )}
+
+      {/* Main row: seq + source + target + flags */}
+      <div className="flex min-h-[48px]">
+        {/* Sequence index + expand toggle */}
+        <div className="w-12 flex-shrink-0 flex flex-col items-center py-2 px-1 text-xs text-slate-400 select-none">
+          <span>{segment.seq_in_job}</span>
+          {/* Phase 4: D-04-11 — expand toggle button */}
+          {segment.region_bbox && pageNum !== null && (
+            <button
+              type="button"
+              className="flex-shrink-0 py-1 px-0 text-slate-400 hover:text-slate-600"
+              onClick={(e) => {
+                e.stopPropagation();
+                setImageExpanded((v) => !v);
+              }}
+              aria-expanded={imageExpanded}
+              aria-controls={`image-preview-${segment.id}`}
+              aria-label={imageExpanded ? "Hide image preview" : "Show image preview"}
+            >
+              {imageExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+            </button>
+          )}
         </div>
 
-        {/* Discard edit: only shown when edited_text is explicitly non-null */}
-        {segment.edited_text !== null && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="text-xs text-red-500 hover:text-red-700 h-6 px-1 self-start"
-            onClick={(e) => {
-              e.stopPropagation();
-              patchMutation.mutate({
-                segmentId: segment.id,
-                editedText: null,
-              });
-            }}
-          >
-            Discard edit
-          </Button>
-        )}
-      </div>
+        {/* Source cell */}
+        <div
+          className="flex-[40] py-2 px-2 text-xs font-mono text-[#111111] bg-slate-50 border-r border-slate-100 select-text min-h-[48px] whitespace-pre-wrap"
+          style={{ fontFamily: "var(--font-pt-mono, monospace)" }}
+        >
+          {/* Phase 4: D-04-13 — confidence chip + breadcrumb on same line */}
+          {(segment.structural_position || segment.confidence !== null) && (
+            <span className="flex items-center gap-2 text-xs text-slate-400 font-mono mb-1 select-none">
+              <ConfidenceChip confidence={segment.confidence} />
+              {segment.structural_position && (
+                <span>{formatBreadcrumb(segment.structural_position)}</span>
+              )}
+            </span>
+          )}
 
-      {/* Flag cell */}
-      <div className="w-20 flex-shrink-0 py-2 px-1 flex flex-col gap-1">
-        {segment.flags.map((flag) => (
-          <InlineFlagBadge
-            key={flag.id}
-            flagType={flag.flag_type}
-            details={flag.details}
+          {/* Phase 4: D-04-12 — source cell double-click to edit */}
+          {sourceEditing ? (
+            <div className="relative" onClick={(e) => e.stopPropagation()}>
+              <Textarea
+                value={localSourceValue}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setLocalSourceValue(v);
+                  clearTimeout(sourceDebounceRef.current);
+                  sourceDebounceRef.current = setTimeout(() => {
+                    patchMutation.mutate({
+                      segmentId: segment.id,
+                      editedText: null,
+                      editedSourceText: v,
+                    });
+                  }, 500);
+                }}
+                onBlur={() => setSourceEditing(false)}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") {
+                    e.stopPropagation();
+                    setSourceEditing(false);
+                  }
+                }}
+                className="min-h-[48px] resize-none border-none shadow-none p-1 text-xs font-mono focus-visible:ring-2 focus-visible:ring-violet-500"
+                style={{ fontFamily: "var(--font-pt-mono, monospace)" }}
+                autoFocus
+              />
+              {segment.edited_source_text !== null &&
+                segment.edited_source_text !== undefined && (
+                  <button
+                    type="button"
+                    className="text-xs text-red-500 hover:text-red-700 h-6 px-1 mt-1"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      patchMutation.mutate({
+                        segmentId: segment.id,
+                        editedText: null,
+                        editedSourceText: null,
+                      });
+                      setLocalSourceValue(segment.source_text);
+                    }}
+                  >
+                    Discard source edit
+                  </button>
+                )}
+            </div>
+          ) : (
+            <div
+              className="cursor-text select-text"
+              onDoubleClick={(e) => {
+                e.stopPropagation();
+                setSourceEditing(true);
+              }}
+            >
+              {segment.edited_source_text ?? segment.source_text}
+            </div>
+          )}
+        </div>
+
+        {/* Target cell: editable textarea with debounce */}
+        <div className="flex-[50] flex flex-col py-1 px-2 min-h-[48px]">
+          <Textarea
+            ref={textareaRef ?? null}
+            value={localValue}
+            onChange={(e) => handleChange(e.target.value)}
+            className={cn(
+              "min-h-[48px] resize-none border-none shadow-none p-1 text-sm focus-visible:ring-2 focus-visible:ring-violet-500",
+              saveState === "saving" ? "ring-1 ring-dashed ring-slate-400" : ""
+            )}
+            placeholder="Translation…"
           />
-        ))}
+
+          {/* Save state indicator + regenerate button row */}
+          <div className="flex items-center justify-between mt-1">
+            <span className="text-xs text-slate-400">
+              {saveState === "saving" && "Saving…"}
+              {saveState === "saved" && (
+                <span className="flex items-center gap-1">
+                  <Check className="h-3 w-3" /> Saved
+                </span>
+              )}
+            </span>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6"
+              title="Regenerate translation"
+              disabled={regenerateMutation.isPending}
+              onClick={(e) => {
+                e.stopPropagation();
+                regenerateMutation.mutate(segment.id);
+              }}
+            >
+              <RefreshCw
+                className={cn(
+                  "h-3.5 w-3.5 text-violet-600",
+                  regenerateMutation.isPending ? "animate-spin" : ""
+                )}
+              />
+            </Button>
+          </div>
+
+          {/* Discard edit: only shown when edited_text is explicitly non-null */}
+          {segment.edited_text !== null && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-xs text-red-500 hover:text-red-700 h-6 px-1 self-start"
+              onClick={(e) => {
+                e.stopPropagation();
+                patchMutation.mutate({
+                  segmentId: segment.id,
+                  editedText: null,
+                });
+              }}
+            >
+              Discard edit
+            </Button>
+          )}
+        </div>
+
+        {/* Flag cell */}
+        <div className="w-20 flex-shrink-0 py-2 px-1 flex flex-col gap-1">
+          {segment.flags.map((flag) => (
+            <InlineFlagBadge
+              key={flag.id}
+              flagType={flag.flag_type}
+              details={flag.details}
+            />
+          ))}
+        </div>
       </div>
     </div>
   );
