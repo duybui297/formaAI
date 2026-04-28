@@ -139,12 +139,18 @@ async def extract_scanned_pdf_segments(
                     return [], 1.0
                 res = output[0]
                 json_data = res.json
+                # PP-StructureV3 wraps everything under top-level "res" key in
+                # paddleocr 3.x; older test fixtures used "layout_parsing_result".
+                # Look up each field independently so both shapes work.
+                res_data = json_data.get("res") or json_data
                 parsing_res = (
-                    json_data
-                    .get("layout_parsing_result", {})
-                    .get("parsing_res_list", [])
+                    res_data.get("parsing_res_list")
+                    or json_data.get("layout_parsing_result", {}).get("parsing_res_list", [])
                 )
-                overall_ocr = json_data.get("overall_ocr_res", {})
+                overall_ocr = (
+                    res_data.get("overall_ocr_res")
+                    or json_data.get("overall_ocr_res", {})
+                )
                 rec_scores = overall_ocr.get("rec_scores", [])
                 page_mean_conf = mean(rec_scores) if rec_scores else 1.0
                 return parsing_res, page_mean_conf
