@@ -9,6 +9,9 @@ const FLAG_CONFIG: Record<FlagType, { label: string; className: string }> = {
   llm_refusal:          { label: "Refusal",    className: "text-red-700 bg-red-50 border-red-200" },
   smartart:             { label: "SMART",      className: "text-orange-700 bg-orange-50 border-orange-200" },
   multi_column_degraded:{ label: "MULTI-COL",  className: "text-slate-600 bg-slate-100 border-slate-300" },
+  // Phase 4 additions (D-04-24, D-04-31)
+  figure_passthrough:   { label: "FIGURE",     className: "text-slate-600 bg-slate-50 border-slate-200" },
+  ocr_page_error:       { label: "OCR ERR",    className: "text-amber-700 bg-amber-50 border-amber-200" },
 }
 
 // M2: overflow + auto_adjusted=true renders as informational AUTO-FIT badge (not warning)

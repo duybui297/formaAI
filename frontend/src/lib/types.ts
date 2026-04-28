@@ -1,5 +1,5 @@
 export type JobStatus = "queued" | "running" | "needs_review" | "failed" | "done"
-export type JobStage = "parse" | "translate" | "reassemble" | "done" | "failed"
+export type JobStage = "parse" | "ocr" | "translate" | "compose" | "reassemble" | "done" | "failed"
 
 // D-10 payload shape — matches SSE event + GET /jobs/{id} response
 export interface JobProgress {
@@ -24,6 +24,14 @@ export interface JobProgress {
     message: string
     failing_segments: Array<{ id: string; source_text: string; batch_id: number }>
   }
+  // Phase 4: D-04-x SSE stage progress substructure
+  stage_progress?: {
+    stage: string
+    current: number
+    total: number
+  }
+  // Phase 4: D-04-14 low confidence pages for needs_review banner
+  low_confidence_pages?: number[]
 }
 
 // B5: Language shape matches SUPPORTED_LANGUAGES in Plan 06a (list[dict])
@@ -51,6 +59,8 @@ export interface JobSummary {
   input_format: string
   status: JobStatus
   created_at: string
+  // Phase 4: D-04-14 low confidence pages (from job metadata)
+  low_confidence_pages?: number[]
 }
 
 // --- Phase 2 types ---
@@ -61,6 +71,8 @@ export type FlagType =
   | "llm_refusal"
   | "smartart"
   | "multi_column_degraded"
+  | "figure_passthrough"   // Phase 4: D-04-24 figure/chart pass-through
+  | "ocr_page_error"       // Phase 4: D-04-31 OCR failed for this page
 export type FlagSeverity = "info" | "warn" | "block"
 
 export interface SegmentFlag {
@@ -82,6 +94,11 @@ export interface Segment {
   expansion_ratio: number | null
   structural_position?: string | null
   flags: SegmentFlag[]
+  // Phase 4 OCR fields (D-04-26)
+  confidence: number | null
+  region_bbox: [number, number, number, number] | null
+  region_label: string | null
+  edited_source_text: string | null
 }
 
 export interface SegmentsResponse {

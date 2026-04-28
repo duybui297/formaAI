@@ -24,29 +24,40 @@ export function useSegmentPatch(jobId: string) {
     mutationFn: async ({
       segmentId,
       editedText,
+      editedSourceText,
     }: {
       segmentId: string;
       editedText: string | null;
+      editedSourceText?: string | null;
     }) => {
+      const body: Record<string, unknown> = { edited_text: editedText };
+      if (editedSourceText !== undefined) {
+        body.edited_source_text = editedSourceText;
+      }
       const res = await fetch(`/api/jobs/${jobId}/segments/${segmentId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ edited_text: editedText }),
+        body: JSON.stringify(body),
       });
       if (!res.ok) throw new Error("Save failed");
       return res.json() as Promise<Segment>;
     },
 
-    onMutate: async ({ segmentId, editedText }) => {
+    onMutate: async ({ segmentId, editedText, editedSourceText }) => {
       await queryClient.cancelQueries({ queryKey: ["segments", jobId] });
       const previousSegments = queryClient.getQueryData<Segment[]>([
         "segments",
         jobId,
       ]);
       queryClient.setQueryData<Segment[]>(["segments", jobId], (old) =>
-        old?.map((seg) =>
-          seg.id === segmentId ? { ...seg, edited_text: editedText } : seg
-        ) ?? []
+        old?.map((seg) => {
+          if (seg.id !== segmentId) return seg;
+          const update: Partial<Segment> = { edited_text: editedText };
+          if (editedSourceText !== undefined) {
+            update.edited_source_text = editedSourceText;
+          }
+          return { ...seg, ...update };
+        }) ?? []
       );
       return { previousSegments };
     },

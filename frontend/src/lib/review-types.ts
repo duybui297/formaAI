@@ -8,7 +8,9 @@ export type FlagType =
   | "placeholder_mismatch"
   | "llm_refusal"
   | "smartart"
-  | "multi_column_degraded";
+  | "multi_column_degraded"
+  | "figure_passthrough"   // Phase 4: D-04-24 figure/chart pass-through
+  | "ocr_page_error";      // Phase 4: D-04-31 OCR failed for this page
 
 export interface SegmentFlag {
   id: string;
@@ -29,6 +31,11 @@ export interface Segment {
   expansion_ratio: number | null;
   structural_position?: string | null;
   flags: SegmentFlag[];
+  // Phase 4 OCR fields (D-04-26)
+  confidence: number | null;
+  region_bbox: [number, number, number, number] | null;
+  region_label: string | null;
+  edited_source_text: string | null;
 }
 
 export interface SegmentsResponse {
