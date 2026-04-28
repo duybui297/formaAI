@@ -147,7 +147,7 @@ Plans:
 
 Plans:
 - [x] 04-01-PLAN.md — Foundation: deps, schema migration 0006, Segment/ORM extensions, Wave 0 RED test scaffolds
-- [ ] 04-02-PLAN.md — OCR pipeline module: detector, extractor, composer, segment_to_md
+- [x] 04-02-PLAN.md — OCR pipeline module: detector, extractor, composer, segment_to_md
 - [ ] 04-03-PLAN.md — Worker dispatch, API integration, SSE extension, download endpoint
 - [ ] 04-04-PLAN.md — Frontend OCR UI: confidence chip, image preview, source edit, banner, download menu
 - [ ] 04-05-PLAN.md — Integration tests, round-trip tests, coverage gate (80%)
