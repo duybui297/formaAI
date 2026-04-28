@@ -275,11 +275,21 @@ def spans_to_html(block: dict, page_body_pt: float | None = None) -> str:
 
     para_gap_threshold = 0.0
     if line_gaps:
-        # Threshold = 1.2x the minimum line gap. Min is more robust than median
-        # on short blocks (2-3 lines): a single paragraph-break outlier doesn't
-        # skew the baseline. 1.2x leaves room for ~10% leading jitter without
-        # firing.
-        para_gap_threshold = min(line_gaps) * 1.2
+        # Threshold = 1.2x the median line gap. Median is robust against:
+        #   - low outliers (sub-line spacing, rendering artifacts at gap=0
+        #     or gap < typical line-height)
+        #   - high outliers (the paragraph break we are trying to detect)
+        # Min was too sensitive to short anomalous gaps; max would never fire.
+        # 1.2x leaves room for ~10% leading jitter without firing on regular
+        # line wraps.
+        sorted_gaps = sorted(line_gaps)
+        n = len(sorted_gaps)
+        median_gap = (
+            sorted_gaps[n // 2]
+            if n % 2 == 1
+            else (sorted_gaps[n // 2 - 1] + sorted_gaps[n // 2]) / 2.0
+        )
+        para_gap_threshold = median_gap * 1.2
 
     # Pass 1 — collect spans as (text, style) tuples where style is one of
     # 'h1', 'h2', 'b', 'i', 'bi', or '' (plain). Adjacent spans with the same
@@ -293,16 +303,34 @@ def spans_to_html(block: dict, page_body_pt: float | None = None) -> str:
         else:
             runs.append((text, style))
 
+    def _line_height(line_dict: dict) -> float:
+        bb = line_dict.get("bbox", (0, 0, 0, 0))
+        return bb[3] - bb[1]
+
     for line_idx, line in enumerate(lines):
         if line_idx > 0 and runs:
-            prev_y = lines[line_idx - 1].get("bbox", (0, 0, 0, 0))[1]
+            prev_line = lines[line_idx - 1]
+            prev_y = prev_line.get("bbox", (0, 0, 0, 0))[1]
             cur_y = line.get("bbox", (0, 0, 0, 0))[1]
             gap = cur_y - prev_y
-            if para_gap_threshold > 0 and gap > para_gap_threshold:
-                # Visual paragraph break in source → emit <br>
+
+            spatial_break = para_gap_threshold > 0 and gap > para_gap_threshold
+
+            # Height-change signal: a > 1pt change in line height between
+            # consecutive lines indicates a font-size transition (e.g.
+            # footnote → body, or body → caption). Visually a paragraph
+            # boundary even when spatial gap looks normal.
+            prev_h = _line_height(prev_line)
+            cur_h = _line_height(line)
+            height_break = (
+                prev_h > 0
+                and cur_h > 0
+                and abs(prev_h - cur_h) >= 1.0
+            )
+
+            if spatial_break or height_break:
                 _push("", "br")
             else:
-                # Normal line wrap → space
                 _push(" ", "")
         for span in line.get("spans", []):
             text = span.get("text", "")
@@ -362,7 +390,8 @@ def spans_to_html(block: dict, page_body_pt: float | None = None) -> str:
     #      runs that look like list/label markers.
     parts: list[str] = []
     seen_visible_content = False
-    last_emitted_was_block_leading_heading = False
+    pending_heading_break = False
+    just_emitted_br = False
     prev_run_stripped = ""
     for text, style in runs:
         stripped = text.strip()
@@ -370,22 +399,33 @@ def spans_to_html(block: dict, page_body_pt: float | None = None) -> str:
         if style == "br":
             if seen_visible_content:
                 parts.append("<br>")
-                last_emitted_was_block_leading_heading = False
+                pending_heading_break = False
+                just_emitted_br = True
             continue
 
-        # Block-leading heading detection
-        is_block_leading_heading = (
+        # Body run that follows a heading-like bold run → insert <br>.
+        # Also set just_emitted_br so the SAME-iteration is_heading_like
+        # check (below) sees a fresh <br> position. This covers stacked
+        # sub-headers like 'Methods <br> Study setting and datasets <br>
+        # Two large...'.
+        if pending_heading_break and stripped and style not in ("h1", "h2"):
+            parts.append("<br>")
+            pending_heading_break = False
+            just_emitted_br = True
+
+        # Heading detection — bold/heading run that is either:
+        #   (a) at the block start (block-leading), OR
+        #   (b) immediately after a <br> (already on its own visual line)
+        # AND does not end with `:` (which would be an inline label like
+        # 'Background:'). Such runs are followed by body text → insert <br>
+        # after them so heading and body sit on separate lines.
+        is_heading_like = (
             style in ("b", "bi", "h1", "h2")
-            and not seen_visible_content
+            and (not seen_visible_content or just_emitted_br)
             and stripped
             and not stripped.endswith(":")
             and len(stripped) >= 3
         )
-
-        # Body run that follows a block-leading heading → insert <br>
-        if last_emitted_was_block_leading_heading and stripped and style not in ("h1", "h2"):
-            parts.append("<br>")
-            last_emitted_was_block_leading_heading = False
 
         # Bold-list separator — same-line list items where each item is bold
         # and ends with `.` or `:` after a sentence terminator in the prior run.
@@ -418,8 +458,12 @@ def spans_to_html(block: dict, page_body_pt: float | None = None) -> str:
         if stripped:
             seen_visible_content = True
             prev_run_stripped = stripped
-            if is_block_leading_heading:
-                last_emitted_was_block_leading_heading = True
+            if is_heading_like:
+                pending_heading_break = True
+            just_emitted_br = False
+        else:
+            # Whitespace-only run — does not consume the post-<br> position
+            pass
     return "".join(parts).strip()
 
 

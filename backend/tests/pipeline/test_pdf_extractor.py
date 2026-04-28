@@ -190,6 +190,71 @@ def test_spans_to_html_inserts_br_on_paragraph_line_gap():
     assert br_pos < results_pos, f"<br> must precede Results; got {html!r}"
 
 
+def test_spans_to_html_inserts_br_between_lines_with_different_heights():
+    """Height-change signal: a > 1pt change in line-height between
+    consecutive lines marks a paragraph boundary (e.g. small footnote
+    text followed by body text). Catches the BMC '(Continued from
+    previous page)' / 'Conclusion:' transition where spatial gap is
+    normal but font sizes differ (8pt vs 10pt)."""
+    from app.pipeline.pdf.extractor import spans_to_html
+
+    block = {
+        "lines": [
+            {"bbox": (0, 100, 200, 108), "spans": [
+                {"text": "(Continued from previous page)", "size": 8.0, "flags": 4, "font": "Body"},
+            ]},
+            {"bbox": (0, 110, 200, 120), "spans": [
+                {"text": "Conclusion: ", "size": 10.0, "flags": 4, "font": "Bold"},
+                {"text": "GAIN showed better accuracy.", "size": 10.0, "flags": 4, "font": "Body"},
+            ]},
+        ]
+    }
+    html = spans_to_html(block)
+    assert "<br>" in html, f"Expected <br> from height change; got {html!r}"
+    # Break must come BEFORE the body line
+    br_pos = html.find("<br>")
+    conclusion_pos = html.find("Conclusion:")
+    assert br_pos < conclusion_pos
+
+
+def test_spans_to_html_uses_median_gap_robust_to_short_outliers():
+    """Median (not min) makes the threshold robust against short outliers
+    like sub-line spacing. A single tight gap shouldn't drag the
+    threshold below typical line-height and cause spurious breaks
+    between every body line."""
+    from app.pipeline.pdf.extractor import spans_to_html
+
+    # 6 lines with one tight outlier (gap=9) among uniform gaps (gap=12).
+    # min(9) * 1.2 = 10.8 → would break on every 12pt gap (false positives).
+    # median(12) * 1.2 = 14.4 → no break on 12pt gaps. Correct.
+    block = {
+        "lines": [
+            {"bbox": (0, 100, 200, 110), "spans": [
+                {"text": "First body line.", "size": 10.0, "flags": 4, "font": "Body"},
+            ]},
+            {"bbox": (0, 112, 200, 122), "spans": [
+                {"text": "Second body line.", "size": 10.0, "flags": 4, "font": "Body"},
+            ]},
+            {"bbox": (0, 124, 200, 134), "spans": [
+                {"text": "Third body line.", "size": 10.0, "flags": 4, "font": "Body"},
+            ]},
+            {"bbox": (0, 133, 200, 143), "spans": [
+                {"text": "Fourth body line tight gap.", "size": 10.0, "flags": 4, "font": "Body"},
+            ]},
+            {"bbox": (0, 145, 200, 155), "spans": [
+                {"text": "Fifth body line.", "size": 10.0, "flags": 4, "font": "Body"},
+            ]},
+            {"bbox": (0, 157, 200, 167), "spans": [
+                {"text": "Sixth body line.", "size": 10.0, "flags": 4, "font": "Body"},
+            ]},
+        ]
+    }
+    html = spans_to_html(block)
+    assert "<br>" not in html, (
+        f"Median-based threshold should ignore the single tight gap; got {html!r}"
+    )
+
+
 def test_spans_to_html_no_br_when_line_gap_is_uniform():
     """Spatial signal must NOT fire when all line gaps are roughly uniform —
     that's regular line wrap, not a paragraph break."""
