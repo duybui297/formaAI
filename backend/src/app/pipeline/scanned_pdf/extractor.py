@@ -10,6 +10,7 @@ import asyncio
 import os
 from statistics import mean
 
+import numpy as np
 import pymupdf
 import structlog
 
@@ -28,16 +29,27 @@ _PASSTHROUGH_LABELS: frozenset[str] = frozenset({
 
 def _extract_bbox(block_bbox_raw: object) -> tuple[float, float, float, float]:
     """
-    Convert PP-StructureV3 block_bbox polygon (4,2) numpy array to
-    axis-aligned (x0, y0, x1, y1) floats in pixel coordinates.
+    Convert PP-StructureV3 block_bbox to axis-aligned (x0, y0, x1, y1)
+    pixel-coordinate floats. PaddleOCR returns one of three shapes:
 
-    CRITICAL: block_bbox is NOT a flat [x0,y0,x1,y1] — it is a
-    shape (4,2) polygon of four corner points (RESEARCH.md Pitfall 1).
+      1. numpy array shape (4, 2) — polygon of 4 corner points
+      2. nested list [[x0,y0], [x1,y0], [x1,y1], [x0,y1]]
+      3. flat list/array [x0, y0, x1, y1] (axis-aligned rect)
     """
-    x0 = float(block_bbox_raw[:, 0].min())
-    y0 = float(block_bbox_raw[:, 1].min())
-    x1 = float(block_bbox_raw[:, 0].max())
-    y1 = float(block_bbox_raw[:, 1].max())
+    arr = np.asarray(block_bbox_raw)
+    if arr.ndim == 2 and arr.shape[1] == 2:
+        # Polygon: take min/max across the 4 corner points
+        x0 = float(arr[:, 0].min())
+        y0 = float(arr[:, 1].min())
+        x1 = float(arr[:, 0].max())
+        y1 = float(arr[:, 1].max())
+    elif arr.ndim == 1 and arr.size == 4:
+        # Flat rect [x0, y0, x1, y1]
+        x0, y0, x1, y1 = (float(v) for v in arr.tolist())
+    else:
+        raise ValueError(
+            f"unexpected block_bbox shape {arr.shape} (expected (4,2) or (4,))"
+        )
     return x0, y0, x1, y1
 
 
