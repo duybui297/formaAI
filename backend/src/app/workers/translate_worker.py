@@ -796,8 +796,11 @@ async def _run_translation(ctx: dict, session, job_id: str) -> None:
                     await session.flush()
 
                 # D-04-23: needs_review from low-confidence OCR pages
+                # WR-02 fix: persist low_confidence_pages on the Job row so the
+                # review-page banner survives page reload (not just the SSE event).
                 _low_conf_pages = _format_ctx.get("low_conf_pages", [])
                 if _low_conf_pages:
+                    job.low_confidence_pages = _low_conf_pages
                     job.status = JobStatus.needs_review
                     await session.flush()
                     log.info(

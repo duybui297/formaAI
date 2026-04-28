@@ -48,6 +48,7 @@ def _job_to_dict(job: Job) -> dict:
         "error_msg": job.error_msg,
         "has_tracked_changes": job.has_tracked_changes,
         "glossary_id": job.glossary_id,
+        "low_confidence_pages": job.low_confidence_pages,
         "created_at": job.created_at.isoformat() if job.created_at else None,
         "updated_at": job.updated_at.isoformat() if job.updated_at else None,
     }

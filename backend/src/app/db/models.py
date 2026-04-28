@@ -83,6 +83,10 @@ class Job(Base):
         nullable=True,
     )
 
+    # Phase 4 (D-04-23): list of 0-indexed page numbers with low OCR confidence;
+    # persisted when transitioning to needs_review so banner survives page reload.
+    low_confidence_pages: Mapped[list | None] = mapped_column(JSON, nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
