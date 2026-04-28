@@ -143,7 +143,14 @@ Plans:
   1. A scanned PDF is detected automatically, OCR'd via PaddleOCR PP-OCRv5, and each text region carries a confidence score; the OCR stage can fail/retry independently of the translate and compose stages
   2. Pages where mean OCR confidence falls below 0.7 are marked `needs_review` in the job status and shown in the review UI with the original page image and the low-confidence text highlighted
   3. The output is a bilingual PDF with the original page image on the left and the translated text rendered with Noto CJK fonts on the right; OCR'd segments are editable in the same review UI as other formats
-**Plans**: TBD
+**Plans**: 5 plans
+
+Plans:
+- [ ] 04-01-PLAN.md — Foundation: deps, schema migration 0006, Segment/ORM extensions, Wave 0 RED test scaffolds
+- [ ] 04-02-PLAN.md — OCR pipeline module: detector, extractor, composer, segment_to_md
+- [ ] 04-03-PLAN.md — Worker dispatch, API integration, SSE extension, download endpoint
+- [ ] 04-04-PLAN.md — Frontend OCR UI: confidence chip, image preview, source edit, banner, download menu
+- [ ] 04-05-PLAN.md — Integration tests, round-trip tests, coverage gate (80%)
 
 ### Phase 5: Demo Hardening
 **Goal**: The demo is hardened for the AICore presentation: a curated set of real documents is pre-translated as a backup, a smoke script validates the full stack is live, and a README + one-page walkthrough ensures Thu can run the demo confidently without debugging on stage. This is the go/no-go gate.
@@ -167,5 +174,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 3. PPTX + Native PDF | 0/7 | Not started | - |
 | 3.1. PPTX + PDF Polish (gap closure) | 0/3 | Not started | - |
 | 3.2. PDF table + formula fidelity | 0/4 | Not started | - |
-| 4. Scanned PDF (OCR) | 0/TBD | Not started | - |
+| 4. Scanned PDF (OCR) | 0/5 | Not started | - |
 | 5. Demo Hardening | 0/TBD | Not started | - |
