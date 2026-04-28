@@ -95,7 +95,7 @@ export default function ReviewPage({
   const handleDownload = (artifact: "bilingual_pdf" | "translated_pdf" | "translated_docx") => {
     setDownloading(true);
     const a = document.createElement("a");
-    a.href = `/api/jobs/${jobId}/download?artifact=${artifact}`;
+    a.href = `/api/jobs/${jobId}/artifacts?artifact=${artifact}`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
