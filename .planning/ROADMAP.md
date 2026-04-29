@@ -101,13 +101,13 @@ Plans:
 
 ### Phase 03.3: native pdf table cell fidelity (INSERTED)
 
-**Goal:** [Urgent work - to be planned]
-**Requirements**: TBD
+**Goal:** Fix two table-cell rendering bugs in the native PDF reassembler surfaced on job 7f958166: (1) adjacent cells render with zero gap causing word adhesion across borders, and (2) tight cells go completely blank when JP→VN translation expansion requires scale < 0.7. Two surgical constants + one conditional branch in Pass 3 of reassemble_pdf, verified by two new TDD tests.
+**Requirements**: BUG-1-word-adhesion, BUG-2-blank-cells
 **Depends on:** Phase 3
-**Plans:** 0 plans
+**Plans:** 1 plan
 
 Plans:
-- [ ] TBD (run /gsd-plan-phase 03.3 to break down)
+- [ ] 03.3-01-PLAN.md — TDD fix: _TABLE_CELL_INSET_PT=1.5 + _TABLE_SCALE_LOW=0.3 in reassembler Pass 3
 
 ### Phase 3.1: PPTX + PDF Polish (gap closure)
 **Goal**: Close the 3 deferred visual-fidelity gaps identified in Phase 3 UAT — PPTX layout shift on translation, PDF caption-overlapping-image, and PDF heading hierarchy preservation. Tighten visual quality so the PoC demo lands without "almost" qualifiers.
