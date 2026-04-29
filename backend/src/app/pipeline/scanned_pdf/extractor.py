@@ -221,15 +221,30 @@ async def extract_scanned_pdf_segments(
 
             pos = f"page.{page_num}.region.{block_id}"
 
-            # Passthrough labels (D-04-24): figures, charts, formulas
+            # Passthrough labels (D-04-24): figures, charts, formulas.
+            # Capture region_bbox so composer can crop and re-insert the image
+            # on the right-side page (so right side is self-contained).
             if block_label in _PASSTHROUGH_LABELS:
+                figure_bbox = None
+                if block_bbox_raw is not None:
+                    try:
+                        x0, y0, x1, y1 = _extract_bbox(block_bbox_raw)
+                        figure_bbox = _normalize_bbox(
+                            x0, y0, x1, y1, page_w_px, page_h_px
+                        )
+                    except Exception as exc:
+                        page_log.warning(
+                            "figure_bbox_extraction_failed",
+                            block_id=block_id,
+                            error=str(exc),
+                        )
                 segments.append(Segment.from_text(
                     source_text="[Figure on left]",
                     structural_position=pos,
                     seq_in_job=seq,
                     kind="figure_passthrough",
                     confidence=page_mean_conf,
-                    region_bbox=None,  # no bbox needed for placeholder
+                    region_bbox=figure_bbox,
                     region_label=block_label,
                 ))
                 seq += 1

@@ -100,6 +100,43 @@ def _init_pdf():
     return pdf, primary_font
 
 
+def _render_figure(
+    pdf,
+    png_path: str,
+    region_bbox: tuple[float, float, float, float],
+    src_w_mm: float,
+    src_h_mm: float,
+    right_offset_mm: float,
+) -> None:
+    """
+    Crop the figure region from the source page PNG and insert it on the
+    right side at the same proportional position. PaddleOCR sometimes
+    detects images, charts, or formulas as block_label='image|chart|formula';
+    those regions are passed through to the right page so the bilingual
+    output is self-contained without needing the left side.
+    """
+    from PIL import Image  # noqa: PLC0415 — keep optional dep load lazy
+
+    x0n, y0n, x1n, y1n = region_bbox
+    with Image.open(png_path) as im:
+        w_px, h_px = im.size
+        crop_box = (
+            int(x0n * w_px),
+            int(y0n * h_px),
+            int(x1n * w_px),
+            int(y1n * h_px),
+        )
+        if crop_box[2] <= crop_box[0] or crop_box[3] <= crop_box[1]:
+            return  # zero-area or inverted bbox
+        figure = im.crop(crop_box)
+
+    x_mm = right_offset_mm + x0n * src_w_mm
+    y_mm = y0n * src_h_mm
+    w_mm = max(1.0, (x1n - x0n) * src_w_mm)
+    h_mm = max(1.0, (y1n - y0n) * src_h_mm)
+    pdf.image(figure, x=x_mm, y=y_mm, w=w_mm, h=h_mm, keep_aspect_ratio=True)
+
+
 def _render_region(
     pdf,
     primary_font: str,
@@ -199,11 +236,32 @@ def compose_bilingual_pdf(
 
         for seg in page_segs:
             if seg.region_bbox is None:
-                continue  # placeholder segments (figure_passthrough, OCR-error)
+                continue  # placeholder segments (OCR-error, no bbox)
+
+            # Figure passthrough: crop the figure region from the source PNG
+            # and re-insert it on the right side at the same proportional
+            # position so the right page is self-contained.
             if seg.kind == "figure_passthrough":
-                translated = "[Figure on left]"
-            else:
-                translated = translated_map.get(seg.id, seg.source_text)
+                if not os.path.exists(png_path):
+                    continue
+                try:
+                    _render_figure(
+                        pdf,
+                        png_path,
+                        seg.region_bbox,
+                        src_w_mm,
+                        src_h_mm,
+                        right_offset_mm=src_w_mm,
+                    )
+                except Exception as exc:
+                    log.warning(
+                        "compose_figure_failed",
+                        segment_id=seg.id,
+                        error=str(exc),
+                    )
+                continue
+
+            translated = translated_map.get(seg.id, seg.source_text)
 
             try:
                 overflowed = _render_region(
