@@ -66,6 +66,10 @@ Recent decisions affecting current work:
 - [Roadmap]: PPTX and native PDF share Phase 3 — they reuse the same pipeline spine and don't each need a standalone PoC phase
 - [Phase 1]: Pipeline correctness invariants (segment-count assertion, NFC normalization, placeholder protection, run-merge strategy, Noto fonts in Docker) must be wired in Phase 1, not as later polish
 
+### Roadmap Evolution
+
+- Phase 03.3 inserted after Phase 3: native pdf table cell fidelity (URGENT — surfaced during Phase 4 verification, job 7f958166. Tables overflow + cells mix due to find_tables() rect overlap and translation expansion at scale_low=0.7)
+
 ### Pending Todos
 
 None yet.

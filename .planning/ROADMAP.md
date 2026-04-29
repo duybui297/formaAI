@@ -99,6 +99,16 @@ Plans:
 
 **UI hint**: yes
 
+### Phase 03.3: native pdf table cell fidelity (INSERTED)
+
+**Goal:** [Urgent work - to be planned]
+**Requirements**: TBD
+**Depends on:** Phase 3
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 03.3 to break down)
+
 ### Phase 3.1: PPTX + PDF Polish (gap closure)
 **Goal**: Close the 3 deferred visual-fidelity gaps identified in Phase 3 UAT — PPTX layout shift on translation, PDF caption-overlapping-image, and PDF heading hierarchy preservation. Tighten visual quality so the PoC demo lands without "almost" qualifiers.
 **Depends on**: Phase 3
