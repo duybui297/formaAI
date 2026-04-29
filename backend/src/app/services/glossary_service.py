@@ -486,10 +486,17 @@ async def run_post_check(
         # --- 4. llm_refusal: output identical to input (only for non-trivial sources) ---
         # Only flag when source is substantive (>8 chars) to avoid false positives on
         # short acronyms ("AI", "OK"), version strings ("v2"), proper nouns that are
-        # intentionally unchanged.
+        # intentionally unchanged. Also skip pure-ASCII sources: filenames, scientific
+        # names, identifiers — these are legitimate passthroughs when the source
+        # language uses non-Latin scripts (JP/CN/KO) or has diacritics (VN).
         translated_stripped = translated.strip()
         source_stripped = source.strip()
-        if len(source_stripped) > 8 and translated_stripped == source_stripped:
+        is_pure_ascii = all(ord(c) < 128 for c in source_stripped)
+        if (
+            len(source_stripped) > 8
+            and translated_stripped == source_stripped
+            and not is_pure_ascii
+        ):
             flags_to_insert.append(
                 SegmentFlag(
                     segment_id=seg.id,
