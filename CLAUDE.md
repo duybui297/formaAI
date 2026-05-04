@@ -254,6 +254,14 @@ Use these entry points:
 - `/gsd-quick` for small fixes, doc updates, and ad-hoc tasks
 - `/gsd-debug` for investigation and bug fixing
 - `/gsd-execute-phase` for planned phase work
+- `/gsd-spec-phase` to clarify WHAT a phase delivers (ambiguity-scored SPEC.md) before `/gsd-discuss-phase` — use when scope is fuzzy
+- `/gsd-spike` for throwaway feasibility experiments in `.planning/spikes/` — Qwen prompt variants, OCR configs, layout-fidelity probes (no phase commitment)
+- `/gsd-sketch` for HTML mockups in `.planning/sketches/` — review UI iterations before `/gsd-ui-phase`
+- `/gsd-edit-phase` to modify a phase's fields (scope, depends_on) without renumber — preferred over manual ROADMAP edits
+- `/gsd-ingest-docs` to bootstrap or merge `.planning/` from external ADRs/PRDs/SPECs (e.g. AICore-supplied specs)
+- `/gsd-health --context` before long execute waves — context utilization guard (60% warn, 70% critical)
+
+Post-merge build & test gate runs automatically in `/gsd-execute-phase` step 5.6 — catches cross-plan integration breakage.
 
 Do not make direct repo edits outside a GSD workflow unless the user explicitly asks to bypass it.
 <!-- GSD:workflow-end -->
