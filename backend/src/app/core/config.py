@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     # DashScope (AI-SPEC §4: must be intl key from dashscope-intl.aliyuncs.com)
     dashscope_api_key: SecretStr
     dashscope_base_url: str = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
+    dashscope_model: str = "qwen-mt-turbo"
 
     # Database (D-03: postgresql+asyncpg DSN; SecretStr — DSN contains password)
     database_url: SecretStr

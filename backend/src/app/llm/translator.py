@@ -66,7 +66,7 @@ async def translate_batch(
     source_lang: str,
     target_lang: str,
     glossary: dict[str, str] | None = None,
-    model: str = "qwen-mt-turbo",
+    model: str | None = None,
 ) -> list[str]:
     """
     Translate a batch of text segments via one qwen-mt-turbo call per segment.
@@ -86,7 +86,8 @@ async def translate_batch(
         source_lang: source language code (e.g. "en", "vi", "ja")
         target_lang: target language code
         glossary: optional {source_term: target_term} dict for terminology control
-        model: DashScope model ID (default: qwen-mt-turbo)
+        model: DashScope model ID. If None, reads `dashscope_model` from settings
+               (env: DASHSCOPE_MODEL, default: qwen-mt-turbo).
 
     Returns:
         list[str] of translated segments, same length as input, NFC-normalized
@@ -96,6 +97,10 @@ async def translate_batch(
     """
     if not segments:
         raise ValueError("translate_batch: segments must be non-empty")
+
+    if model is None:
+        from app.core.config import get_settings
+        model = get_settings().dashscope_model
 
     # CORE-04: NFC-normalize all input segments
     normalised = [_nfc(seg) for seg in segments]
