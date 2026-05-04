@@ -269,3 +269,153 @@ def test_table_cell_segment_reassemble_no_crash(tmp_path):
     # Verify output is a valid PDF
     result = pymupdf.open(out_path)
     assert len(result) >= 1, "Output PDF must have at least 1 page"
+
+
+def test_table_cell_inset_prevents_word_adhesion(tmp_path):
+    """Phase 03.3 Bug 1: table_cell insert rect must be inset by _TABLE_CELL_INSET_PT.
+
+    Without the inset, insert_htmlbox fills cell0 to its right edge and cell1
+    starts at the same coordinate — PDF word extraction joins them as a single
+    token ('AlphaAlphaBetaBeta'). This test spies on insert_htmlbox call arguments
+    to assert that the rect passed for table_cell segments is smaller than the full
+    cell bbox (i.e. has been inset by at least 1.0 pt on each side).
+    """
+    import pymupdf
+    from app.pipeline.pdf.extractor import extract_pdf_segments
+    from app.pipeline.pdf.reassembler import reassemble_pdf
+
+    # Build a two-column vector-bordered table PDF
+    # Page 400×300, two 100pt wide columns at x=[50,150,250], rows at y=[50,100]
+    doc = pymupdf.open()
+    page = doc.new_page(width=400, height=300)
+
+    shape = page.new_shape()
+    for x in [50, 150, 250]:
+        shape.draw_line((x, 50), (x, 100))
+    for y in [50, 100]:
+        shape.draw_line((50, y), (250, y))
+    shape.finish(color=(0, 0, 0), width=1.0)
+    shape.commit()
+
+    page.insert_text((60, 80), "Alpha", fontsize=10)
+    page.insert_text((160, 80), "Beta", fontsize=10)
+
+    src_path = str(tmp_path / "adhesion_src.pdf")
+    doc.save(src_path)
+
+    doc2 = pymupdf.open(src_path)
+    segments = extract_pdf_segments(doc2, job_id="test-adhesion")
+    table_segs = [s for s in segments if s.kind == "table_cell"]
+    if not table_segs:
+        pytest.skip(
+            "find_tables() detected 0 table cells in synthetic PDF — synthetic environment limitation"
+        )
+
+    translated_map = {s.id: s.source_text for s in segments}
+
+    # Spy on insert_htmlbox to capture rect arguments for table_cell segments
+    captured_rects: list[pymupdf.Rect] = []
+    real_insert = pymupdf.Page.insert_htmlbox
+
+    def spy(self, rect, html, **kw):
+        captured_rects.append(pymupdf.Rect(rect))
+        return real_insert(self, rect, html, **kw)
+
+    pymupdf.Page.insert_htmlbox = spy
+    try:
+        out_path = str(tmp_path / "adhesion_out.pdf")
+        overflow_flags: list[dict] = []
+        reassemble_pdf(doc2, segments, translated_map, out_path, overflow_flags)
+    finally:
+        pymupdf.Page.insert_htmlbox = real_insert
+
+    assert captured_rects, "insert_htmlbox should have been called at least once"
+
+    # Cell[0,0] spans x=[50,150] — the insert rect must be inset (x0 > 50.0, x1 < 150.0)
+    # Cell[0,1] spans x=[150,250] — similarly inset
+    # Assert: every captured rect has its left edge > the nominal cell x0 value
+    # i.e. no rect starts exactly at a border coordinate (50.0, 150.0, or 250.0)
+    exact_border_starts = [50.0, 150.0, 250.0]
+    rects_at_border = [
+        r for r in captured_rects
+        if any(abs(r.x0 - bx) < 0.01 for bx in exact_border_starts)
+    ]
+    assert not rects_at_border, (
+        f"insert_htmlbox called with rect(s) starting exactly at cell border "
+        f"(no inset applied): {rects_at_border!r}. "
+        "table_cell segments must use an inset rect (_TABLE_CELL_INSET_PT=1.5)."
+    )
+
+
+def test_table_cell_scale_low_resolves_overflow(tmp_path):
+    """Phase 03.3 Bug 2: table_cell segments must use _TABLE_SCALE_LOW=0.3, not 0.7.
+
+    With scale_low=0.7, insert_htmlbox returns spare_height=-1 (blank cell) for
+    JP→VN-expanded text in 80-120 pt wide, 12-20 pt tall cells. This test spies
+    on insert_htmlbox to assert that the scale_low kwarg is <= 0.3 for table_cell
+    segments. Before the fix, scale_low=0.7 is passed — the test fails.
+    """
+    import pymupdf
+    from app.pipeline.pdf.extractor import extract_pdf_segments
+    from app.pipeline.pdf.reassembler import reassemble_pdf
+
+    # Build a two-column table so find_tables() can detect cells
+    # Use 80pt wide cells and 20pt tall rows (matches RESEARCH.md worst-case dims)
+    doc = pymupdf.open()
+    page = doc.new_page(width=400, height=300)
+
+    shape = page.new_shape()
+    for x in [50, 130, 210]:
+        shape.draw_line((x, 50), (x, 70))
+    for y in [50, 70]:
+        shape.draw_line((50, y), (210, y))
+    shape.finish(color=(0, 0, 0), width=1.0)
+    shape.commit()
+
+    page.insert_text((55, 65), "短い", fontsize=8)
+    page.insert_text((135, 65), "テスト", fontsize=8)
+
+    src_path = str(tmp_path / "tight_cell_src.pdf")
+    doc.save(src_path)
+
+    doc2 = pymupdf.open(src_path)
+    segments = extract_pdf_segments(doc2, job_id="test-scale-low")
+    table_segs = [s for s in segments if s.kind == "table_cell"]
+    if not table_segs:
+        pytest.skip(
+            "find_tables() detected 0 table cells in synthetic PDF — synthetic environment limitation"
+        )
+
+    # Simulate 3× expansion
+    long_vn_text = "Đây là bản dịch rất dài mô phỏng việc mở rộng văn bản từ tiếng Nhật sang tiếng Việt"
+    translated_map = {seg.id: long_vn_text for seg in table_segs}
+    for seg in segments:
+        if seg.id not in translated_map:
+            translated_map[seg.id] = seg.source_text
+
+    # Spy on insert_htmlbox to capture scale_low kwarg values for table_cell calls
+    captured_scale_lows: list[float] = []
+    real_insert = pymupdf.Page.insert_htmlbox
+
+    def spy(self, rect, html, **kw):
+        scale_low = kw.get("scale_low", 0.0)
+        captured_scale_lows.append(scale_low)
+        return real_insert(self, rect, html, **kw)
+
+    pymupdf.Page.insert_htmlbox = spy
+    try:
+        out_path = str(tmp_path / "tight_cell_out.pdf")
+        overflow_flags: list[dict] = []
+        reassemble_pdf(doc2, segments, translated_map, out_path, overflow_flags)
+    finally:
+        pymupdf.Page.insert_htmlbox = real_insert
+
+    assert captured_scale_lows, "insert_htmlbox should have been called at least once"
+
+    # Assert: all table_cell insert_htmlbox calls use scale_low <= 0.3
+    # Before the fix, scale_low=0.7 is passed — this assertion will FAIL (RED state).
+    bad_scale_lows = [sl for sl in captured_scale_lows if sl > 0.3]
+    assert not bad_scale_lows, (
+        f"insert_htmlbox called with scale_low > 0.3 for table_cell segment(s): {bad_scale_lows!r}. "
+        "The table_cell path must use _TABLE_SCALE_LOW=0.3 to avoid blank cells (Bug 2)."
+    )
