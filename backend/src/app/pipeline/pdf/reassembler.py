@@ -16,7 +16,8 @@ CRITICAL ORDERING (Pitfall #3 from RESEARCH.md):
   will be erased by the redaction pass.
 
 PITFALL: scale_low default is 0 — insert_htmlbox ALWAYS succeeds, never reports overflow.
-  ALWAYS pass scale_low=0.7 to get spare_height < 0 signal when text still overflows at 70%.
+  ALWAYS pass scale_low=0.7 for text blocks and scale_low=0.3 for table_cell blocks
+  to get spare_height < 0 signal when text cannot fit.
 
 PITFALL: PyMuPDF's text-block bboxes hug visible glyphs and can be much shorter
   than the typeset line height (especially for CJK rows in tables — observed 3.9pt
@@ -43,6 +44,17 @@ from app.pipeline.segment import Segment
 #                academic-paper tables where each "block" is one narrow column.
 _MIN_RECT_HEIGHT_PT = 6.0
 _MIN_RECT_WIDTH_PT = 20.0
+
+_TABLE_CELL_INSET_PT = 1.5
+# Inset each edge of the INSERT rect by 1.5 pt to create a visible gutter between
+# adjacent cells. The REDACT rect stays at the full cell dimensions to fully erase
+# source glyphs. See Phase 03.3 RESEARCH.md — "Bug 1 — Visual text adhesion".
+
+_TABLE_SCALE_LOW = 0.3
+# Lower scale floor for table cells only. scale_low=0.7 (used for text blocks)
+# causes insert_htmlbox to return spare_height=-1 (blank cell) for JP→VN-expanded
+# text in 80-120 pt wide, 12-20 pt tall cells. 0.3 resolves all tested cases.
+# See Phase 03.3 RESEARCH.md — "Bug 2 — Blank cells from overflow".
 
 
 def _clip_rect_away_from_images(
@@ -250,7 +262,8 @@ def reassemble_pdf(
 
         # ----------------------------------------------------------------
         # Pass 3: Insert translated HTML into each block's rect
-        # scale_low=0.7: MUST be set — default 0 never reports overflow (Pitfall #2)
+        # scale_low: MUST be set explicitly — default 0 never reports overflow (Pitfall #2)
+        # text segments use 0.7; table_cell segments use _TABLE_SCALE_LOW=0.3 (Phase 03.3)
         # Gap 2 fix: clip rect away from adjacent images before inserting
         # NOTE: Pass 1 redaction still uses the ORIGINAL rect to fully erase source text.
         # ----------------------------------------------------------------
@@ -280,13 +293,29 @@ def reassemble_pdf(
                 })
                 continue
 
+            # Phase 03.3 fix: table_cell inserts use an inset rect (Bug 1)
+            # and a lower scale_low (Bug 2). The redact rect (Pass 1) is unchanged.
+            if seg.kind == "table_cell":
+                insert_rect = safe_rect + (
+                    _TABLE_CELL_INSET_PT, _TABLE_CELL_INSET_PT,
+                    -_TABLE_CELL_INSET_PT, -_TABLE_CELL_INSET_PT,
+                )
+                if insert_rect.is_empty or insert_rect.width < 5 or insert_rect.height < 3:
+                    insert_rect = safe_rect  # degenerate cell — skip inset
+                cell_scale_low = _TABLE_SCALE_LOW
+            else:
+                insert_rect = safe_rect
+                cell_scale_low = 0.7
+
             try:
                 spare_height, scale = page.insert_htmlbox(
-                    safe_rect,  # use clipped rect, not original rect
+                    insert_rect,
                     sized_html,
                     css=css,
                     archive=arch,
-                    scale_low=0.7,  # D-03-02: stop scaling at 70%; spare_height<0 if overflows
+                    # scale_low: MUST be set explicitly — default 0 never reports overflow (Pitfall #2)
+                    # text segments use 0.7; table_cell segments use _TABLE_SCALE_LOW=0.3 (Phase 03.3)
+                    scale_low=cell_scale_low,
                     overlay=True,
                 )
             except Exception as exc:
