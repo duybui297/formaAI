@@ -348,9 +348,32 @@ def reassemble_pdf(
                     "rect_height": round(rect_h, 2),
                 })
                 continue
-            # Text blocks keep the fixed 0.7 scale_low — body text is sized via
-            # CSS at body_pt and the rect is sized to fit the original.
-            active_pairs.append((seg, block, 0.7))
+            # D: adaptive scale_low for text blocks too. PyMuPDF's text block
+            # bbox often hugs glyphs (line height collapsed in PDF metrics).
+            # Using a fixed 0.7 floor leaves no room for translation expansion
+            # — insert_htmlbox returns spare_height < 0 and the translation
+            # gets clipped. Compute per-block based on actual rect + body
+            # font, same way table cells do.
+            body_pt_text = _body_font_size(block)
+            max_fit_scale = _estimate_max_fitting_scale(
+                len(translated or seg.source_text),
+                rect_w,
+                rect_h,
+                body_pt=body_pt_text,
+            )
+            if max_fit_scale < _MIN_ADAPTIVE_SCALE:
+                overflow_flags.append({
+                    "segment_id": seg.id,
+                    "overflow": True,
+                    "auto_adjusted": False,
+                    "scale_applied": round(max_fit_scale, 3),
+                    "reason": "translation_too_dense_for_block",
+                    "rect_width": round(rect_w, 2),
+                    "rect_height": round(rect_h, 2),
+                })
+                continue
+            text_scale_low = max(_MIN_ADAPTIVE_SCALE, min(0.7, max_fit_scale))
+            active_pairs.append((seg, block, text_scale_low))
 
         if not active_pairs:
             continue
