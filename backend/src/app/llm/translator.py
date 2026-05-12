@@ -1,21 +1,25 @@
 """
-Core translation function — one API call per segment.
+Core translation function — sentinel-batched + dedup'd API calls.
 
-Prior impl joined segments with '\\n' and sent one batched call, parsing the
-response by splitting on '\\n'. qwen-mt-turbo does not reliably preserve line
-count — real-world Japanese documents produced 151 output lines for 142 input
-segments (model inserted line breaks inside translations). That's an
-unfixable correctness gap for batched newline-delimited I/O.
-
-Switch to per-segment calls with bounded concurrency. Cost is negligible
-(~$0.003 extra per 10K-segment document at qwen-mt-turbo pricing) and
-correctness is guaranteed: each response maps 1:1 to its input.
+Evolution:
+  v1: joined segments with '\\n' → BROKE on real Japanese docs (line count drift)
+  v2: per-segment calls (one API call per unique post-NFC segment) — correct
+      but expensive on table-heavy PDFs (job 7f958166: ~830 calls/run, ~25 min)
+  v3 (current): sentinel-batched per-call after dedup. Pack uniques into
+      groups of ~_BATCH_TARGET_SIZE joined by '|||' (validated by Spike 001 —
+      100% sentinel survival across en/vi/ja/zh). Literal '|||' inside a cell
+      is escaped to ⟦C{n}⟧ before join (validated by Spike 002). On count
+      mismatch (model dropped or added a sentinel) falls back to per-segment
+      for that batch. ~50× call reduction on the demo job.
 
 Pitfalls (AI-SPEC §3):
 - No system message (qwen-mt-turbo treats it as text to translate)
 - No temperature (not supported by MT models; may cause rejection)
 - Non-streaming (simpler; each call is short)
 - Guard message.content in case model returns None
+- Sentinels must contain ZERO dictionary tokens (Spike 001: '⟦CELL⟧' fails
+  because 'CELL' is translated to Ô / 細胞 / TẾ BÀO). '|||' is pure ASCII
+  punctuation and ⟦C{n}⟧ uses numeric suffix — both safe.
 """
 from __future__ import annotations
 
@@ -48,6 +52,19 @@ _PER_CALL_BACKOFF_BASE = 1.5  # 1.5s, 2.25s, 3.4s, 5s, 7.6s, 11.4s (~31s total)
 import os as _os
 _PACE_SECONDS = float(_os.environ.get("DASHSCOPE_PACE_SECONDS", "1.2"))
 
+# Sentinel for sentinel-batched translation. Spike 001 validated 100% survival
+# across en/vi/ja/zh on qwen-mt-plus + qwen-mt-turbo. NEVER change this without
+# re-running the spike — the choice depends on the empirical property that the
+# model does NOT translate the token (no dictionary surface).
+_BATCH_SEP = "|||"
+
+# Max uniques per batched call. Spike 002 confirmed 20-cell rows preserve all
+# 19 sentinels en→ja with margin. Production target ~8 cells/row; we set the
+# generic-batch ceiling at 25 for a safety buffer while staying well under the
+# token-budget cap (~25 * 56 tok avg = 1400 tokens per call, under max_tokens).
+# Override via DASHSCOPE_BATCH_SIZE for tuning without code change.
+_BATCH_TARGET_SIZE = int(_os.environ.get("DASHSCOPE_BATCH_SIZE", "25"))
+
 
 def _nfc(s: str) -> str:
     """CORE-04: NFC Unicode normalization."""
@@ -60,6 +77,33 @@ def _is_passthrough(seg: str) -> bool:
     return not stripped or stripped.isdigit()
 
 
+def _escape_sentinel_in_cell(text: str) -> tuple[str, dict[int, str]]:
+    """
+    Escape literal '|||' occurrences inside a cell so they survive the join+split
+    round-trip. Each occurrence becomes ⟦C{n}⟧ (numeric suffix, per Spike 001
+    rule on no-dictionary tokens). Returns (escaped_text, restore_map).
+
+    Spike 002 confirmed: ⟦P0⟧-style escapes survive qwen-mt-* en→vi end-to-end.
+    """
+    if _BATCH_SEP not in text:
+        return text, {}
+    tokens: dict[int, str] = {}
+    parts = text.split(_BATCH_SEP)
+    rebuilt = parts[0]
+    for i, p in enumerate(parts[1:]):
+        marker = f"⟦C{i}⟧"
+        tokens[i] = _BATCH_SEP
+        rebuilt += marker + p
+    return rebuilt, tokens
+
+
+def _restore_sentinel_in_cell(text: str, tokens: dict[int, str]) -> str:
+    """Reverse of _escape_sentinel_in_cell. Replaces ⟦C{n}⟧ → '|||' per token."""
+    for idx in tokens:
+        text = text.replace(f"⟦C{idx}⟧", _BATCH_SEP)
+    return text
+
+
 async def translate_batch(
     client: AsyncOpenAI,
     segments: Sequence[str],
@@ -69,22 +113,22 @@ async def translate_batch(
     model: str | None = None,
 ) -> list[str]:
     """
-    Translate a batch of text segments via one qwen-mt-turbo call per segment.
+    Translate a batch of text segments via sentinel-batched DashScope calls.
 
     Invariants enforced:
-    - CORE-03: returned list length == input length (guaranteed by per-segment calls,
-               no parsing step that could miscount)
+    - CORE-03: returned list length == input length (guaranteed by mapping back
+               through translation_map; never split-from-model-response)
     - CORE-04: NFC normalization applied to every input AND output string
     - CORE-05: whitespace-only / digit-only segments are passed through unchanged;
                URLs, emails, {{template_vars}}, ${vars}, ISO dates, and version
                strings are masked with ⟦T{n}⟧ markers before the model call and
                restored afterwards so they never get translated or hallucinated
     - DEDUP:   identical (post-NFC) segments are translated exactly once and the
-               result is broadcast to every matching input index. Cuts cost +
-               latency on table-heavy docs where short labels ("N/A", "Total",
-               column headers) repeat across many cells. Passthroughs are
-               deduped trivially because _translate_one is deterministic for
-               them.
+               result is broadcast to every matching input index.
+    - BATCH:   unique non-passthrough segments are packed into groups joined by
+               '|||' (Spike 001-validated sentinel), one API call per group.
+               On count mismatch in the model's response, falls back to
+               per-segment for that batch.
 
     Args:
         client: AsyncOpenAI instance pointed at DashScope intl endpoint
@@ -117,35 +161,22 @@ async def translate_batch(
 
     sem = asyncio.Semaphore(_PER_CALL_CONCURRENCY)
 
-    async def _translate_one(text: str) -> str:
-        # CORE-05: passthrough — never send to the model
-        if _is_passthrough(text):
-            return text
-
-        # CORE-05: mask URLs/emails/template vars/dates/versions before the model call
-        masked, tokens = extract_placeholders(text)
-
+    async def _api_call(content: str) -> str:
+        """One API call with retry. Returns content or raises last exception."""
         last_exc: Exception | None = None
         for attempt in range(_PER_CALL_MAX_RETRIES):
             async with sem:
                 try:
-                    # NEVER pass temperature (AI-SPEC Pitfall #3 — not supported by MT models)
-                    # NEVER add a system message (AI-SPEC Pitfall #2 — treated as text to translate)
-                    # max_tokens=4096 required (AI-SPEC §4b.3)
                     response = await client.chat.completions.create(
                         model=model,
-                        messages=[{"role": "user", "content": masked}],
+                        messages=[{"role": "user", "content": content}],
                         extra_body={"translation_options": translation_options},
                         max_tokens=4096,
                     )
-                    content = response.choices[0].message.content
-                    # Forced pacing — spaces out successful calls to stay under RPM cap
+                    body = response.choices[0].message.content
                     if _PACE_SECONDS > 0:
                         await asyncio.sleep(_PACE_SECONDS)
-                    if content is None:
-                        return ""
-                    # CORE-05: restore original tokens into the translated output
-                    return restore_placeholders(_nfc(content), tokens)
+                    return body or ""
                 except RateLimitError as exc:
                     last_exc = exc
                 except APIStatusError as exc:
@@ -155,7 +186,6 @@ async def translate_batch(
                     last_exc = exc
                 except APIConnectionError as exc:
                     last_exc = exc
-            # Sleep OUTSIDE the semaphore so other concurrent calls can proceed
             wait = _PER_CALL_BACKOFF_BASE ** (attempt + 1)
             logger.warning(
                 "per_call_retry attempt=%d wait=%.1fs err=%s",
@@ -166,18 +196,77 @@ async def translate_batch(
         assert last_exc is not None
         raise last_exc
 
-    # DEDUP: translate each unique post-NFC segment once, then broadcast back
-    # to every matching index. dict.fromkeys preserves first-seen order so
-    # passthroughs and real segments interleave naturally — order doesn't
-    # affect correctness (gather is awaited anyway) but keeps debugging sane.
+    async def _translate_single(text: str) -> str:
+        """Translate one segment. Used for size-1 batches and count-mismatch fallback."""
+        if _is_passthrough(text):
+            return text
+        masked, tokens = extract_placeholders(text)
+        body = await _api_call(masked)
+        return restore_placeholders(_nfc(body), tokens)
+
+    async def _translate_pack(cells: list[str]) -> list[str]:
+        """
+        Translate len(cells) non-passthrough cells in ONE API call by joining
+        with the sentinel. On count mismatch in the response, falls back to
+        per-segment translation for this batch.
+        """
+        if len(cells) == 1:
+            return [await _translate_single(cells[0])]
+
+        # Per-cell mask chain: CORE-05 placeholders THEN sentinel escape.
+        # Both use ⟦…⟧ brackets but different letter prefixes (T vs C) so
+        # restoration is unambiguous.
+        prepared: list[tuple[str, dict[int, str], dict[int, str]]] = []
+        for cell in cells:
+            masked, core5_tokens = extract_placeholders(cell)
+            escaped, sentinel_tokens = _escape_sentinel_in_cell(masked)
+            prepared.append((escaped, core5_tokens, sentinel_tokens))
+
+        joined = _BATCH_SEP.join(p[0] for p in prepared)
+        body = await _api_call(joined)
+        parts = body.split(_BATCH_SEP) if body else []
+
+        if len(parts) != len(cells):
+            # Model drift — defensive fallback. Logged at WARN so operators can
+            # tune _BATCH_TARGET_SIZE if this fires frequently.
+            logger.warning(
+                "batch_count_mismatch expected=%d got=%d, falling back per-segment",
+                len(cells), len(parts),
+            )
+            return await asyncio.gather(*(_translate_single(c) for c in cells))
+
+        results: list[str] = []
+        for part, (_, core5_tokens, sentinel_tokens) in zip(parts, prepared):
+            restored = _restore_sentinel_in_cell(part, sentinel_tokens)
+            restored = restore_placeholders(_nfc(restored), core5_tokens)
+            results.append(restored)
+        return results
+
+    # DEDUP: collapse identical post-NFC segments to one translation each.
     unique_segments = list(dict.fromkeys(normalised))
-    translated_pairs = await asyncio.gather(
-        *(_translate_one(seg) for seg in unique_segments)
-    )
-    translation_map = dict(zip(unique_segments, translated_pairs))
+
+    # Split: passthroughs short-circuit to identity, translatables go through batches.
+    passthroughs = [u for u in unique_segments if _is_passthrough(u)]
+    translatables = [u for u in unique_segments if not _is_passthrough(u)]
+
+    # BATCH: pack translatables into fixed-size groups joined by the sentinel.
+    batches = [
+        translatables[i:i + _BATCH_TARGET_SIZE]
+        for i in range(0, len(translatables), _BATCH_TARGET_SIZE)
+    ]
+
+    # Translate each batch. Each batch is one API call (with retry). Batches run
+    # in parallel under the same _PER_CALL_CONCURRENCY semaphore.
+    batch_outputs = await asyncio.gather(*(_translate_pack(b) for b in batches))
+
+    # Assemble translation_map from passthroughs + batched results.
+    translation_map: dict[str, str] = {p: p for p in passthroughs}
+    for batch, outputs in zip(batches, batch_outputs):
+        for original, translated in zip(batch, outputs):
+            translation_map[original] = translated
+
+    # Map back to original input order (every index resolves via dedup lookup).
     results = [translation_map[seg] for seg in normalised]
 
-    # CORE-03 guarantee by construction — every input index maps to exactly one
-    # entry in translation_map (dict lookup is total over normalised).
     assert len(results) == len(normalised), "translate_batch length invariant violated"
     return results

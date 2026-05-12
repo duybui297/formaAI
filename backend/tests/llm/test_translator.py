@@ -37,8 +37,8 @@ async def test_translate_batch_returns_same_count():
     client = _make_client("Bonjour monde")
     result = await translate_batch(client, ["Hello world", "This is a test"], "en", "fr")
     assert len(result) == 2
-    # Per-segment architecture: one call per input segment
-    assert client.chat.completions.create.await_count == 2
+    # Call-count semantics covered by dedicated batching tests below — this test
+    # only asserts length invariant.
 
 
 @pytest.mark.asyncio
@@ -446,12 +446,16 @@ async def test_translate_batch_dedupes_identical_segments():
     client = AsyncMock()
     client.chat.completions.create = AsyncMock(side_effect=capture)
 
-    # 4 segments, 2 unique non-passthrough values → 2 API calls only
+    # 4 segments, 2 unique non-passthrough values → sentinel-batched into 1 call
     result = await translate_batch(client, ["foo", "bar", "foo", "foo"], "en", "fr")
 
     assert result == ["FOO", "BAR", "FOO", "FOO"]
-    assert sorted(call_contents) == ["bar", "foo"]
-    assert client.chat.completions.create.await_count == 2
+    # Batching may pack both uniques into one call (joined by '|||') OR fall
+    # back to per-segment on small batches; either is correct as long as the
+    # unique set was sent exactly once each.
+    joined = "|||".join(call_contents)
+    assert "foo" in joined and "bar" in joined
+    assert client.chat.completions.create.await_count <= 2
 
 
 @pytest.mark.asyncio
@@ -466,7 +470,9 @@ async def test_translate_batch_dedup_with_passthrough_mix():
         call_contents.append(content)
         response = MagicMock()
         response.choices = [MagicMock()]
-        response.choices[0].message.content = f"<{content}>"
+        # Wrap each cell (preserves sentinel-joined batches)
+        parts = content.split("|||")
+        response.choices[0].message.content = "|||".join(f"<{p}>" for p in parts)
         response.usage = MagicMock(prompt_tokens=5, completion_tokens=5, total_tokens=10)
         return response
 
@@ -478,6 +484,147 @@ async def test_translate_batch_dedup_with_passthrough_mix():
     result = await translate_batch(client, segments, "en", "vi")
 
     assert result == ["  ", "<N/A>", "42", "<N/A>", "<Total>", "<N/A>", "<Total>"]
-    # Only "N/A" + "Total" reach the model — passthroughs skipped, repeats deduped
-    assert sorted(call_contents) == ["N/A", "Total"]
-    assert client.chat.completions.create.await_count == 2
+    # Only "N/A" + "Total" reach the model — passthroughs skipped, repeats deduped.
+    # Batching may pack both into 1 sentinel-joined call OR send them separately;
+    # either is correct as long as both uniques reached the model exactly once.
+    joined = "|||".join(call_contents)
+    assert "N/A" in joined and "Total" in joined
+    assert client.chat.completions.create.await_count <= 2
+
+
+# ---------------------------------------------------------------------------
+# Sentinel-batched packing — many short uniques compressed into few API calls.
+# Validated by spike 001 ('|||' survives qwen-mt-* round-trip on en/vi/ja/zh)
+# and spike 002 (escape with ⟦C{n}⟧, 20-cell stress, glossary cooperation).
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_translate_batch_packs_many_uniques_into_few_calls():
+    """30 short uniques should pack into ~2 batch calls instead of 30 per-segment calls."""
+    from app.llm.translator import translate_batch
+
+    call_inputs: list[str] = []
+
+    async def capture(**kwargs):
+        content = kwargs["messages"][0]["content"]
+        call_inputs.append(content)
+        # Simulate model: upper-case every cell, preserving the '|||' delimiters
+        parts = content.split("|||")
+        translated = "|||".join(p.upper() for p in parts)
+        response = MagicMock()
+        response.choices = [MagicMock()]
+        response.choices[0].message.content = translated
+        response.usage = MagicMock(prompt_tokens=10, completion_tokens=10, total_tokens=20)
+        return response
+
+    client = AsyncMock()
+    client.chat.completions.create = AsyncMock(side_effect=capture)
+
+    cells = [f"Item{i}" for i in range(30)]
+    result = await translate_batch(client, cells, "en", "vi")
+
+    assert result == [c.upper() for c in cells]
+    # 30 cells / batch size 20 → 2 batch calls. Old impl: 30 calls.
+    # Allow a small margin in case the impl picks slightly different batch size.
+    assert client.chat.completions.create.await_count <= 5, (
+        f"Expected few batched calls, got {client.chat.completions.create.await_count}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_translate_batch_count_mismatch_falls_back_to_per_segment():
+    """If model response sentinel count != input, fall back to per-segment for that batch."""
+    from app.llm.translator import translate_batch
+
+    call_inputs: list[str] = []
+
+    async def capture(**kwargs):
+        content = kwargs["messages"][0]["content"]
+        call_inputs.append(content)
+        response = MagicMock()
+        response.choices = [MagicMock()]
+        # First call is the sentinel-joined batch — return garbage with NO sentinels
+        if "|||" in content:
+            response.choices[0].message.content = "broken response"
+        else:
+            # Per-segment fallback — return uppercase per cell
+            response.choices[0].message.content = content.upper()
+        response.usage = MagicMock(prompt_tokens=5, completion_tokens=5, total_tokens=10)
+        return response
+
+    client = AsyncMock()
+    client.chat.completions.create = AsyncMock(side_effect=capture)
+
+    cells = ["foo", "bar", "baz"]
+    result = await translate_batch(client, cells, "en", "vi")
+
+    # Per-segment fallback recovers the right answer
+    assert result == ["FOO", "BAR", "BAZ"]
+    # 1 failed batch + 3 fallback = 4 calls
+    assert client.chat.completions.create.await_count == 4
+    # First call must have been the sentinel-joined batch
+    assert "|||" in call_inputs[0]
+
+
+@pytest.mark.asyncio
+async def test_translate_batch_escapes_literal_sentinel_in_cell_content():
+    """Cell containing literal '|||' is escaped before join; split + restore yields original."""
+    from app.llm.translator import translate_batch
+
+    received: list[str] = []
+
+    async def capture(**kwargs):
+        content = kwargs["messages"][0]["content"]
+        received.append(content)
+        response = MagicMock()
+        response.choices = [MagicMock()]
+        # Pass-through (no actual translation) so restore yields source verbatim
+        response.choices[0].message.content = content
+        response.usage = MagicMock(prompt_tokens=10, completion_tokens=10, total_tokens=20)
+        return response
+
+    client = AsyncMock()
+    client.chat.completions.create = AsyncMock(side_effect=capture)
+
+    # Middle cell contains a literal '|||' that must NOT split the batch
+    cells = ["Year", "Range |||x|||", "Total"]
+    result = await translate_batch(client, cells, "en", "vi")
+
+    # Output round-trip restores the original '|||' inside cell 1
+    assert result == ["Year", "Range |||x|||", "Total"]
+    # The single API call's input contains exactly 2 sentinels (between cells),
+    # the in-cell '|||' must be escaped to a different marker.
+    sent = received[0]
+    assert sent.count("|||") == 2, (
+        f"Expected 2 sentinels in batched input, got {sent.count('|||')}. "
+        f"Sent: {sent!r}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_translate_batch_glossary_propagates_to_batched_call():
+    """Glossary `terminology` API param applies even when uniques are sentinel-batched."""
+    from app.llm.translator import translate_batch
+
+    seen_opts: list[dict] = []
+
+    async def capture(**kwargs):
+        seen_opts.append(kwargs["extra_body"]["translation_options"])
+        response = MagicMock()
+        response.choices = [MagicMock()]
+        response.choices[0].message.content = kwargs["messages"][0]["content"]
+        response.usage = MagicMock(prompt_tokens=5, completion_tokens=5, total_tokens=10)
+        return response
+
+    client = AsyncMock()
+    client.chat.completions.create = AsyncMock(side_effect=capture)
+
+    await translate_batch(
+        client, ["Apple", "Orange", "Mango"], "en", "vi",
+        glossary={"Apple": "Táo Đỏ"},
+    )
+
+    assert seen_opts, "no API call was made"
+    opts = seen_opts[0]
+    assert "terms" in opts
+    assert any(t.get("source") == "Apple" and t.get("target") == "Táo Đỏ" for t in opts["terms"])
