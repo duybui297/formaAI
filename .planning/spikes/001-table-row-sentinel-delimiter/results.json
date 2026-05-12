@@ -1,0 +1,357 @@
+[
+  {
+    "sentinel": "⟦CELL⟧",
+    "survived_rows": 3,
+    "total_rows": 8,
+    "survival_rate": 0.375,
+    "rows": [
+      {
+        "label": "header_row",
+        "src": "en",
+        "tgt": "vi",
+        "in": "Year⟦CELL⟧Revenue⟦CELL⟧Growth",
+        "out": "Năm⟦Ô⟧Doanh thu⟦Ô⟧Tăng trưởng",
+        "expected_count": 2,
+        "actual_count": 0,
+        "survived": false
+      },
+      {
+        "label": "data_row_numeric",
+        "src": "en",
+        "tgt": "vi",
+        "in": "2023⟦CELL⟧100M⟦CELL⟧15%",
+        "out": "2023⟦TẾ BÀO⟧100 triệu⟦TẾ BÀO⟧15%",
+        "expected_count": 2,
+        "actual_count": 0,
+        "survived": false
+      },
+      {
+        "label": "data_row_short",
+        "src": "en",
+        "tgt": "vi",
+        "in": "N/A⟦CELL⟧Pending⟦CELL⟧—",
+        "out": "Không áp dụng⟦Ô⟧Đang chờ xử lý⟦Ô⟧—",
+        "expected_count": 2,
+        "actual_count": 0,
+        "survived": false
+      },
+      {
+        "label": "ja_header",
+        "src": "ja",
+        "tgt": "vi",
+        "in": "商品名⟦CELL⟧価格⟦CELL⟧在庫数",
+        "out": "Tên sản phẩm⟦CELL⟧Giá⟦CELL⟧Số lượng còn hàng",
+        "expected_count": 2,
+        "actual_count": 2,
+        "survived": true
+      },
+      {
+        "label": "ja_data",
+        "src": "ja",
+        "tgt": "vi",
+        "in": "りんご⟦CELL⟧150円⟦CELL⟧20個",
+        "out": "Táo⟦CELL⟧150 yên⟦CELL⟧20 quả",
+        "expected_count": 2,
+        "actual_count": 2,
+        "survived": true
+      },
+      {
+        "label": "vi_header",
+        "src": "vi",
+        "tgt": "en",
+        "in": "Sản phẩm⟦CELL⟧Giá⟦CELL⟧Số lượng",
+        "out": "Product⟦CELL⟧Price⟦CELL⟧Quantity",
+        "expected_count": 2,
+        "actual_count": 2,
+        "survived": true
+      },
+      {
+        "label": "en_to_ja_5cell",
+        "src": "en",
+        "tgt": "ja",
+        "in": "Apple⟦CELL⟧Orange⟦CELL⟧Banana⟦CELL⟧Grape⟦CELL⟧Mango",
+        "out": "リンゴ⟦細胞⟧オレンジ⟦細胞⟧バナナ⟦細胞⟧ブドウ⟦細胞⟧マンゴー",
+        "expected_count": 4,
+        "actual_count": 0,
+        "survived": false
+      },
+      {
+        "label": "zh_short",
+        "src": "zh",
+        "tgt": "vi",
+        "in": "年份⟦CELL⟧金额",
+        "out": "Năm⟦Ô⟧Số tiền",
+        "expected_count": 1,
+        "actual_count": 0,
+        "survived": false
+      }
+    ]
+  },
+  {
+    "sentinel": "|||",
+    "survived_rows": 8,
+    "total_rows": 8,
+    "survival_rate": 1.0,
+    "rows": [
+      {
+        "label": "header_row",
+        "src": "en",
+        "tgt": "vi",
+        "in": "Year|||Revenue|||Growth",
+        "out": "Năm|||Doanh thu|||Tăng trưởng",
+        "expected_count": 2,
+        "actual_count": 2,
+        "survived": true
+      },
+      {
+        "label": "data_row_numeric",
+        "src": "en",
+        "tgt": "vi",
+        "in": "2023|||100M|||15%",
+        "out": "2023|||100 triệu|||15%",
+        "expected_count": 2,
+        "actual_count": 2,
+        "survived": true
+      },
+      {
+        "label": "data_row_short",
+        "src": "en",
+        "tgt": "vi",
+        "in": "N/A|||Pending|||—",
+        "out": "Không áp dụng|||Đang chờ xử lý|||—",
+        "expected_count": 2,
+        "actual_count": 2,
+        "survived": true
+      },
+      {
+        "label": "ja_header",
+        "src": "ja",
+        "tgt": "vi",
+        "in": "商品名|||価格|||在庫数",
+        "out": "Tên sản phẩm|||Giá|||Số lượng hàng tồn kho",
+        "expected_count": 2,
+        "actual_count": 2,
+        "survived": true
+      },
+      {
+        "label": "ja_data",
+        "src": "ja",
+        "tgt": "vi",
+        "in": "りんご|||150円|||20個",
+        "out": "Táo|||150 yên|||20 quả",
+        "expected_count": 2,
+        "actual_count": 2,
+        "survived": true
+      },
+      {
+        "label": "vi_header",
+        "src": "vi",
+        "tgt": "en",
+        "in": "Sản phẩm|||Giá|||Số lượng",
+        "out": "Product|||Price|||Quantity",
+        "expected_count": 2,
+        "actual_count": 2,
+        "survived": true
+      },
+      {
+        "label": "en_to_ja_5cell",
+        "src": "en",
+        "tgt": "ja",
+        "in": "Apple|||Orange|||Banana|||Grape|||Mango",
+        "out": "リンゴ|||オレンジ|||バナナ|||ブドウ|||マンゴー",
+        "expected_count": 4,
+        "actual_count": 4,
+        "survived": true
+      },
+      {
+        "label": "zh_short",
+        "src": "zh",
+        "tgt": "vi",
+        "in": "年份|||金额",
+        "out": "Năm|||Số tiền",
+        "expected_count": 1,
+        "actual_count": 1,
+        "survived": true
+      }
+    ]
+  },
+  {
+    "sentinel": "<CELL>",
+    "survived_rows": 8,
+    "total_rows": 8,
+    "survival_rate": 1.0,
+    "rows": [
+      {
+        "label": "header_row",
+        "src": "en",
+        "tgt": "vi",
+        "in": "Year<CELL>Revenue<CELL>Growth",
+        "out": "Năm<CELL>Doanh thu<CELL>Tăng trưởng",
+        "expected_count": 2,
+        "actual_count": 2,
+        "survived": true
+      },
+      {
+        "label": "data_row_numeric",
+        "src": "en",
+        "tgt": "vi",
+        "in": "2023<CELL>100M<CELL>15%",
+        "out": "2023<CELL>100 triệu<CELL>15%",
+        "expected_count": 2,
+        "actual_count": 2,
+        "survived": true
+      },
+      {
+        "label": "data_row_short",
+        "src": "en",
+        "tgt": "vi",
+        "in": "N/A<CELL>Pending<CELL>—",
+        "out": "Không áp dụng<CELL>Đang chờ xử lý<CELL>—",
+        "expected_count": 2,
+        "actual_count": 2,
+        "survived": true
+      },
+      {
+        "label": "ja_header",
+        "src": "ja",
+        "tgt": "vi",
+        "in": "商品名<CELL>価格<CELL>在庫数",
+        "out": "Tên sản phẩm<CELL>Giá<CELL>Số lượng hàng có sẵn",
+        "expected_count": 2,
+        "actual_count": 2,
+        "survived": true
+      },
+      {
+        "label": "ja_data",
+        "src": "ja",
+        "tgt": "vi",
+        "in": "りんご<CELL>150円<CELL>20個",
+        "out": "Táo<CELL>150 yên<CELL>20 quả",
+        "expected_count": 2,
+        "actual_count": 2,
+        "survived": true
+      },
+      {
+        "label": "vi_header",
+        "src": "vi",
+        "tgt": "en",
+        "in": "Sản phẩm<CELL>Giá<CELL>Số lượng",
+        "out": "Product<CELL>Price<CELL>Quantity",
+        "expected_count": 2,
+        "actual_count": 2,
+        "survived": true
+      },
+      {
+        "label": "en_to_ja_5cell",
+        "src": "en",
+        "tgt": "ja",
+        "in": "Apple<CELL>Orange<CELL>Banana<CELL>Grape<CELL>Mango",
+        "out": "アップル<CELL>オレンジ<CELL>バナナ<CELL>グレープ<CELL>マンゴー",
+        "expected_count": 4,
+        "actual_count": 4,
+        "survived": true
+      },
+      {
+        "label": "zh_short",
+        "src": "zh",
+        "tgt": "vi",
+        "in": "年份<CELL>金额",
+        "out": "Năm<CELL> Số tiền",
+        "expected_count": 1,
+        "actual_count": 1,
+        "survived": true
+      }
+    ]
+  },
+  {
+    "sentinel": "\t",
+    "survived_rows": 4,
+    "total_rows": 8,
+    "survival_rate": 0.5,
+    "rows": [
+      {
+        "label": "header_row",
+        "src": "en",
+        "tgt": "vi",
+        "in": "Year\tRevenue\tGrowth",
+        "out": "Năm\tDoanh thu\tTăng trưởng",
+        "expected_count": 2,
+        "actual_count": 2,
+        "survived": true
+      },
+      {
+        "label": "data_row_numeric",
+        "src": "en",
+        "tgt": "vi",
+        "in": "2023\t100M\t15%",
+        "out": "2023\t100 triệu\t15%",
+        "expected_count": 2,
+        "actual_count": 2,
+        "survived": true
+      },
+      {
+        "label": "data_row_short",
+        "src": "en",
+        "tgt": "vi",
+        "in": "N/A\tPending\t—",
+        "out": "Không áp dụng\tĐang chờ xử lý\t—",
+        "expected_count": 2,
+        "actual_count": 2,
+        "survived": true
+      },
+      {
+        "label": "ja_header",
+        "src": "ja",
+        "tgt": "vi",
+        "in": "商品名\t価格\t在庫数",
+        "out": "Tên sản phẩm\tGiá cả\tSố lượng hàng tồn kho",
+        "expected_count": 2,
+        "actual_count": 2,
+        "survived": true
+      },
+      {
+        "label": "ja_data",
+        "src": "ja",
+        "tgt": "vi",
+        "in": "りんご\t150円\t20個",
+        "out": "Táo 150 yên 20 quả",
+        "expected_count": 2,
+        "actual_count": 0,
+        "survived": false
+      },
+      {
+        "label": "vi_header",
+        "src": "vi",
+        "tgt": "en",
+        "in": "Sản phẩm\tGiá\tSố lượng",
+        "out": null,
+        "err": "Error code: 429 - {'error': {'message': 'You have exceeded your current request limit. For details, see: https://www.alibabacloud.com/help/en/model-studio/error-code#rate-limit', 'type': 'limit_requests', 'param': None, 'code': 'limit_requests'}, 'request_id': '5a3dbd5f-ed74-93dc-9317-dd5fccddee4e'}",
+        "expected_count": 2,
+        "actual_count": -1,
+        "survived": false
+      },
+      {
+        "label": "en_to_ja_5cell",
+        "src": "en",
+        "tgt": "ja",
+        "in": "Apple\tOrange\tBanana\tGrape\tMango",
+        "out": null,
+        "err": "Error code: 429 - {'error': {'message': 'You have exceeded your current request limit. For details, see: https://www.alibabacloud.com/help/en/model-studio/error-code#rate-limit', 'type': 'limit_requests', 'param': None, 'code': 'limit_requests'}, 'request_id': '193cf10a-3823-9932-a9db-f4a4a1c93e19'}",
+        "expected_count": 4,
+        "actual_count": -1,
+        "survived": false
+      },
+      {
+        "label": "zh_short",
+        "src": "zh",
+        "tgt": "vi",
+        "in": "年份\t金额",
+        "out": null,
+        "err": "Error code: 429 - {'error': {'message': 'You have exceeded your current request limit. For details, see: https://www.alibabacloud.com/help/en/model-studio/error-code#rate-limit', 'type': 'limit_requests', 'param': None, 'code': 'limit_requests'}, 'request_id': '377a0f67-f210-985c-9f9b-63ae0a4e2d72'}",
+        "expected_count": 1,
+        "actual_count": -1,
+        "survived": false
+      }
+    ]
+  }
+]
