@@ -518,11 +518,16 @@ def extract_pdf_segments(doc: pymupdf.Document, job_id: str) -> list[Segment]:
                 table_block_bboxes.append(table_rect)
 
                 for r in range(table.row_count):
+                    row_obj = table.rows[r]
                     for c in range(table.col_count):
-                        cell_idx = r * table.col_count + c
-                        if cell_idx >= len(table.cells):
+                        if c >= len(row_obj.cells):
                             continue
-                        cell = table.cells[cell_idx]
+                        # CRITICAL: use `table.rows[r].cells[c]` — NOT
+                        # `table.cells[r * col_count + c]`. The flat `cells`
+                        # array is column-then-y sorted, so r*col+c returns a
+                        # stacked strip in column 0 for every (r,c), causing
+                        # extraction to emit wrong-rect segments.
+                        cell = row_obj.cells[c]
                         if cell is None:
                             continue  # merged cell — skip
                         cell_rect = pymupdf.Rect(cell)

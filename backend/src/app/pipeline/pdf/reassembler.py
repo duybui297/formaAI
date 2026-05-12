@@ -162,11 +162,17 @@ def reassemble_pdf(
             finder = page.find_tables()
             for t_idx, tbl in enumerate(finder.tables):
                 for r in range(tbl.row_count):
+                    row_obj = tbl.rows[r]
                     for c in range(tbl.col_count):
-                        cell_idx = r * tbl.col_count + c
-                        if cell_idx >= len(tbl.cells):
+                        if c >= len(row_obj.cells):
                             continue
-                        cell = tbl.cells[cell_idx]
+                        # CRITICAL: use `tbl.rows[r].cells[c]`, NOT
+                        # `tbl.cells[r * col_count + c]`. The flat cells
+                        # array is column-then-y sorted (see extractor for
+                        # full explanation). Must match extractor's walk
+                        # exactly so structural_positions resolve to the
+                        # same rects that produced the segment.
+                        cell = row_obj.cells[c]
                         if cell is None:
                             continue
                         pos_key = f"page.{page_num}.table.{t_idx}.row.{r}.col.{c}"

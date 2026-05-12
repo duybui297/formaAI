@@ -419,3 +419,85 @@ def test_table_cell_scale_low_resolves_overflow(tmp_path):
         f"insert_htmlbox called with scale_low > 0.3 for table_cell segment(s): {bad_scale_lows!r}. "
         "The table_cell path must use _TABLE_SCALE_LOW=0.3 to avoid blank cells (Bug 2)."
     )
+
+
+def test_table_cell_indexing_walks_by_row_not_flat_array(tmp_path):
+    """Regression: extractor must use `table.rows[r].cells[c]`, NOT the flat
+    `table.cells[r * col_count + c]` which is column-then-y sorted.
+
+    Build a 2-row × 3-col table with distinct content in each cell. After
+    extraction, each segment's source_text must match the cell at its claimed
+    (row, col) — proves the structural_position → cell_rect mapping is correct
+    end-to-end.
+
+    Before the fix on job 7f958166 (6-page native PDF, 672-cell table), 1378
+    table_cell segments emitted with `r*col+c` indexing pulled stacked-strip
+    rects from column 0 only — Pass 1 redaction wiped wrong areas, Pass 3
+    inserted translations into wrong cells.
+    """
+    import pymupdf
+    from app.pipeline.pdf.extractor import extract_pdf_segments
+
+    doc = pymupdf.open()
+    page = doc.new_page(width=500, height=300)
+    # Six distinct cells with unambiguous content
+    x0, y0 = 50.0, 50.0
+    col_w, row_h = 130.0, 60.0
+    layout = [
+        ("R0C0", x0 + 5,           y0 + 25),
+        ("R0C1", x0 + col_w + 5,   y0 + 25),
+        ("R0C2", x0 + 2*col_w + 5, y0 + 25),
+        ("R1C0", x0 + 5,           y0 + row_h + 25),
+        ("R1C1", x0 + col_w + 5,   y0 + row_h + 25),
+        ("R1C2", x0 + 2*col_w + 5, y0 + row_h + 25),
+    ]
+    for text, px, py in layout:
+        page.insert_text((px, py), text, fontsize=11)
+
+    # Vector borders so find_tables() detects the grid
+    shape = page.new_shape()
+    for r in range(3):
+        shape.draw_line((x0, y0 + r * row_h), (x0 + 3 * col_w, y0 + r * row_h))
+    for c in range(4):
+        shape.draw_line((x0 + c * col_w, y0), (x0 + c * col_w, y0 + 2 * row_h))
+    shape.finish(color=(0, 0, 0), width=0.5)
+    shape.commit()
+
+    src_path = str(tmp_path / "indexing_regression.pdf")
+    doc.save(src_path)
+
+    doc2 = pymupdf.open(src_path)
+    segments = extract_pdf_segments(doc2, "indexing-test")
+    table_segs = [s for s in segments if s.kind == "table_cell"]
+    if not table_segs:
+        pytest.skip("find_tables() did not detect table in synthetic PDF")
+
+    pos_to_text = {s.structural_position: s.source_text for s in table_segs}
+
+    # Under the bug, position 'row.0.col.2' would resolve to a stacked strip
+    # in column 0 — text would be 'R0C0' fragment, 'R0C1' fragment, or empty.
+    # After the fix, must match the actual (r, c) cell content.
+    expected = {
+        "page.0.table.0.row.0.col.0": "R0C0",
+        "page.0.table.0.row.0.col.1": "R0C1",
+        "page.0.table.0.row.0.col.2": "R0C2",
+        "page.0.table.0.row.1.col.0": "R1C0",
+        "page.0.table.0.row.1.col.1": "R1C1",
+        "page.0.table.0.row.1.col.2": "R1C2",
+    }
+    matched = 0
+    for pos, want in expected.items():
+        if pos in pos_to_text:
+            assert want in pos_to_text[pos], (
+                f"Cell at {pos} should contain {want!r} but got "
+                f"{pos_to_text[pos]!r}. The flat-array indexing bug "
+                "(table.cells[r*col+c]) returns a column-0 stacked strip "
+                "instead of the actual (r, c) cell."
+            )
+            matched += 1
+    # At least the off-diagonal cells (col != 0) must be present and correct —
+    # they are exactly the cells where the bug would produce wrong content.
+    assert matched >= 3, (
+        f"Expected at least 3 cells matched, got {matched}. "
+        "Bug-detection assertions never ran."
+    )
