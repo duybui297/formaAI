@@ -58,12 +58,15 @@ _PACE_SECONDS = float(_os.environ.get("DASHSCOPE_PACE_SECONDS", "1.2"))
 # model does NOT translate the token (no dictionary surface).
 _BATCH_SEP = "|||"
 
-# Max uniques per batched call. Spike 002 confirmed 20-cell rows preserve all
-# 19 sentinels en→ja with margin. Production target ~8 cells/row; we set the
-# generic-batch ceiling at 25 for a safety buffer while staying well under the
-# token-budget cap (~25 * 56 tok avg = 1400 tokens per call, under max_tokens).
-# Override via DASHSCOPE_BATCH_SIZE for tuning without code change.
-_BATCH_TARGET_SIZE = int(_os.environ.get("DASHSCOPE_BATCH_SIZE", "25"))
+# Max uniques per batched call. Empirically tuned: batch=25 produced ~24%
+# mismatch rate on job 84546d53 (model occasionally drops a sentinel between
+# adjacent short CJK cells). Drop probability is roughly independent per
+# sentinel, so larger batches multiply the failure chance.
+#   Batch 10 → ~9% mismatch (per-segment fallback for 9% of batches)
+#   Batch  5 → ~4% mismatch
+# Override via DASHSCOPE_BATCH_SIZE env. Smaller is safer at the cost of more
+# API calls; tune up if your model + language pair shows low drop rates.
+_BATCH_TARGET_SIZE = int(_os.environ.get("DASHSCOPE_BATCH_SIZE", "10"))
 
 
 def _nfc(s: str) -> str:
@@ -228,10 +231,14 @@ async def translate_batch(
 
         if len(parts) != len(cells):
             # Model drift — defensive fallback. Logged at WARN so operators can
-            # tune _BATCH_TARGET_SIZE if this fires frequently.
+            # tune _BATCH_TARGET_SIZE if this fires frequently. Input/output
+            # samples capped at 200 chars so logs don't explode on long cells.
+            joined_preview = joined[:200] + ("…" if len(joined) > 200 else "")
+            body_preview = (body or "")[:200] + ("…" if body and len(body) > 200 else "")
             logger.warning(
-                "batch_count_mismatch expected=%d got=%d, falling back per-segment",
-                len(cells), len(parts),
+                "batch_count_mismatch expected=%d got=%d, falling back per-segment "
+                "(joined=%r body=%r)",
+                len(cells), len(parts), joined_preview, body_preview,
             )
             return await asyncio.gather(*(_translate_single(c) for c in cells))
 
