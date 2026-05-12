@@ -6,15 +6,26 @@ without losing cell-level layout fidelity.
 | # | Spike | Status | Verdict |
 |---|-------|--------|---------|
 | 001 | Table row sentinel-delimiter survival | VALIDATED | GREEN — `\|\|\|` chosen, 100% survival across en/vi/ja/zh |
+| 002 | Sentinel edge cases — collision, scale, whitespace, glossary | VALIDATED | GREEN — escape with `⟦T{n}⟧`; 20-cell safe; whitespace caveat accepted |
 
-## Frontier candidates (not yet spiked)
+## Architecture decision (post-002)
 
-- **002 — Content collision + escape strategy:** verify behavior when cell
-  content contains the chosen `|||` sentinel literally; design escape /
-  pre-scan path.
-- **003 — Large-row stress:** translate a 20-cell row to confirm sentinel
-  count preservation scales beyond the 5-cell test ceiling.
-- **004 — Whitespace fidelity:** assert leading/trailing whitespace inside a
-  cell survives the join → translate → split round-trip.
-- **005 — Glossary interaction:** translate row with `terminology` API param
-  active; verify sentinel + terminology cooperate.
+Option A (row-level table segments with `|||` delimiter) is **green-lit**.
+Required machinery:
+
+1. **Extractor** — emit one `kind="table_row"` segment per row. Cell content
+   pre-escaped: any literal `|||` masked to `⟦T{n}⟧` placeholder. Cell rects
+   stored alongside (extend `structural_position` or new column).
+2. **Translator** — unchanged. Operates on opaque text per segment.
+3. **Reassembler** — split translated row by `|||`; restore `⟦T{n}⟧` placeholders
+   per cell; distribute cell strings to cell rects (existing Pass 3 table_cell
+   branch from phase 03.3).
+4. **DB schema** — may need a `cell_rects` JSON column on Segment, or encode
+   in `structural_position`.
+
+## Frontier candidates (not yet spiked, low priority)
+
+- **003 — Placeholder-namespace conflict:** verify behavior when a cell
+  contains BOTH literal `|||` AND a CORE-05 placeholder (URL/date). Plan a
+  `⟦C{n}⟧` vs `⟦T{n}⟧` namespace, or single shared counter. Deferred to
+  phase Task 1.

@@ -1,0 +1,98 @@
+[
+  {
+    "exp": "A_collision_no_escape",
+    "in": "Year|||Range |||x||||||Total",
+    "out": "Năm|||Phạm vi |||x||||||Tổng cộng",
+    "expected_parts": 3,
+    "actual_parts": 5,
+    "verdict": "CONFIRMED_COLLISION_HAZARD"
+  },
+  {
+    "exp": "A_collision_with_escape",
+    "in": "Year|||Range ⟦P0⟧x⟦P0⟧|||Total",
+    "out": "Năm|||Phạm vi ⟦P0⟧x⟦P0⟧|||Tổng cộng",
+    "expected_parts": 3,
+    "actual_parts": 3,
+    "restored_cells": [
+      "Năm",
+      "Phạm vi |||x|||",
+      "Tổng cộng"
+    ],
+    "placeholder_survived": false,
+    "verdict": "OK"
+  },
+  {
+    "exp": "B_20_cells",
+    "in_preview": "Item0|||Item1|||Item2|||Item3|||Item4|||Item5|||Item6|||Item7|||Item8|||Item9|||...",
+    "out_preview": "アイテム0|||アイテム1|||アイテム2|||アイテム3|||アイテム4|||アイテム5|||アイテム6|||アイテム7|||アイテム8|||アイテム9|||...",
+    "expected_count": 19,
+    "actual_count": 19,
+    "verdict": "OK"
+  },
+  {
+    "exp": "C_whitespace",
+    "in": "  Apple|||Orange |||  Banana  |||Grape",
+    "out": "Táo|||Cam |||  Chuối  |||Nho",
+    "parts": [
+      "Táo",
+      "Cam ",
+      "  Chuối  ",
+      "Nho"
+    ],
+    "table": [
+      {
+        "i": 0,
+        "orig_repr": "'  Apple'",
+        "trans_repr": "'Táo'",
+        "orig_leading": 2,
+        "trans_leading": 0,
+        "orig_trailing": 0,
+        "trans_trailing": 0
+      },
+      {
+        "i": 1,
+        "orig_repr": "'Orange '",
+        "trans_repr": "'Cam '",
+        "orig_leading": 0,
+        "trans_leading": 0,
+        "orig_trailing": 1,
+        "trans_trailing": 1
+      },
+      {
+        "i": 2,
+        "orig_repr": "'  Banana  '",
+        "trans_repr": "'  Chuối  '",
+        "orig_leading": 2,
+        "trans_leading": 2,
+        "orig_trailing": 2,
+        "trans_trailing": 2
+      },
+      {
+        "i": 3,
+        "orig_repr": "'Grape'",
+        "trans_repr": "'Nho'",
+        "orig_leading": 0,
+        "trans_leading": 0,
+        "orig_trailing": 0,
+        "trans_trailing": 0
+      }
+    ],
+    "leading_preserved": "3/4",
+    "trailing_preserved": "4/4",
+    "verdict": "FRAGILE"
+  },
+  {
+    "exp": "D_glossary",
+    "in": "Apple|||Orange|||Mango",
+    "out": "Táo Đỏ|||Cam|||Xoài",
+    "parts": [
+      "Táo Đỏ",
+      "Cam",
+      "Xoài"
+    ],
+    "expected_count": 2,
+    "actual_count": 2,
+    "glossary_term_present": true,
+    "verdict": "OK"
+  }
+]
