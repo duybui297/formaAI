@@ -418,3 +418,66 @@ async def test_translate_batch_core05_segment_without_placeholders_unchanged():
     assert "⟦T" not in captured[0]
     assert captured[0] == "Hello world"
     assert result == ["Xin chào"]
+
+
+# ---------------------------------------------------------------------------
+# Dedup — collapse identical non-passthrough segments to a single API call
+# Cuts cost + latency on table-heavy PDFs where headers/labels repeat (e.g.
+# job 7f958166 had 672-cell tables with many repeated short cells).
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_translate_batch_dedupes_identical_segments():
+    """Identical inputs trigger one API call per unique value, result broadcast back."""
+    from app.llm.translator import translate_batch
+
+    call_contents: list[str] = []
+
+    async def capture(**kwargs):
+        content = kwargs["messages"][0]["content"]
+        call_contents.append(content)
+        response = MagicMock()
+        response.choices = [MagicMock()]
+        # Mirror back upper-cased to prove broadcast wiring
+        response.choices[0].message.content = content.upper()
+        response.usage = MagicMock(prompt_tokens=5, completion_tokens=5, total_tokens=10)
+        return response
+
+    client = AsyncMock()
+    client.chat.completions.create = AsyncMock(side_effect=capture)
+
+    # 4 segments, 2 unique non-passthrough values → 2 API calls only
+    result = await translate_batch(client, ["foo", "bar", "foo", "foo"], "en", "fr")
+
+    assert result == ["FOO", "BAR", "FOO", "FOO"]
+    assert sorted(call_contents) == ["bar", "foo"]
+    assert client.chat.completions.create.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_translate_batch_dedup_with_passthrough_mix():
+    """Dedup + CORE-05 passthrough cooperate: passthroughs untouched, uniques deduped."""
+    from app.llm.translator import translate_batch
+
+    call_contents: list[str] = []
+
+    async def capture(**kwargs):
+        content = kwargs["messages"][0]["content"]
+        call_contents.append(content)
+        response = MagicMock()
+        response.choices = [MagicMock()]
+        response.choices[0].message.content = f"<{content}>"
+        response.usage = MagicMock(prompt_tokens=5, completion_tokens=5, total_tokens=10)
+        return response
+
+    client = AsyncMock()
+    client.chat.completions.create = AsyncMock(side_effect=capture)
+
+    # Mix: 2 passthroughs (whitespace, digit), 3 unique real values, with repeats
+    segments = ["  ", "N/A", "42", "N/A", "Total", "N/A", "Total"]
+    result = await translate_batch(client, segments, "en", "vi")
+
+    assert result == ["  ", "<N/A>", "42", "<N/A>", "<Total>", "<N/A>", "<Total>"]
+    # Only "N/A" + "Total" reach the model — passthroughs skipped, repeats deduped
+    assert sorted(call_contents) == ["N/A", "Total"]
+    assert client.chat.completions.create.await_count == 2

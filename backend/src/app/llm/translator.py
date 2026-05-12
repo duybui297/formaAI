@@ -79,6 +79,12 @@ async def translate_batch(
                URLs, emails, {{template_vars}}, ${vars}, ISO dates, and version
                strings are masked with ⟦T{n}⟧ markers before the model call and
                restored afterwards so they never get translated or hallucinated
+    - DEDUP:   identical (post-NFC) segments are translated exactly once and the
+               result is broadcast to every matching input index. Cuts cost +
+               latency on table-heavy docs where short labels ("N/A", "Total",
+               column headers) repeat across many cells. Passthroughs are
+               deduped trivially because _translate_one is deterministic for
+               them.
 
     Args:
         client: AsyncOpenAI instance pointed at DashScope intl endpoint
@@ -160,9 +166,18 @@ async def translate_batch(
         assert last_exc is not None
         raise last_exc
 
-    results = await asyncio.gather(*(_translate_one(seg) for seg in normalised))
+    # DEDUP: translate each unique post-NFC segment once, then broadcast back
+    # to every matching index. dict.fromkeys preserves first-seen order so
+    # passthroughs and real segments interleave naturally — order doesn't
+    # affect correctness (gather is awaited anyway) but keeps debugging sane.
+    unique_segments = list(dict.fromkeys(normalised))
+    translated_pairs = await asyncio.gather(
+        *(_translate_one(seg) for seg in unique_segments)
+    )
+    translation_map = dict(zip(unique_segments, translated_pairs))
+    results = [translation_map[seg] for seg in normalised]
 
-    # CORE-03 guarantee by construction — asyncio.gather preserves input order and
-    # length, and every coroutine returns exactly one str.
+    # CORE-03 guarantee by construction — every input index maps to exactly one
+    # entry in translation_map (dict lookup is total over normalised).
     assert len(results) == len(normalised), "translate_batch length invariant violated"
     return results
