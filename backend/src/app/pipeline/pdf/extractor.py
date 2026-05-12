@@ -509,14 +509,17 @@ def extract_pdf_segments(doc: pymupdf.Document, job_id: str) -> list[Segment]:
         # Runs before the non-table block walk. Collects table bbox regions so
         # that overlapping blocks can be filtered from the non-table walk, preventing
         # double-emission of table content.
-        table_block_bboxes: list[pymupdf.Rect] = []
+        #
+        # Filter is against CELL rects (not table bounding box) — find_tables()
+        # often returns a bbox that wraps the cells loosely, covering prose blocks
+        # that happen to fall inside the bbox but aren't cell content. Filtering by
+        # cell rects drops only the blocks that actually overlap a cell, so prose
+        # text inside the table bbox area still gets emitted as a text segment.
+        table_cell_rects: list[pymupdf.Rect] = []
 
         try:
             finder = page.find_tables()
             for table_idx, table in enumerate(finder.tables):
-                table_rect = pymupdf.Rect(table.bbox)
-                table_block_bboxes.append(table_rect)
-
                 for r in range(table.row_count):
                     row_obj = table.rows[r]
                     for c in range(table.col_count):
@@ -531,6 +534,7 @@ def extract_pdf_segments(doc: pymupdf.Document, job_id: str) -> list[Segment]:
                         if cell is None:
                             continue  # merged cell — skip
                         cell_rect = pymupdf.Rect(cell)
+                        table_cell_rects.append(cell_rect)
                         # Get cell text — page.get_textbox clips to the rect
                         raw = _nfc(page.get_textbox(cell_rect).strip())
                         if not raw:
@@ -549,16 +553,23 @@ def extract_pdf_segments(doc: pymupdf.Document, job_id: str) -> list[Segment]:
             _logging.getLogger(__name__).warning(
                 "find_tables() failed on page %d: %s", page_num, _table_exc
             )
-            table_block_bboxes = []  # reset so no blocks are filtered
+            table_cell_rects = []  # reset so no blocks are filtered
 
-        # Filter out blocks whose bbox intersects any detected table region.
-        # These blocks are already handled by the cell walk above (T-03.2-02-3).
+        # Filter out blocks whose bbox is contained in (or substantially
+        # overlaps) any cell rect — those blocks are already represented as
+        # table_cell segments. Block-vs-cell test uses centroid containment to
+        # avoid dropping prose blocks that only marginally touch a cell border.
+        def _block_inside_cell(block_bbox: tuple[float, float, float, float]) -> bool:
+            bx0, by0, bx1, by1 = block_bbox
+            cx, cy = (bx0 + bx1) / 2.0, (by0 + by1) / 2.0
+            for cr in table_cell_rects:
+                if cr.x0 <= cx <= cr.x1 and cr.y0 <= cy <= cr.y1:
+                    return True
+            return False
+
         non_table_blocks = [
             b for b in text_blocks
-            if not any(
-                pymupdf.Rect(b["bbox"]).intersects(tr)
-                for tr in table_block_bboxes
-            )
+            if not _block_inside_cell(b["bbox"])
         ]
 
         if not non_table_blocks:

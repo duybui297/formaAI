@@ -650,3 +650,56 @@ def test_zero_table_page_behavior_unchanged(single_col_pdf):
             f"No-table PDF segment has 'table.' in structural_position: "
             f"{seg.structural_position!r}"
         )
+
+
+def test_prose_blocks_inside_table_bbox_still_emitted_as_text(tmp_path):
+    """
+    Regression: find_tables() bbox often wraps adjacent prose blocks loosely.
+    Filtering by table bbox dropped those prose blocks entirely (no segment
+    emitted) → JA prose visible in output PDF because never redacted.
+
+    Build a page with a prose block ABOVE a small table where the table's
+    detected bbox might wrap upward enough to include the prose centroid.
+    Assert the prose block is emitted as a text segment.
+
+    Before the fix: prose dropped, only cell segments emitted.
+    After the fix: prose emitted (text kind) + cells emitted (table_cell kind).
+    """
+    import pymupdf
+    from app.pipeline.pdf.extractor import extract_pdf_segments
+
+    doc = pymupdf.open()
+    page = doc.new_page(width=400, height=400)
+    # Prose at top
+    page.insert_text((60, 70), "This is prose above the table", fontsize=11)
+    # Small table below
+    x0, y0 = 60.0, 120.0
+    col_w, row_h = 100.0, 30.0
+    for r in range(2):
+        for c in range(2):
+            page.insert_text((x0 + c * col_w + 5, y0 + r * row_h + 18),
+                             f"R{r}C{c}", fontsize=11)
+    shape = page.new_shape()
+    for r in range(3):
+        shape.draw_line((x0, y0 + r * row_h), (x0 + 2 * col_w, y0 + r * row_h))
+    for c in range(3):
+        shape.draw_line((x0 + c * col_w, y0), (x0 + c * col_w, y0 + 2 * row_h))
+    shape.finish(color=(0, 0, 0), width=0.5)
+    shape.commit()
+
+    src_path = str(tmp_path / "prose_plus_table.pdf")
+    doc.save(src_path)
+
+    doc2 = pymupdf.open(src_path)
+    segments = extract_pdf_segments(doc2, "prose-near-table")
+
+    prose_segs = [s for s in segments if "prose above" in s.source_text]
+    table_segs = [s for s in segments if s.kind == "table_cell"]
+
+    assert prose_segs, (
+        "Expected the prose-above-table block to emit as a text segment. "
+        "Filter must use cell-rect containment, not table-bbox intersection."
+    )
+    if table_segs:
+        # If find_tables() detected the grid, cells should also be present
+        assert any("R0C0" in s.source_text for s in table_segs)
