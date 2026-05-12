@@ -180,7 +180,12 @@ def test_reassembler_wraps_translated_html_in_block_size_div(tmp_path):
     pymupdf.Page.insert_htmlbox = spy
     try:
         out = str(tmp_path / "out.pdf")
-        reassemble_pdf(doc2, segments, {s.id: s.source_text for s in segments}, out, overflow_flags=[])
+        # Non-identity translation so identity-skip doesn't fire
+        reassemble_pdf(
+            doc2, segments,
+            {s.id: s.source_text + " translated" for s in segments},
+            out, overflow_flags=[],
+        )
     finally:
         pymupdf.Page.insert_htmlbox = real_insert
 
@@ -311,7 +316,8 @@ def test_table_cell_inset_prevents_word_adhesion(tmp_path):
             "find_tables() detected 0 table cells in synthetic PDF — synthetic environment limitation"
         )
 
-    translated_map = {s.id: s.source_text for s in segments}
+    # Non-identity translation: append a suffix so identity-skip doesn't fire
+    translated_map = {s.id: s.source_text + " X" for s in segments}
 
     # Spy on insert_htmlbox to capture rect arguments for table_cell segments
     captured_rects: list[pymupdf.Rect] = []
@@ -500,4 +506,168 @@ def test_table_cell_indexing_walks_by_row_not_flat_array(tmp_path):
     assert matched >= 3, (
         f"Expected at least 3 cells matched, got {matched}. "
         "Bug-detection assertions never ran."
+    )
+
+
+def _build_simple_table_pdf(tmp_path, n_rows=2, n_cols=3, row_h=30.0, col_w=120.0,
+                             cell_text=None):
+    """Helper: build a vector-bordered NxM table with given cell content."""
+    import pymupdf
+    doc = pymupdf.open()
+    page = doc.new_page(width=col_w * n_cols + 100, height=row_h * n_rows + 100)
+    x0, y0 = 50.0, 50.0
+    for r in range(n_rows):
+        for c in range(n_cols):
+            text = cell_text(r, c) if cell_text else f"R{r}C{c}"
+            page.insert_text((x0 + c * col_w + 5, y0 + r * row_h + 20), text, fontsize=11)
+    shape = page.new_shape()
+    for r in range(n_rows + 1):
+        shape.draw_line((x0, y0 + r * row_h), (x0 + n_cols * col_w, y0 + r * row_h))
+    for c in range(n_cols + 1):
+        shape.draw_line((x0 + c * col_w, y0), (x0 + c * col_w, y0 + n_rows * row_h))
+    shape.finish(color=(0, 0, 0), width=0.5)
+    shape.commit()
+    path = str(tmp_path / "table.pdf")
+    doc.save(path)
+    return path
+
+
+def test_table_cell_identity_translation_skips_both_redact_and_insert(tmp_path):
+    """A: when translated_text == source_text, skip both passes (source preserved)."""
+    import pymupdf
+    from app.pipeline.pdf.extractor import extract_pdf_segments
+    from app.pipeline.pdf.reassembler import reassemble_pdf
+
+    src = _build_simple_table_pdf(tmp_path, n_rows=2, n_cols=3)
+    doc = pymupdf.open(src)
+    segments = extract_pdf_segments(doc, "identity-skip")
+    table_segs = [s for s in segments if s.kind == "table_cell"]
+    if not table_segs:
+        pytest.skip("find_tables() did not detect table in synthetic PDF")
+
+    # Identity translation: translated == source verbatim for all segments
+    translated_map = {s.id: s.source_text for s in segments}
+
+    # Spy on insert_htmlbox + add_redact_annot
+    real_insert = pymupdf.Page.insert_htmlbox
+    real_redact = pymupdf.Page.add_redact_annot
+    insert_called: list = []
+    redact_called: list = []
+
+    def spy_insert(self, rect, html, **kw):
+        insert_called.append((rect, html))
+        return real_insert(self, rect, html, **kw)
+
+    def spy_redact(self, rect, **kw):
+        redact_called.append(rect)
+        return real_redact(self, rect, **kw)
+
+    pymupdf.Page.insert_htmlbox = spy_insert
+    pymupdf.Page.add_redact_annot = spy_redact
+    try:
+        overflow_flags: list[dict] = []
+        out = str(tmp_path / "out.pdf")
+        reassemble_pdf(doc, segments, translated_map, out, overflow_flags)
+    finally:
+        pymupdf.Page.insert_htmlbox = real_insert
+        pymupdf.Page.add_redact_annot = real_redact
+
+    # Identity → both passes skipped for every cell
+    assert insert_called == [], (
+        f"Expected NO insert_htmlbox calls for identity translation, got {len(insert_called)}"
+    )
+    assert redact_called == [], (
+        f"Expected NO add_redact_annot calls for identity translation, got {len(redact_called)}"
+    )
+
+
+def test_table_cell_adaptive_scale_low_chooses_higher_scale_for_short_text(tmp_path):
+    """D: short translation in a roomy cell uses scale_low > 0.3 (cleaner render)."""
+    import pymupdf
+    from app.pipeline.pdf.extractor import extract_pdf_segments
+    from app.pipeline.pdf.reassembler import reassemble_pdf
+
+    # Large cells, short translation
+    src = _build_simple_table_pdf(tmp_path, n_rows=2, n_cols=2, row_h=50.0, col_w=150.0)
+    doc = pymupdf.open(src)
+    segments = extract_pdf_segments(doc, "scale-short")
+    table_segs = [s for s in segments if s.kind == "table_cell"]
+    if not table_segs:
+        pytest.skip("find_tables() did not detect table")
+
+    # Short translation (different from source so identity-skip doesn't fire)
+    translated_map = {s.id: "Hi" for s in segments}
+
+    real_insert = pymupdf.Page.insert_htmlbox
+    captured_scales: list[float] = []
+
+    def spy(self, rect, html, **kw):
+        captured_scales.append(kw.get("scale_low", -1.0))
+        return real_insert(self, rect, html, **kw)
+
+    pymupdf.Page.insert_htmlbox = spy
+    try:
+        overflow_flags: list[dict] = []
+        reassemble_pdf(doc, segments, translated_map, str(tmp_path / "out.pdf"), overflow_flags)
+    finally:
+        pymupdf.Page.insert_htmlbox = real_insert
+
+    # Roomy cells with 2-char translation should pick scale_low well above 0.3.
+    assert captured_scales, "No insert_htmlbox calls captured"
+    assert all(s > 0.3 for s in captured_scales), (
+        f"Expected scale_low > 0.3 for short text in roomy cells, got {captured_scales}"
+    )
+
+
+def test_table_cell_translation_too_dense_skips_to_preserve_source(tmp_path):
+    """D: extremely long translation in a tiny cell triggers density-skip; both passes skipped."""
+    import pymupdf
+    from app.pipeline.pdf.extractor import extract_pdf_segments
+    from app.pipeline.pdf.reassembler import reassemble_pdf
+
+    # Small cells, very long translation
+    src = _build_simple_table_pdf(tmp_path, n_rows=2, n_cols=3, row_h=8.0, col_w=25.0)
+    doc = pymupdf.open(src)
+    segments = extract_pdf_segments(doc, "dense-skip")
+    table_segs = [s for s in segments if s.kind == "table_cell"]
+    if not table_segs:
+        pytest.skip("find_tables() did not detect table")
+
+    # Long translation per cell — won't fit at any reasonable scale
+    long_text = "A very long translated string that absolutely cannot fit " * 5
+    translated_map = {s.id: long_text for s in segments}
+
+    real_insert = pymupdf.Page.insert_htmlbox
+    real_redact = pymupdf.Page.add_redact_annot
+    insert_calls: list = []
+    redact_calls: list = []
+
+    def spy_insert(self, rect, html, **kw):
+        insert_calls.append(rect)
+        return real_insert(self, rect, html, **kw)
+
+    def spy_redact(self, rect, **kw):
+        redact_calls.append(rect)
+        return real_redact(self, rect, **kw)
+
+    pymupdf.Page.insert_htmlbox = spy_insert
+    pymupdf.Page.add_redact_annot = spy_redact
+    try:
+        overflow_flags: list[dict] = []
+        reassemble_pdf(doc, segments, translated_map, str(tmp_path / "out.pdf"), overflow_flags)
+    finally:
+        pymupdf.Page.insert_htmlbox = real_insert
+        pymupdf.Page.add_redact_annot = real_redact
+
+    # Density-skip → no redact, no insert. Source visible.
+    assert insert_calls == [], (
+        f"Expected NO insert when translation too dense, got {len(insert_calls)}"
+    )
+    assert redact_calls == [], (
+        f"Expected NO redact when translation too dense, got {len(redact_calls)}"
+    )
+    # And the reason should be flagged for observability
+    reasons = {f.get("reason") for f in overflow_flags}
+    assert any("dense" in (r or "") or "small" in (r or "") for r in reasons), (
+        f"Expected density-related overflow reason, got {reasons}"
     )

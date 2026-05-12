@@ -55,6 +55,74 @@ _TABLE_SCALE_LOW = 0.3
 # causes insert_htmlbox to return spare_height=-1 (blank cell) for JP→VN-expanded
 # text in 80-120 pt wide, 12-20 pt tall cells. 0.3 resolves all tested cases.
 # See Phase 03.3 RESEARCH.md — "Bug 2 — Blank cells from overflow".
+#
+# Adaptive scale_low replaces the fixed _TABLE_SCALE_LOW when computing per-cell
+# headroom — see _estimate_scale_for_fit below. _TABLE_SCALE_LOW remains as the
+# floor when the estimator says the cell is at the bottom of the range.
+
+# Minimum readable scale. Below this, insert_htmlbox would render glyphs so small
+# they're effectively invisible at typical screen / print DPI. When the estimator
+# computes a required scale below this floor, skip the cell entirely so that the
+# source text stays visible (graceful-degradation pattern from Phase 3.1).
+_MIN_ADAPTIVE_SCALE = 0.15
+
+# Geometry calibration for the adaptive-scale estimator. At a 12pt body font:
+#   - Latin glyph: ~6pt wide × 12pt tall  → aspect 0.5
+#   - line height: ~1.2 × font size       → 14.4pt per line at scale 1.0
+# At scale s, a single line needs `chars * body_pt * aspect * s` horizontal pt
+# and `body_pt * 1.2 * s` vertical pt. The estimator returns the smaller of the
+# two scale ceilings; the caller decides skip-vs-use based on the result.
+_GLYPH_ASPECT_RATIO = 0.5
+_LINE_HEIGHT_FACTOR = 1.2
+_DEFAULT_BODY_PT = 12.0
+
+
+def _is_identity_translation(source: str, translated: str | None) -> bool:
+    """
+    A: translation matches source verbatim (modulo whitespace) — no real
+    translation happened. Skip both Pass 1 redact and Pass 3 insert; source
+    stays visible.
+
+    Catches: Latin scientific names, ASCII filenames, color codes, numbers,
+    symbols like '〇' / '○'. These dominate dense data tables and are the
+    main contributors to blank-data-row complaints when the redact step
+    erases them without inserting a meaningful replacement.
+    """
+    if translated is None:
+        return True  # No translation produced → don't destroy source
+    return source.strip() == translated.strip()
+
+
+def _estimate_max_fitting_scale(
+    char_count: int,
+    rect_w: float,
+    rect_h: float,
+    body_pt: float = _DEFAULT_BODY_PT,
+) -> float:
+    """
+    D: estimate the maximum scale at which char_count fits in rect_w × rect_h
+    as a SINGLE LINE of text at body_pt font. Returns UNCLAMPED scale.
+
+    Two constraints, both must hold:
+      Width:  chars * body_pt * aspect * s  <=  rect_w
+              → s <= rect_w / (chars * body_pt * aspect)
+      Height: body_pt * line_factor * s      <=  rect_h
+              → s <= rect_h / (body_pt * line_factor)
+
+    Returns min(s_width, s_height). Caller interprets:
+      result >= 1.0  → text fits at full scale (use 0.7 ceiling for scale_low)
+      result <  _MIN_ADAPTIVE_SCALE → text too long for cell → SKIP (preserve src)
+      otherwise → use result as scale_low for insert_htmlbox
+
+    Single-line assumption is conservative: multi-line cells may fit more,
+    but PyMuPDF's wrap behaviour depends on font metrics — overflow detection
+    at insert time is the backup.
+    """
+    if rect_w <= 0 or rect_h <= 0 or char_count <= 0 or body_pt <= 0:
+        return 1.0
+    s_width = rect_w / (char_count * body_pt * _GLYPH_ASPECT_RATIO)
+    s_height = rect_h / (body_pt * _LINE_HEIGHT_FACTOR)
+    return min(s_width, s_height)
 
 
 def _clip_rect_away_from_images(
@@ -182,15 +250,29 @@ def reassemble_pdf(
             _sl.get_logger().warning("reassembler_find_tables_failed", page=page_num, error=str(exc))
 
         # Match segments to blocks. Partition into "active" (safe to redact +
-        # reinsert) and "skipped" (rect too small — leave source untranslated).
+        # reinsert) and "skipped" (rect too small / translation too dense /
+        # identity — leave source untranslated).
         # kind-aware dispatch:
         #   math_passthrough → skip entirely (source glyphs stay intact)
-        #   table_cell       → cell bbox from find_tables(); synthetic block dict
-        #   text (default)   → existing pos_to_block lookup (unchanged)
-        active_pairs: list[tuple[Segment, dict]] = []
+        #   identity         → skip entirely (translation == source; nothing to do)
+        #   table_cell       → cell bbox from find_tables(); adaptive scale_low
+        #   text (default)   → existing pos_to_block lookup
+        #
+        # Tuple shape: (Segment, block_dict, cell_scale_low) — Pass 3 reads
+        # cell_scale_low to pass into insert_htmlbox. Computed once during
+        # partition so Pass 3 doesn't re-derive it.
+        active_pairs: list[tuple[Segment, dict, float]] = []
         for seg in page_segs:
             # math_passthrough: skip both redact and reinsert — source page region stays intact
             if seg.kind == "math_passthrough":
+                continue
+
+            # A: identity translation — translation == source verbatim. Skip
+            # both passes so the source text stays visible (no need to redact
+            # then re-render identical content). Covers Latin scientific names,
+            # ASCII filenames, color codes, numbers, '〇' / '○' symbols.
+            translated = translated_map.get(seg.id)
+            if _is_identity_translation(seg.source_text, translated):
                 continue
 
             if seg.kind == "table_cell":
@@ -211,15 +293,39 @@ def reassemble_pdf(
                         "rect_height": round(rect_h, 2),
                     })
                     continue
-                # Create a minimal synthetic "block" dict compatible with Pass 1/3.
-                # bbox tuple (x0, y0, x1, y1) works with pymupdf.Rect(block["bbox"]).
-                # _body_font_size() returns 12.0 fallback for empty "lines" list —
-                # acceptable for table cells per CONTEXT.md deferred items.
+                # D: adaptive scale_low — estimate the MAX scale at which the
+                # translation can fit on one line. If below the readability
+                # floor, skip the cell entirely so the source stays visible.
+                max_fit_scale = _estimate_max_fitting_scale(
+                    len(translated or seg.source_text),
+                    rect_w,
+                    rect_h,
+                )
+                if max_fit_scale < _MIN_ADAPTIVE_SCALE:
+                    overflow_flags.append({
+                        "segment_id": seg.id,
+                        "overflow": True,
+                        "auto_adjusted": False,
+                        "scale_applied": round(max_fit_scale, 3),
+                        "reason": "translation_too_dense_for_cell",
+                        "rect_width": round(rect_w, 2),
+                        "rect_height": round(rect_h, 2),
+                    })
+                    continue
+                # Clamp the estimator's value into [_MIN_ADAPTIVE_SCALE, 0.7]
+                # and use as scale_low. PyMuPDF tries from scale=1.0 down to
+                # scale_low; setting the floor at our estimate keeps it from
+                # giving up too early, while 0.7 is the ceiling so plenty of
+                # roomy cells use a comfortable size.
+                cell_scale_low = max(
+                    _MIN_ADAPTIVE_SCALE,
+                    min(0.7, max_fit_scale),
+                )
                 synthetic_block = {
                     "bbox": (cell_rect.x0, cell_rect.y0, cell_rect.x1, cell_rect.y1),
                     "lines": [],
                 }
-                active_pairs.append((seg, synthetic_block))
+                active_pairs.append((seg, synthetic_block, cell_scale_low))
                 continue
 
             # Default: kind == "text" — existing pos_to_block lookup (unchanged)
@@ -242,7 +348,9 @@ def reassemble_pdf(
                     "rect_height": round(rect_h, 2),
                 })
                 continue
-            active_pairs.append((seg, block))
+            # Text blocks keep the fixed 0.7 scale_low — body text is sized via
+            # CSS at body_pt and the rect is sized to fit the original.
+            active_pairs.append((seg, block, 0.7))
 
         if not active_pairs:
             continue
@@ -251,7 +359,7 @@ def reassemble_pdf(
         # Pass 1: Mark ALL text blocks for redaction
         # Must precede apply_redactions — see RESEARCH.md Pitfall #3
         # ----------------------------------------------------------------
-        for _seg, block in active_pairs:
+        for _seg, block, _scale in active_pairs:
             rect = pymupdf.Rect(block["bbox"])
             # fill=None → transparent redaction (preserves background color/graphics)
             page.add_redact_annot(rect, fill=None)
@@ -273,7 +381,7 @@ def reassemble_pdf(
         # Gap 2 fix: clip rect away from adjacent images before inserting
         # NOTE: Pass 1 redaction still uses the ORIGINAL rect to fully erase source text.
         # ----------------------------------------------------------------
-        for seg, block in active_pairs:
+        for seg, block, adaptive_scale_low in active_pairs:
             translated_html = translated_map.get(seg.id, seg.source_text)
             rect = pymupdf.Rect(block["bbox"])
 
@@ -299,8 +407,9 @@ def reassemble_pdf(
                 })
                 continue
 
-            # Phase 03.3 fix: table_cell inserts use an inset rect (Bug 1)
-            # and a lower scale_low (Bug 2). The redact rect (Pass 1) is unchanged.
+            # Phase 03.3 fix: table_cell inserts use an inset rect (Bug 1).
+            # Phase 03.3 D-tuning: scale_low is per-cell adaptive (passed via
+            # active_pairs tuple). Text blocks use 0.7 (set during partition).
             if seg.kind == "table_cell":
                 insert_rect = safe_rect + (
                     _TABLE_CELL_INSET_PT, _TABLE_CELL_INSET_PT,
@@ -308,10 +417,9 @@ def reassemble_pdf(
                 )
                 if insert_rect.is_empty or insert_rect.width < 5 or insert_rect.height < 3:
                     insert_rect = safe_rect  # degenerate cell — skip inset
-                cell_scale_low = _TABLE_SCALE_LOW
             else:
                 insert_rect = safe_rect
-                cell_scale_low = 0.7
+            cell_scale_low = adaptive_scale_low
 
             try:
                 spare_height, scale = page.insert_htmlbox(
