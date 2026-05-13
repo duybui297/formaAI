@@ -94,6 +94,6 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-05-13
-Stopped at: Phase 03.3 stacked-merged to main; Phase 06 spec brief drafted
-Resume file: .planning/HANDOFF.md
-Next action: /gsd-spec-phase 06 (brief at .planning/phases/06-render-strategy-pipeline/06-SPEC-BRIEF.md)
+Stopped at: Phase 06 context gathered (SPEC.md + CONTEXT.md + DISCUSSION-LOG.md committed)
+Resume file: .planning/phases/06-render-strategy-pipeline/06-CONTEXT.md
+Next action: /gsd-plan-phase 06
