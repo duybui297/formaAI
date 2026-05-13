@@ -210,22 +210,13 @@ def reassemble_pdf(
             if b["type"] == 1
         ]
 
-        column_groups, is_degraded = cluster_columns(text_blocks, page.rect.width)
-
-        # Build a map from structural_position to block dict by reconstructing
-        # the same walk order as extract_pdf_segments()
-        pos_to_block: dict[str, dict] = {}
-        for col_idx, col_blocks in enumerate(column_groups):
-            for block_idx, block in enumerate(col_blocks):
-                if is_degraded:
-                    pos = f"page.{page_num}.block.{block_idx}"
-                else:
-                    pos = f"page.{page_num}.col.{col_idx}.block.{block_idx}"
-                pos_to_block[pos] = block
-
-        # Recover cell bboxes for table_cell segments by re-running find_tables()
-        # (same source doc, same page — table structure is stable between extract and reassemble)
+        # Recover cell bboxes for table_cell segments — must run BEFORE
+        # pos_to_block so we can filter non-table blocks the same way the
+        # extractor does. Walking cell rects first lets us mirror the
+        # extractor's centroid-in-cell-rect drop, keeping
+        # structural_position numbering aligned between extract and reassemble.
         table_cell_bboxes: dict[str, pymupdf.Rect] = {}
+        table_cell_rect_list: list[pymupdf.Rect] = []
         try:
             finder = page.find_tables()
             for t_idx, tbl in enumerate(finder.tables):
@@ -243,11 +234,42 @@ def reassemble_pdf(
                         cell = row_obj.cells[c]
                         if cell is None:
                             continue
+                        rect = pymupdf.Rect(cell)
                         pos_key = f"page.{page_num}.table.{t_idx}.row.{r}.col.{c}"
-                        table_cell_bboxes[pos_key] = pymupdf.Rect(cell)
+                        table_cell_bboxes[pos_key] = rect
+                        table_cell_rect_list.append(rect)
         except Exception as exc:  # noqa: BLE001
             import structlog as _sl  # noqa: PLC0415
             _sl.get_logger().warning("reassembler_find_tables_failed", page=page_num, error=str(exc))
+            table_cell_rect_list = []  # reset so block walk sees all blocks
+
+        # Filter text blocks the SAME way the extractor does (centroid-in-cell
+        # test). Without this, pos_to_block walks all 41 raw blocks while the
+        # extractor walks 25 filtered blocks, so structural_positions like
+        # `page.0.col.0.block.5` resolve to DIFFERENT rects → reassembler
+        # redacts wrong areas → source JA stays visible at the actual block
+        # positions while translation is inserted into unrelated rects.
+        def _block_inside_cell(block_bbox: tuple[float, float, float, float]) -> bool:
+            bx0, by0, bx1, by1 = block_bbox
+            cx, cy = (bx0 + bx1) / 2.0, (by0 + by1) / 2.0
+            for cr in table_cell_rect_list:
+                if cr.x0 <= cx <= cr.x1 and cr.y0 <= cy <= cr.y1:
+                    return True
+            return False
+
+        non_table_blocks = [b for b in text_blocks if not _block_inside_cell(b["bbox"])]
+        column_groups, is_degraded = cluster_columns(non_table_blocks, page.rect.width)
+
+        # Build a map from structural_position to block dict using the SAME
+        # filtered walk order as extract_pdf_segments()
+        pos_to_block: dict[str, dict] = {}
+        for col_idx, col_blocks in enumerate(column_groups):
+            for block_idx, block in enumerate(col_blocks):
+                if is_degraded:
+                    pos = f"page.{page_num}.block.{block_idx}"
+                else:
+                    pos = f"page.{page_num}.col.{col_idx}.block.{block_idx}"
+                pos_to_block[pos] = block
 
         # Match segments to blocks. Partition into "active" (safe to redact +
         # reinsert) and "skipped" (rect too small / translation too dense /

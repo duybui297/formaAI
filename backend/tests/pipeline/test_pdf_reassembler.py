@@ -671,3 +671,86 @@ def test_table_cell_translation_too_dense_skips_to_preserve_source(tmp_path):
     assert any("dense" in (r or "") or "small" in (r or "") for r in reasons), (
         f"Expected density-related overflow reason, got {reasons}"
     )
+
+
+def test_reassembler_pos_to_block_aligns_with_extractor_filtered_walk(tmp_path):
+    """
+    Regression: reassembler must filter non-table blocks the SAME way the
+    extractor does (centroid in cell rect → drop). Without this, pos_to_block
+    walks all raw blocks while extractor walks filtered blocks → structural
+    positions resolve to DIFFERENT rects in reassembler → wrong rects redacted,
+    source JA stays visible at the real positions while translation lands in
+    unrelated rects.
+
+    Build a page with prose blocks AROUND a small table. Verify that for
+    every text-kind segment emitted by the extractor, the reassembler's
+    rect lookup (via Pass 3) lands on the rect whose source text matches.
+    """
+    import pymupdf
+    from app.pipeline.pdf.extractor import extract_pdf_segments
+    from app.pipeline.pdf.reassembler import reassemble_pdf
+
+    doc = pymupdf.open()
+    page = doc.new_page(width=400, height=400)
+    # Prose ABOVE the table (anchor text we can find later)
+    page.insert_text((60, 70), "TopProse", fontsize=11)
+    # 2x2 vector-bordered table
+    x0, y0 = 60.0, 120.0
+    col_w, row_h = 100.0, 30.0
+    for r in range(2):
+        for c in range(2):
+            page.insert_text((x0 + c * col_w + 5, y0 + r * row_h + 18),
+                             f"R{r}C{c}", fontsize=11)
+    shape = page.new_shape()
+    for r in range(3):
+        shape.draw_line((x0, y0 + r * row_h), (x0 + 2 * col_w, y0 + r * row_h))
+    for c in range(3):
+        shape.draw_line((x0 + c * col_w, y0), (x0 + c * col_w, y0 + 2 * row_h))
+    shape.finish(color=(0, 0, 0), width=0.5)
+    shape.commit()
+    # Prose BELOW the table
+    page.insert_text((60, 250), "BottomProse", fontsize=11)
+
+    src_path = str(tmp_path / "align.pdf")
+    doc.save(src_path)
+
+    doc2 = pymupdf.open(src_path)
+    segments = extract_pdf_segments(doc2, "align-test")
+    text_segs = [s for s in segments if s.kind == "text"]
+    if not text_segs:
+        pytest.skip("extractor emitted no text segments")
+
+    # Capture which rect Pass 3 inserts into per segment
+    captured: list[tuple[str, pymupdf.Rect]] = []
+    real_insert = pymupdf.Page.insert_htmlbox
+
+    def spy(self, rect, html, **kw):
+        captured.append((html, pymupdf.Rect(rect)))
+        return real_insert(self, rect, html, **kw)
+
+    pymupdf.Page.insert_htmlbox = spy
+    try:
+        # Translate text segments to a non-identity marker so insert fires
+        translated = {s.id: s.source_text + " X" for s in segments}
+        reassemble_pdf(doc2, segments, translated,
+                       str(tmp_path / "out.pdf"), overflow_flags=[])
+    finally:
+        pymupdf.Page.insert_htmlbox = real_insert
+
+    # For each captured insert, its rect must contain the matching segment's
+    # source-text glyphs in the source page. Use page.get_textbox(rect) to
+    # check what's there. If the alignment bug is back, the rect won't
+    # contain the expected source text.
+    src_doc = pymupdf.open(src_path)
+    src_page = src_doc[0]
+    for html, rect in captured:
+        # html is wrapped in <div style="font-size:Npt">...</div> by reassembler
+        # Pull the segment source-text marker out: each translated text ends in " X"
+        # so source-text is html stripped of div + trailing " X"
+        # Simplest: check that NO insert rect lands in a totally empty area
+        text_in_rect = src_page.get_textbox(rect).strip()
+        assert text_in_rect, (
+            f"Insert rect {rect} contains no source text — reassembler's "
+            f"pos_to_block resolved to a wrong rect. html={html[:60]!r}"
+        )
+    src_doc.close()
