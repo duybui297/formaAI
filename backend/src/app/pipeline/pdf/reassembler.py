@@ -101,28 +101,48 @@ def _estimate_max_fitting_scale(
 ) -> float:
     """
     D: estimate the maximum scale at which char_count fits in rect_w × rect_h
-    as a SINGLE LINE of text at body_pt font. Returns UNCLAMPED scale.
+    when allowed to wrap into multiple lines at body_pt font. Returns
+    UNCLAMPED scale.
 
-    Two constraints, both must hold:
-      Width:  chars * body_pt * aspect * s  <=  rect_w
-              → s <= rect_w / (chars * body_pt * aspect)
-      Height: body_pt * line_factor * s      <=  rect_h
-              → s <= rect_h / (body_pt * line_factor)
+    Multi-line capacity at scale s:
+        chars_per_line(s) = rect_w / (body_pt * aspect * s)
+        lines_possible(s) = rect_h / (body_pt * line_factor * s)
+        total_chars_fit(s) = chars_per_line × lines_possible
+                            = (rect_w * rect_h) / (s² * body_pt² * aspect * line_factor)
 
-    Returns min(s_width, s_height). Caller interprets:
+    Solve total_chars_fit(s) >= char_count for s:
+        s² <= (rect_w * rect_h) / (char_count * body_pt² * aspect * line_factor)
+        s_max = sqrt(rect_w * rect_h / (char_count * body_pt² * aspect * line_factor))
+
+    Plus a single-line width floor: if the cell is very short (< one full
+    line of body text), it can hold at most one line — so scale is also
+    constrained by `chars * body_pt * aspect * s <= rect_w`. This catches
+    cells where rect_h < body_pt * line_factor (no room for line wrap).
+
+    Caller interprets:
       result >= 1.0  → text fits at full scale (use 0.7 ceiling for scale_low)
       result <  _MIN_ADAPTIVE_SCALE → text too long for cell → SKIP (preserve src)
       otherwise → use result as scale_low for insert_htmlbox
 
-    Single-line assumption is conservative: multi-line cells may fit more,
-    but PyMuPDF's wrap behaviour depends on font metrics — overflow detection
-    at insert time is the backup.
+    Multi-line model fixes the bug where tall cells with wrap-friendly text
+    were skipped because single-line geometry alone said the text couldn't fit
+    horizontally — PyMuPDF's insert_htmlbox wraps automatically when given
+    sufficient vertical room.
     """
     if rect_w <= 0 or rect_h <= 0 or char_count <= 0 or body_pt <= 0:
         return 1.0
-    s_width = rect_w / (char_count * body_pt * _GLYPH_ASPECT_RATIO)
-    s_height = rect_h / (body_pt * _LINE_HEIGHT_FACTOR)
-    return min(s_width, s_height)
+    # Cell that can't fit even ONE line of body text (rect_h < line height at
+    # scale 1.0) → fall back to single-line model where the cell hosts a single
+    # shrunken line. Otherwise multi-line model applies.
+    one_line_height = body_pt * _LINE_HEIGHT_FACTOR
+    if rect_h < one_line_height:
+        # Single-line regime: width AND height both bind to one line
+        s_width = rect_w / (char_count * body_pt * _GLYPH_ASPECT_RATIO)
+        s_height = rect_h / one_line_height
+        return min(s_width, s_height)
+    # Multi-line regime: total_chars_fit constraint
+    denom = char_count * body_pt * body_pt * _GLYPH_ASPECT_RATIO * _LINE_HEIGHT_FACTOR
+    return (rect_w * rect_h / denom) ** 0.5
 
 
 def _clip_rect_away_from_images(
@@ -334,6 +354,23 @@ def reassemble_pdf(
                         "rect_height": round(rect_h, 2),
                     })
                     continue
+                # B: pre-check image-clip — if the rect collapses below the
+                # min-rect-size after clipping away from adjacent images, skip
+                # BOTH passes now so Pass 1 doesn't erase source text only for
+                # Pass 3 to bail at the image_collision check.
+                clipped_rect = _clip_rect_away_from_images(cell_rect, image_rects)
+                if (clipped_rect.height < _MIN_RECT_HEIGHT_PT
+                        or clipped_rect.width < _MIN_RECT_WIDTH_PT):
+                    overflow_flags.append({
+                        "segment_id": seg.id,
+                        "overflow": True,
+                        "auto_adjusted": False,
+                        "scale_applied": 0.0,
+                        "reason": "image_collision",
+                        "rect_width": round(clipped_rect.width, 2),
+                        "rect_height": round(clipped_rect.height, 2),
+                    })
+                    continue
                 # Clamp the estimator's value into [_MIN_ADAPTIVE_SCALE, 0.7]
                 # and use as scale_low. PyMuPDF tries from scale=1.0 down to
                 # scale_low; setting the floor at our estimate keeps it from
@@ -392,6 +429,25 @@ def reassemble_pdf(
                     "reason": "translation_too_dense_for_block",
                     "rect_width": round(rect_w, 2),
                     "rect_height": round(rect_h, 2),
+                })
+                continue
+            # B: pre-check image-clip — same protection as table_cell branch.
+            # Without this, Pass 1 redacts the block then Pass 3 image_collision
+            # check bails → block becomes blank in output (caption disappearance
+            # bug on page 5 of job 9fc558a0).
+            clipped_block_rect = _clip_rect_away_from_images(
+                pymupdf.Rect(bbox), image_rects,
+            )
+            if (clipped_block_rect.height < _MIN_RECT_HEIGHT_PT
+                    or clipped_block_rect.width < _MIN_RECT_WIDTH_PT):
+                overflow_flags.append({
+                    "segment_id": seg.id,
+                    "overflow": True,
+                    "auto_adjusted": False,
+                    "scale_applied": 0.0,
+                    "reason": "image_collision",
+                    "rect_width": round(clipped_block_rect.width, 2),
+                    "rect_height": round(clipped_block_rect.height, 2),
                 })
                 continue
             text_scale_low = max(_MIN_ADAPTIVE_SCALE, min(0.7, max_fit_scale))

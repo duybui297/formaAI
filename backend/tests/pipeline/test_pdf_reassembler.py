@@ -418,12 +418,15 @@ def test_table_cell_scale_low_resolves_overflow(tmp_path):
 
     assert captured_scale_lows, "insert_htmlbox should have been called at least once"
 
-    # Assert: all table_cell insert_htmlbox calls use scale_low <= 0.3
-    # Before the fix, scale_low=0.7 is passed — this assertion will FAIL (RED state).
-    bad_scale_lows = [sl for sl in captured_scale_lows if sl > 0.3]
-    assert not bad_scale_lows, (
-        f"insert_htmlbox called with scale_low > 0.3 for table_cell segment(s): {bad_scale_lows!r}. "
-        "The table_cell path must use _TABLE_SCALE_LOW=0.3 to avoid blank cells (Bug 2)."
+    # Phase 03.3 + adaptive: table_cell insert_htmlbox calls must use scale_low
+    # below the old 0.7 ceiling so VI-expanded text has room to shrink. With the
+    # adaptive estimator the exact value depends on cell geometry × translation
+    # length — any value strictly < 0.7 proves the per-cell adaptation kicked
+    # in. Before Phase 03.3 the fixed 0.7 floor produced blank cells.
+    too_high = [sl for sl in captured_scale_lows if sl >= 0.7]
+    assert not too_high, (
+        f"insert_htmlbox called with scale_low >= 0.7 for table_cell segment(s): {too_high!r}. "
+        "Adaptive scale_low must use a per-cell value below 0.7 for VI-expanded text."
     )
 
 
@@ -634,7 +637,9 @@ def test_table_cell_translation_too_dense_skips_to_preserve_source(tmp_path):
         pytest.skip("find_tables() did not detect table")
 
     # Long translation per cell — won't fit at any reasonable scale
-    long_text = "A very long translated string that absolutely cannot fit " * 5
+    # Truly too dense for any cell: 50× repetition exceeds even multi-line
+    # capacity at the smallest readable scale (0.15).
+    long_text = "A very long translated string that absolutely cannot fit " * 50
     translated_map = {s.id: long_text for s in segments}
 
     real_insert = pymupdf.Page.insert_htmlbox
@@ -754,3 +759,51 @@ def test_reassembler_pos_to_block_aligns_with_extractor_filtered_walk(tmp_path):
             f"pos_to_block resolved to a wrong rect. html={html[:60]!r}"
         )
     src_doc.close()
+
+
+def test_adaptive_scale_uses_multi_line_for_tall_cells(tmp_path):
+    """
+    Regression: tall cells must allow multi-line text wrap, not be evaluated
+    as single-line-only. Without multi-line geometry a 424×148pt cell with
+    a long VI translation got s_width=0.106 → density-skip → source kept JA.
+    Multi-line: s = sqrt(area / (chars × 86.4)) ≈ 0.96 → fits at 0.7
+    (job 9fc558a0 page 1 RGB-block bug).
+    """
+    from app.pipeline.pdf.reassembler import _estimate_max_fitting_scale
+
+    # 424 × 148pt cell, 665 chars (matches job 9fc558a0 page.0.table.0.row.1.col.1)
+    scale = _estimate_max_fitting_scale(665, 424.0, 147.72, body_pt=12.0)
+    assert scale >= 0.8, (
+        f"Multi-line tall-cell case expected scale ≥ 0.8 (single-line bug "
+        f"returned 0.106). Got {scale:.3f}"
+    )
+
+    # Tiny cell (height < line height) still constrained by single-line
+    scale_tiny = _estimate_max_fitting_scale(100, 50.0, 5.0, body_pt=12.0)
+    assert scale_tiny < 0.2, (
+        f"Single-line tiny-cell case expected scale < 0.2, got {scale_tiny:.3f}"
+    )
+
+
+def test_image_collision_clip_returns_smaller_rect(tmp_path):
+    """
+    Unit test for _clip_rect_away_from_images: when an image overlaps a text
+    rect from the right, the text rect is clipped to the image's left edge.
+    Used by the partition-time pre-check (job 9fc558a0 page 5 caption fix).
+    """
+    import pymupdf
+    from app.pipeline.pdf.reassembler import _clip_rect_away_from_images
+
+    text_rect = pymupdf.Rect(50, 100, 400, 130)
+    # Image overlaps from the right, leaving only ~10pt of horizontal room
+    image_rect = pymupdf.Rect(60, 90, 500, 140)
+
+    clipped = _clip_rect_away_from_images(text_rect, [image_rect])
+    assert clipped.width < text_rect.width, (
+        f"Expected clip to shrink rect; got width {clipped.width:.1f} "
+        f"vs original {text_rect.width:.1f}"
+    )
+    # Specifically: clipped.x1 should be at image.x0
+    assert abs(clipped.x1 - image_rect.x0) < 0.5, (
+        f"Expected clipped.x1 ≈ image.x0={image_rect.x0}, got {clipped.x1}"
+    )
