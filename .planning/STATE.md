@@ -86,10 +86,14 @@ None yet.
 
 | Category | Item | Status | Deferred At |
 |----------|------|--------|-------------|
-| *(none)* | | | |
+| Caption-near-image | source preserved; not translated to target | Phase 06 (RENDER_BELOW_RECT strategy) | 2026-05-13 |
+| Text formatting (color/bold/italic/font) | not preserved across pages | Phase 07 (post Phase 06) | 2026-05-13 |
+| CJK→Latin 5–9× expansion overflow | 450 cells in job e1dcbbf1 | Phase 06 (SHRINK_IN_PLACE strategy) | 2026-05-13 |
+| Speech-bubble OCR fallback | image-baked text invisible to PyMuPDF | future phase | 2026-05-12 |
 
 ## Session Continuity
 
-Last session: 2026-04-28T14:17:47.309Z
-Stopped at: Phase 4 UI-SPEC approved
-Resume file: .planning/phases/04-scanned-pdf-ocr/04-UI-SPEC.md
+Last session: 2026-05-13
+Stopped at: Phase 03.3 stacked-merged to main; Phase 06 spec brief drafted
+Resume file: .planning/HANDOFF.md
+Next action: /gsd-spec-phase 06 (brief at .planning/phases/06-render-strategy-pipeline/06-SPEC-BRIEF.md)

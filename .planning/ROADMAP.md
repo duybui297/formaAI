@@ -162,6 +162,17 @@ Plans:
 - [x] 04-04-PLAN.md — Frontend OCR UI: confidence chip, image preview, source edit, banner, download menu
 - [x] 04-05-PLAN.md — Integration tests, round-trip tests, coverage gate (80%)
 
+### Phase 6: Generic Render-Strategy Pipeline (PROPOSED)
+**Goal**: Replace the single PDF render path (redact + insert_htmlbox with adaptive scale_low) with a strategy chain — IDENTITY → SHRINK_IN_PLACE (dry-run-measured) → WRAP_MULTI_LINE → EXPAND_VERTICAL → RENDER_BELOW_RECT → RENDER_IN_MARGIN → PRESERVE_SOURCE — so every cell terminates in a named strategy outcome with no `overflow warn (no reason)` flags. Generalizes across native PDFs of any doc class: addresses CJK→Latin 5–9× expansion, captions next to images, tall cells with short text, and future doc types via new strategies (no core-loop changes).
+**Depends on**: Phase 4 (or Phase 3) — phase-03.3 deferred items D-1 + D-3 close as side effect.
+**Requirements**: PDF-10 (new — strategy pipeline), LAYOUT-04 (new — explicit strategy_used flag for observability)
+**Success Criteria** (what must be TRUE):
+  1. Per-segment rendering goes through a strategy chain; adding a new strategy is a small isolated change, the core loop doesn't change
+  2. Demo jobs (`7f958166`, `b425150a`, `e1dcbbf1`, `9fc558a0`, `0989b344`) — zero cells in `overflow warn (no reason)` bucket; every cell terminates in an explicit strategy with strategy_used flag
+  3. Wallclock < 2× baseline on the 1409-segment demo job
+**Plans**: TBD (see `06-SPEC-BRIEF.md` for proposed 6-plan breakdown)
+**Pre-spec brief**: `.planning/phases/06-render-strategy-pipeline/06-SPEC-BRIEF.md`
+
 ### Phase 5: Demo Hardening
 **Goal**: The demo is hardened for the AICore presentation: a curated set of real documents is pre-translated as a backup, a smoke script validates the full stack is live, and a README + one-page walkthrough ensures Thu can run the demo confidently without debugging on stage. This is the go/no-go gate.
 **Depends on**: Phase 4 (or Phase 3 if Phase 4 slips)
