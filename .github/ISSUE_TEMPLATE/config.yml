@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 📖 Onboarding docs
+    url: https://github.com/<org>/ai-translation/blob/main/docs/onboarding/README.md
+    about: Câu hỏi setup, workflow, deploy — đọc onboarding trước
+  - name: 🏛 Architecture Decision Records
+    url: https://github.com/<org>/ai-translation/blob/main/docs/decisions/README.md
+    about: Câu hỏi "tại sao chọn X" — kiểm tra ADRs trước
+  - name: 📜 Constitution
+    url: https://github.com/<org>/ai-translation/blob/main/.specify/memory/constitution.md
+    about: 5 nguyên tắc không thương lượng của project
