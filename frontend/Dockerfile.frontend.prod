@@ -1,0 +1,68 @@
+# ==============================================================================
+# Production Next.js image — multi-stage build.
+#
+# Stages:
+#   1. deps    — install node_modules from lockfile (cache layer)
+#   2. builder — run `next build` to produce .next/
+#   3. runner  — minimal runtime image, copies build output + deps
+#
+# Build:
+#   docker build -f Dockerfile.frontend.prod -t ai-translation-frontend:prod .
+#
+# Run (typically via docker-compose.prod.yml):
+#   docker run -p 3000:3000 ai-translation-frontend:prod
+# ==============================================================================
+
+# ---- 1. deps ---------------------------------------------------------------
+FROM node:20-alpine AS deps
+WORKDIR /frontend
+
+# Install only what's needed to resolve native deps (sharp, etc.)
+RUN apk add --no-cache libc6-compat
+
+COPY package.json package-lock.json* ./
+RUN npm ci
+
+# ---- 2. builder ------------------------------------------------------------
+FROM node:20-alpine AS builder
+WORKDIR /frontend
+
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+
+COPY --from=deps /frontend/node_modules ./node_modules
+COPY . .
+
+# BACKEND_URL is only used at request time by the rewrite rule, not baked in.
+# NEXT_PUBLIC_* vars ARE baked in at build time — leave empty so client uses
+# relative /api/* paths (nginx routes /api/ → api container).
+ENV NEXT_PUBLIC_API_URL=""
+
+RUN npm run build
+
+# ---- 3. runner -------------------------------------------------------------
+FROM node:20-alpine AS runner
+WORKDIR /frontend
+
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV PORT=3000
+ENV HOSTNAME=0.0.0.0
+
+# Run as non-root for safety
+RUN addgroup --system --gid 1001 nodejs \
+ && adduser --system --uid 1001 --ingroup nodejs nextjs
+
+# Copy the built app + runtime deps. Not using `output: 'standalone'` so we
+# bring the whole node_modules — simpler, slightly larger image (~600MB).
+# Switch to standalone in next.config.mjs if image size matters.
+COPY --from=builder --chown=nextjs:nodejs /frontend/.next ./.next
+COPY --from=builder --chown=nextjs:nodejs /frontend/public ./public
+COPY --from=builder --chown=nextjs:nodejs /frontend/node_modules ./node_modules
+COPY --from=builder --chown=nextjs:nodejs /frontend/package.json ./package.json
+COPY --from=builder --chown=nextjs:nodejs /frontend/next.config.mjs ./next.config.mjs
+
+USER nextjs
+EXPOSE 3000
+
+CMD ["npm", "run", "start"]
