@@ -1,0 +1,117 @@
+# ==============================================================================
+# Production compose — for VM / single-host deployment behind nginx.
+#
+# Differences vs docker-compose.yml (dev):
+#   - No bind mounts on source code (image is the source of truth)
+#   - No --reload on uvicorn
+#   - Next.js runs `npm run start` (built artifact), not `npm run dev`
+#   - All ports bound to 127.0.0.1 (nginx is the only public entry)
+#   - restart: unless-stopped on every service
+#   - Healthchecks on postgres + redis + api
+#   - .data is a bind mount to a controlled host path (survives `down -v`)
+#
+# Usage:
+#   docker compose -f docker-compose.prod.yml up -d --build
+#   docker compose -f docker-compose.prod.yml exec api alembic upgrade head
+#
+# Adjust ports in the .env file (PROD_WEB_PORT, PROD_API_PORT, ...) if 7100-7103
+# conflict with other services on this host.
+# ==============================================================================
+
+x-backend-base: &backend-base
+  image: ai-translation-backend:prod
+  env_file: .env
+  environment:
+    - DATA_DIR=/data
+  volumes:
+    - ./.data:/data
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+  restart: unless-stopped
+
+services:
+  api:
+    <<: *backend-base
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2
+    ports:
+      - "127.0.0.1:${PROD_API_PORT:-7101}:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health', timeout=3).status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  worker:
+    <<: *backend-base
+    # Same build context/dockerfile as api → buildx dedupes; image tag matches
+    # the anchor's `image:` so worker reuses api's layers.
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    pull_policy: never
+    command: arq app.workers.translate_worker.WorkerSettings
+
+  web:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.frontend.prod
+    image: ai-translation-frontend:prod
+    environment:
+      # Browser-facing — leave empty so the frontend uses same-origin /api/*
+      # (nginx routes /api/ → api container). If you want absolute URLs in
+      # client bundles, set to: https://your-domain.example.com
+      - NEXT_PUBLIC_API_URL=
+      # Server-side rewrite target (only used if Next ever proxies /api/ itself;
+      # nginx handles /api/ directly in prod, so this is a fallback)
+      - BACKEND_URL=http://api:8000
+      - NODE_ENV=production
+      - NEXT_TELEMETRY_DISABLED=1
+    ports:
+      - "127.0.0.1:${PROD_WEB_PORT:-7100}:3000"
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: aitranslation
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    ports:
+      # Bind to loopback so the host's other postgres (aicoresolution-db-prod
+      # on 5432) does not conflict and this DB is not exposed publicly.
+      - "127.0.0.1:${PROD_DB_PORT:-7102}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d aitranslation"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    ports:
+      - "127.0.0.1:${PROD_REDIS_PORT:-7103}:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  redisdata:
