@@ -2,6 +2,7 @@ import type { Metadata } from "next"
 import { Inter, Roboto, Montserrat, JetBrains_Mono } from "next/font/google"
 import "./globals.css"
 import { QueryProvider } from "@/components/providers/query-provider"
+import { AppSidebar } from "@/components/layout/AppSidebar"
 import { Toaster } from "@/components/ui/toaster"
 
 // Inter with latin + vietnamese subsets for diacritics (UI-SPEC typography)
@@ -45,7 +46,9 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${roboto.variable} ${montserrat.variable} ${jetbrainsMono.variable}`}>
       <body className={`${inter.variable} font-sans antialiased`}>
-        <QueryProvider>{children}</QueryProvider>
+        <QueryProvider>
+          <AppSidebar>{children}</AppSidebar>
+        </QueryProvider>
         <Toaster />
       </body>
     </html>

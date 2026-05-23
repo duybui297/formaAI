@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest"
 import { render, screen } from "@testing-library/react"
 // FlagBadge.tsx will be extended in Plan 05/06 to support smartart + multi_column_degraded
-import { FlagBadge } from "@/components/FlagBadge"
+import { FlagBadge } from "@/features/review/FlagBadge"
 
 describe("FlagBadge", () => {
   it.todo("renders overflow badge with amber color class")

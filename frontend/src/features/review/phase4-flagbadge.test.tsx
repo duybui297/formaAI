@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
 import { render, screen } from "@testing-library/react"
-import { FlagBadge } from "@/components/FlagBadge"
+import { FlagBadge } from "@/features/review/FlagBadge"
 
 describe("Phase 4 FlagBadge extensions", () => {
   it("renders figure_passthrough badge with FIGURE label", () => {

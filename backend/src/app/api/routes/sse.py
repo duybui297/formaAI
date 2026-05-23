@@ -24,7 +24,7 @@ from fastapi import APIRouter, Depends
 from sse_starlette import EventSourceResponse
 from starlette.requests import Request
 
-from app.api.dependencies import get_redis
+from app.api.deps import get_redis
 
 log = structlog.get_logger()
 

@@ -4,10 +4,11 @@ import { useRouter } from "next/navigation"
 import { useToast } from "@/hooks/use-toast"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { LanguageSelect } from "./LanguageSelect"
+import { LanguageSelect } from "@/components/LanguageSelect"
 import { GlossarySelect } from "./GlossarySelect"
 import { TrackedChangesModal } from "./TrackedChangesModal"
-import { CloudUpload } from "lucide-react"
+import { UploadCloud, FileText, Languages, BookA, PlayCircle } from "lucide-react"
+import { cn } from "@/lib/utils"
 import { detectTrackedChanges } from "@/lib/detectTrackedChanges"
 
 const MAX_SIZE_BYTES = 25 * 1024 * 1024
@@ -22,7 +23,11 @@ function formatBytes(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`
 }
 
-export function UploadForm() {
+interface UploadFormProps {
+  onJobCreated?: (jobId: string) => void
+}
+
+export function UploadForm({ onJobCreated }: UploadFormProps = {}) {
   const router = useRouter()
   const { toast } = useToast()
 
@@ -143,7 +148,11 @@ export function UploadForm() {
           setSubmitting(false)
           return
         }
-        router.push(`/jobs/${data.job_id}`)
+        if (onJobCreated) {
+          onJobCreated(data.job_id)
+        } else {
+          router.push(`/jobs/${data.job_id}`)
+        }
       } catch {
         toast({
           variant: "destructive",
@@ -152,7 +161,7 @@ export function UploadForm() {
         setSubmitting(false)
       }
     },
-    [file, targetLang, sourceLang, glossaryId, isScannedOverride, isScannedDetected, router, toast]
+    [file, targetLang, sourceLang, glossaryId, isScannedOverride, isScannedDetected, router, toast, onJobCreated]
   )
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -168,70 +177,147 @@ export function UploadForm() {
     await submitWithAction(trackedAction)
   }
 
-  const dropZoneClass =
-    dragState === "valid"
-      ? "border-indigo-500 bg-indigo-50"
-      : dragState === "multi"
-      ? "border-red-400 bg-red-50"
-      : "border-slate-300 bg-white"
-
-  const dropZoneText =
-    dragState === "valid"
-      ? "Release to upload"
-      : dragState === "multi"
-      ? "One file at a time only"
-      : "Drop your document here — DOCX, PPTX, or native PDF"
-
   return (
     <>
-      <form onSubmit={handleSubmit} className="flex flex-col gap-6">
-        {/* Drop zone */}
-        <div
-          className={`flex flex-col items-center justify-center min-h-[200px] border-2 border-dashed rounded-lg cursor-pointer transition-colors ${dropZoneClass}`}
-          onDrop={onDrop}
-          onDragOver={onDragOver}
-          onDragLeave={() => setDragState("idle")}
-          onClick={() => document.getElementById("file-input")?.click()}
-        >
-          {file ? (
-            <div className="flex items-center gap-2 text-sm text-slate-700">
-              <Badge variant="outline">
-                {getExt(file.name).toUpperCase().slice(1)}
-              </Badge>
-              <span>{file.name}</span>
-              <span className="text-xs text-slate-500">{formatBytes(file.size)}</span>
-            </div>
-          ) : (
-            <>
-              <CloudUpload className="h-10 w-10 text-slate-400 mb-2" />
-              <p className="text-sm text-slate-700">{dropZoneText}</p>
-              <p className="text-xs text-slate-500 mt-1">
-                or click to choose a file &middot; max 25 MB
-              </p>
-            </>
-          )}
-        </div>
-        {/* Phase 4: D-04-17 — Scanned PDF detection result + override toggle */}
-        {file && getExt(file.name) === ".pdf" && isScannedDetected !== null && (
-          <div className="flex items-center gap-1 mt-2 text-xs text-slate-600">
-            <span>
-              {isScannedOverride !== null
-                ? `Changed to: ${isScannedOverride ? "scanned" : "native"} PDF`
-                : `Detected: ${isScannedDetected ? "scanned" : "native"} PDF`}
-            </span>
-            <button
-              type="button"
-              className="text-xs text-violet-600 underline hover:text-violet-800 ml-1"
-              onClick={() =>
-                setIsScannedOverride((v) =>
-                  v === null ? !isScannedDetected : null
-                )
-              }
+      <form onSubmit={handleSubmit}>
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
+          {/* Left 3/5 — Upload Area */}
+          <div className="lg:col-span-3 space-y-6">
+            <div
+              className={cn(
+                "border-2 border-dashed rounded-2xl p-16 text-center transition-all relative overflow-hidden cursor-pointer min-h-[320px] flex items-center justify-center",
+                dragState === "valid" ? "border-indigo-500 bg-indigo-50/50" :
+                dragState === "multi" ? "border-red-400 bg-red-50" :
+                "border-zinc-300 bg-zinc-50 hover:border-zinc-400 hover:bg-zinc-100/50"
+              )}
+              onDrop={onDrop}
+              onDragOver={onDragOver}
+              onDragLeave={() => setDragState("idle")}
+              onClick={() => document.getElementById("file-input")?.click()}
             >
-              {isScannedOverride !== null ? "Reset to auto" : "Change"}
-            </button>
+              {file ? (
+                <div className="flex flex-col items-center gap-3">
+                  <div className="w-16 h-16 bg-white rounded-xl shadow-sm border border-zinc-200 flex items-center justify-center">
+                    <FileText className="w-8 h-8 text-indigo-600" />
+                  </div>
+                  <div>
+                    <p className="text-zinc-900 font-medium">{file.name}</p>
+                    <p className="text-zinc-500 text-sm">{formatBytes(file.size)}</p>
+                  </div>
+                  <button
+                    type="button"
+                    className="text-sm text-indigo-600 hover:text-indigo-700 font-medium underline mt-2 relative z-20"
+                    onClick={(e) => { e.stopPropagation(); setFile(null) }}
+                  >
+                    Remove file
+                  </button>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center gap-4">
+                  <div className="w-16 h-16 bg-white rounded-full shadow-sm border border-zinc-200 flex items-center justify-center">
+                    <UploadCloud className="w-8 h-8 text-indigo-600" />
+                  </div>
+                  <div>
+                    <p className="text-lg font-medium text-zinc-900">
+                      {dragState === "valid" ? "Release to upload" :
+                       dragState === "multi" ? "One file at a time only" :
+                       "Drag & drop your file here"}
+                    </p>
+                    <p className="text-sm text-zinc-500 mt-1">Supports DOCX, PDF, PPTX up to 25MB</p>
+                  </div>
+                  <div className="flex items-center gap-4 mt-2 w-64">
+                    <div className="h-px bg-zinc-300 flex-1" />
+                    <span className="text-xs text-zinc-400 uppercase font-medium">or</span>
+                    <div className="h-px bg-zinc-300 flex-1" />
+                  </div>
+                  <span className="bg-white border border-zinc-200 shadow-sm text-sm font-medium px-4 py-2 rounded-lg text-zinc-700">
+                    Browse Files
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* Phase 4: Scanned PDF detection */}
+            {file && getExt(file.name) === ".pdf" && isScannedDetected !== null && (
+              <div className="flex items-center gap-1 text-xs text-zinc-600">
+                <span>
+                  {isScannedOverride !== null
+                    ? `Changed to: ${isScannedOverride ? "scanned" : "native"} PDF`
+                    : `Detected: ${isScannedDetected ? "scanned" : "native"} PDF`}
+                </span>
+                <button
+                  type="button"
+                  className="text-xs text-indigo-600 underline hover:text-indigo-800 ml-1"
+                  onClick={() =>
+                    setIsScannedOverride((v) =>
+                      v === null ? !isScannedDetected : null
+                    )
+                  }
+                >
+                  {isScannedOverride !== null ? "Reset to auto" : "Change"}
+                </button>
+              </div>
+            )}
           </div>
-        )}
+
+          {/* Right 2/5 — Settings Sidebar */}
+          <div className="lg:col-span-2 space-y-6">
+            {/* Language Pair */}
+            <div className="bg-white p-6 rounded-xl border border-zinc-200 shadow-md space-y-5">
+              <h3 className="font-semibold text-zinc-900 flex items-center gap-2 mb-2">
+                <Languages className="w-4 h-4 text-indigo-500" />
+                Language Pair
+              </h3>
+              <div className="space-y-4">
+                <LanguageSelect
+                  label="Source"
+                  value={sourceLang}
+                  onValueChange={setSourceLang}
+                  includeAutoDetect
+                  placeholder="Auto-detect (Recommended)"
+                />
+                <LanguageSelect
+                  label="Target"
+                  value={targetLang}
+                  onValueChange={setTargetLang}
+                  placeholder="Select target language"
+                />
+              </div>
+            </div>
+
+            {/* Glossary */}
+            <div className="bg-white p-6 rounded-xl border border-zinc-200 shadow-md space-y-4">
+              <h3 className="font-semibold text-zinc-900 flex items-center gap-2">
+                <BookA className="w-4 h-4 text-indigo-500" />
+                Glossary
+              </h3>
+              <GlossarySelect
+                sourceLang={sourceLang === "auto" ? "" : sourceLang}
+                targetLang={targetLang}
+                value={glossaryId}
+                onChange={setGlossaryId}
+              />
+            </div>
+
+            {/* Start Translation Button */}
+            <button
+              type="submit"
+              disabled={!canSubmit}
+              className={cn(
+                "w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl font-semibold shadow-sm transition-all",
+                !canSubmit
+                  ? "bg-zinc-100 text-zinc-400 cursor-not-allowed"
+                  : "bg-indigo-600 text-white hover:bg-indigo-700 hover:shadow-md hover:-translate-y-0.5"
+              )}
+            >
+              <PlayCircle className="w-5 h-5" />
+              {submitting ? "Uploading..." : "Start Translation"}
+            </button>
+            {error && (
+              <p role="alert" className="text-sm text-red-600 mt-1">{error}</p>
+            )}
+          </div>
+        </div>
 
         <input
           id="file-input"
@@ -241,82 +327,15 @@ export function UploadForm() {
           onChange={e => {
             const f = e.target.files?.[0]
             if (f) handleFile(f)
-            // Clear the input value so selecting the SAME file again fires
-            // onChange. Without this, the browser skips onChange when the
-            // selected filename matches the previous selection — breaks the
-            // "Escape modal → reselect same file" flow.
             e.target.value = ""
           }}
         />
-
-        {/* Language row */}
-        <div className="flex items-end gap-4">
-          <div className="flex-1">
-            <LanguageSelect
-              label="Source Language"
-              value={sourceLang}
-              onValueChange={setSourceLang}
-              includeAutoDetect
-              placeholder="Auto-detect"
-            />
-          </div>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="min-h-[48px] min-w-[48px]"
-            disabled={sourceLang === "auto"}
-            title="Swap languages"
-            aria-label="Swap source and target languages"
-            onClick={() => {
-              if (sourceLang !== "auto") {
-                const tmp = sourceLang
-                setSourceLang(targetLang)
-                setTargetLang(tmp)
-              }
-            }}
-          >
-            &#8596;
-          </Button>
-          <div className="flex-1">
-            <LanguageSelect
-              label="Target Language"
-              value={targetLang}
-              onValueChange={setTargetLang}
-              placeholder="Select target language"
-            />
-          </div>
-        </div>
-
-        {/* Glossary picker */}
-        <GlossarySelect
-          sourceLang={sourceLang === "auto" ? "" : sourceLang}
-          targetLang={targetLang}
-          value={glossaryId}
-          onChange={setGlossaryId}
-        />
-
-        {/* Submit */}
-        <Button
-          type="submit"
-          disabled={!canSubmit}
-          className="w-full bg-indigo-600 hover:bg-indigo-700 min-h-[48px]"
-        >
-          {submitting ? "Uploading..." : "Translate Document"}
-        </Button>
-        {error && (
-          <p role="alert" className="text-sm text-red-600 mt-1">
-            {error}
-          </p>
-        )}
       </form>
 
-      {/* Tracked-changes modal (D-13) — shown BEFORE submit (B4 Option A) */}
       <TrackedChangesModal
         open={showTrackedModal}
         onOpenChange={open => {
           if (!open) {
-            // Dialog dismissed via Escape/overlay → treat as cancel
             setFile(null)
             setTrackedAction(null)
             setHasTrackedChanges(false)

@@ -27,8 +27,8 @@ vi.mock("@/lib/detectTrackedChanges", () => ({
 global.fetch = vi.fn()
 
 // --- Import component after mocks are declared ---
-import { UploadForm } from "@/components/UploadForm"
-import { TrackedChangesModal } from "@/components/TrackedChangesModal"
+import { UploadForm } from "@/features/upload/UploadForm"
+import { TrackedChangesModal } from "@/features/upload/TrackedChangesModal"
 
 // --- Helpers ---
 

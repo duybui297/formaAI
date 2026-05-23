@@ -134,7 +134,7 @@ async def test_sse_yields_progress_event():
 
     with patch("app.main.lifespan", fake_lifespan):
         from app.main import app
-        from app.api.dependencies import get_redis
+        from app.api.deps import get_redis
 
         app.dependency_overrides[get_redis] = lambda: mock_redis
 
@@ -190,7 +190,7 @@ async def test_sse_closes_on_terminal_status():
 
     with patch("app.main.lifespan", fake_lifespan):
         from app.main import app
-        from app.api.dependencies import get_redis
+        from app.api.deps import get_redis
 
         app.dependency_overrides[get_redis] = lambda: mock_redis
 
@@ -243,7 +243,7 @@ async def test_sse_unsubscribes_in_finally():
 
     with patch("app.main.lifespan", fake_lifespan):
         from app.main import app
-        from app.api.dependencies import get_redis
+        from app.api.deps import get_redis
 
         app.dependency_overrides[get_redis] = lambda: mock_redis
 
@@ -292,7 +292,7 @@ async def test_sse_response_has_correct_headers():
 
     with patch("app.main.lifespan", fake_lifespan):
         from app.main import app
-        from app.api.dependencies import get_redis
+        from app.api.deps import get_redis
 
         app.dependency_overrides[get_redis] = lambda: mock_redis
 

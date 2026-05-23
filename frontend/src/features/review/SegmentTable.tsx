@@ -6,8 +6,8 @@ import {
   useRef,
 } from "react";
 import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
-import { SegmentRow } from "@/components/SegmentRow";
-import type { Segment } from "@/lib/review-types";
+import { SegmentRow } from "@/features/review/SegmentRow";
+import type { Segment } from "@/lib/types";
 
 export interface SegmentTableHandle {
   scrollToIndex: (index: number) => void;

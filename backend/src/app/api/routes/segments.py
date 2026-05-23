@@ -9,65 +9,19 @@ from __future__ import annotations
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel, Field
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import FlagType, Job, JobStatus, Segment, SegmentFlag
 from app.db.session import get_session
 from app.llm.translator import translate_batch
+from app.schemas.segment import SegmentPatchRequest, segment_to_dict
 from app.services.glossary_service import load_glossary_terms_for_job
 
 log = structlog.get_logger()
 router = APIRouter()
 
 _REVIEWABLE_STATUSES = frozenset({JobStatus.done, JobStatus.needs_review})
-
-
-# ---------------------------------------------------------------------------
-# Schemas
-# ---------------------------------------------------------------------------
-
-
-class SegmentPatchRequest(BaseModel, frozen=True):
-    # edited_text=None clears the edit; Field(...) makes it required (not optional)
-    edited_text: str | None = Field(default=..., max_length=10_000)
-    # Phase 4 (D-04-12): reviewer-corrected OCR source text
-    edited_source_text: str | None = Field(default=None, max_length=10_000)
-
-
-# ---------------------------------------------------------------------------
-# Serializers
-# ---------------------------------------------------------------------------
-
-
-def _flag_to_dict(f: SegmentFlag) -> dict:
-    return {
-        "id": f.id,
-        "segment_id": f.segment_id,
-        "flag_type": f.flag_type.value if hasattr(f.flag_type, "value") else f.flag_type,
-        "severity": f.severity.value if hasattr(f.severity, "value") else f.severity,
-        "details": f.details,
-        "created_at": f.created_at.isoformat() if f.created_at else None,
-    }
-
-
-def _segment_to_dict(s: Segment) -> dict:
-    return {
-        "id": s.id,
-        "seq_in_job": s.seq_in_job,
-        "source_text": s.source_text,
-        "translated_text": s.translated_text,
-        "edited_text": s.edited_text,
-        "expansion_ratio": s.expansion_ratio,
-        "structural_position": s.structural_position,
-        "flags": [_flag_to_dict(f) for f in (s.flags or [])],
-        # Phase 4 OCR fields (D-04-12, D-04-26)
-        "confidence": getattr(s, "confidence", None),
-        "region_bbox": getattr(s, "region_bbox", None),
-        "region_label": getattr(s, "region_label", None),
-        "edited_source_text": getattr(s, "edited_source_text", None),
-    }
 
 
 # ---------------------------------------------------------------------------
@@ -107,7 +61,7 @@ async def list_segments(
     }
 
     return {
-        "segments": [_segment_to_dict(s) for s in segments],
+        "segments": [segment_to_dict(s) for s in segments],
         "flag_counts": flag_counts,
         "total": len(segments),
     }

@@ -20,7 +20,7 @@ import structlog
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.dependencies import get_arq_pool
+from app.api.deps import get_arq_pool
 from app.api.routes.languages import _VALID_TARGET_CODES
 from app.db.session import get_session
 from app.services.glossary_service import get_glossary

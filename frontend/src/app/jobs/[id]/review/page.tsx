@@ -9,19 +9,17 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { NavBar } from "@/components/NavBar";
-import { KeyboardHelpPanel } from "@/components/KeyboardHelpPanel";
-import { ReviewFilterBar, type ReviewFilterType } from "@/components/ReviewFilterBar";
-import { ReviewPageHeader } from "@/components/ReviewPageHeader";
+import { KeyboardHelpPanel } from "@/features/review/KeyboardHelpPanel";
+import { ReviewFilterBar, type ReviewFilterType } from "@/features/review/ReviewFilterBar";
+import { ReviewPageHeader } from "@/features/review/ReviewPageHeader";
 import {
   SegmentTable,
   type SegmentTableHandle,
-} from "@/components/SegmentTable";
+} from "@/features/review/SegmentTable";
 import { useSegments } from "@/hooks/useSegments";
 import { useReviewKeyboard } from "@/hooks/useReviewKeyboard";
 import { useToast } from "@/hooks/use-toast";
-import type { JobSummary } from "@/lib/types";
-import type { Segment } from "@/lib/review-types";
+import type { JobSummary, Segment } from "@/lib/types";
 
 // Next.js 16 async params: unwrap with React.use() per D-20
 export default function ReviewPage({
@@ -108,7 +106,6 @@ export default function ReviewPage({
   if (!job || isLoading) {
     return (
       <>
-        <NavBar />
         <div className="px-8 py-8 text-slate-400 text-sm">
           Loading review…
         </div>
@@ -118,7 +115,6 @@ export default function ReviewPage({
 
   return (
     <>
-      <NavBar />
       <div className="relative">
         <ReviewPageHeader job={job} />
 

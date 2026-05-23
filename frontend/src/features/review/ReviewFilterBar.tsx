@@ -1,7 +1,7 @@
 "use client";
 import { Keyboard } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import type { FlagType, Segment } from "@/lib/review-types";
+import type { FlagType, Segment } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 export type ReviewFilterType = FlagType | "all";

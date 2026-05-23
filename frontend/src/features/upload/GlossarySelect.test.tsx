@@ -1,6 +1,6 @@
 import { describe, it } from "vitest"
 // NOTE: GlossarySelect will be created in Plan 05
-// import { GlossarySelect } from "@/components/GlossarySelect"
+// import { GlossarySelect } from "@/features/upload/GlossarySelect"
 
 describe("GlossarySelect", () => {
   it.todo("hidden when source_lang or target_lang not yet selected — D-02-25")

@@ -18,12 +18,17 @@ from pathlib import Path
 
 import structlog
 from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
-from pydantic import BaseModel, Field
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Glossary, GlossaryTerm
 from app.db.session import get_session
+from app.schemas.glossary import (
+    CreateGlossaryRequest,
+    CreateTermRequest,
+    RenameGlossaryRequest,
+    UpdateTermRequest,
+)
 from app.services.glossary_service import (
     create_glossary,
     create_term,
@@ -38,33 +43,6 @@ from app.services.glossary_service import (
 
 log = structlog.get_logger()
 router = APIRouter()
-
-
-# ---------------------------------------------------------------------------
-# Request / response schemas
-# ---------------------------------------------------------------------------
-
-
-class CreateGlossaryRequest(BaseModel, frozen=True):
-    name: str = Field(..., min_length=1, max_length=255)
-    source_lang: str = Field(..., min_length=2, max_length=64)
-    target_lang: str = Field(..., min_length=2, max_length=64)
-
-
-class RenameGlossaryRequest(BaseModel, frozen=True):
-    name: str = Field(..., min_length=1, max_length=255)
-
-
-class CreateTermRequest(BaseModel, frozen=True):
-    source_term: str = Field(..., min_length=2, max_length=500)
-    target_term: str = Field(..., min_length=2, max_length=500)
-    notes: str | None = Field(default=None, max_length=1000)
-
-
-class UpdateTermRequest(BaseModel, frozen=True):
-    source_term: str | None = Field(default=None, min_length=2, max_length=500)
-    target_term: str | None = Field(default=None, min_length=2, max_length=500)
-    notes: str | None = Field(default=None, max_length=1000)
 
 
 # ---------------------------------------------------------------------------

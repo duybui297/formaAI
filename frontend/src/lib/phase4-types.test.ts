@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest"
 import type { FlagType, Segment, JobProgress } from "@/lib/types"
-import type { FlagType as ReviewFlagType } from "@/lib/review-types"
 
 // Phase 4 RED tests: verify FlagType union, Segment OCR fields, JobProgress extensions.
 // These tests drive type-level contracts. Runtime assertions use grep-style checks on
@@ -14,16 +13,6 @@ describe("Phase 4 type extensions", () => {
 
   it("FlagType union in types.ts includes ocr_page_error", () => {
     const flagType: FlagType = "ocr_page_error"
-    expect(flagType).toBe("ocr_page_error")
-  })
-
-  it("FlagType union in review-types.ts includes figure_passthrough", () => {
-    const flagType: ReviewFlagType = "figure_passthrough"
-    expect(flagType).toBe("figure_passthrough")
-  })
-
-  it("FlagType union in review-types.ts includes ocr_page_error", () => {
-    const flagType: ReviewFlagType = "ocr_page_error"
     expect(flagType).toBe("ocr_page_error")
   })
 

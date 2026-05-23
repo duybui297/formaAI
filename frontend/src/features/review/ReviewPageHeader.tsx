@@ -60,7 +60,7 @@ export function ReviewPageHeader({ job }: ReviewPageHeaderProps) {
   return (
     <div className="sticky top-14 z-10 flex items-center gap-4 h-16 px-8 bg-white border-b border-slate-200">
       <Link
-        href="/jobs"
+        href="/translator"
         className="text-sm text-slate-500 hover:text-slate-700 shrink-0"
       >
         ← All Jobs

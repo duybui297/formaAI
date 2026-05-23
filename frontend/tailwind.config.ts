@@ -4,9 +4,7 @@ import { fontFamily } from "tailwindcss/defaultTheme"
 const config: Config = {
   darkMode: ["class", "[data-theme='dark']"] as const,  // UI-SPEC: light mode only in Phase 1 — no dark class applied, keeping config valid
   content: [
-    "./src/pages/**/*.{js,ts,jsx,tsx,mdx}",
-    "./src/components/**/*.{js,ts,jsx,tsx,mdx}",
-    "./src/app/**/*.{js,ts,jsx,tsx,mdx}",
+    "./src/**/*.{js,ts,jsx,tsx,mdx}",
   ],
   theme: {
     extend: {

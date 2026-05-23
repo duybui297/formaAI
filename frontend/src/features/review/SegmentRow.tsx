@@ -5,7 +5,7 @@ import { Check, ChevronDown, ChevronUp, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useSegmentPatch, useSegmentRegenerate } from "@/hooks/useSegments";
-import type { FlagType, Segment } from "@/lib/review-types";
+import type { FlagType, Segment } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { formatBreadcrumb } from "@/lib/formatBreadcrumb";
 

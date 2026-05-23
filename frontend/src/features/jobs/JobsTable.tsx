@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { StatusBadge } from "@/components/StatusBadge"
+import { StatusBadge } from "@/features/jobs/StatusBadge"
 import type { JobSummary } from "@/lib/types"
 
 function formatAge(isoString: string): string {

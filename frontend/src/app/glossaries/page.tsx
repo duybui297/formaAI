@@ -3,9 +3,8 @@ import { useState } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { GlossaryList } from "@/components/glossary/GlossaryList"
-import { GlossaryCreateDialog } from "@/components/glossary/GlossaryCreateDialog"
-import { NavBar } from "@/components/NavBar"
+import { GlossaryList } from "@/features/glossary/GlossaryList"
+import { GlossaryCreateDialog } from "@/features/glossary/GlossaryCreateDialog"
 import type { Glossary } from "@/lib/types"
 
 export default function GlossariesPage() {
@@ -30,7 +29,6 @@ export default function GlossariesPage() {
 
   return (
     <div>
-      <NavBar />
       <div className="px-8 py-8">
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-2xl font-semibold font-[--font-montserrat] text-[#111111]">

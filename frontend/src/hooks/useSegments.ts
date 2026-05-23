@@ -1,7 +1,7 @@
 "use client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
-import type { Segment, SegmentsResponse } from "@/lib/review-types";
+import type { Segment, SegmentsResponse } from "@/lib/types";
 
 export function useSegments(jobId: string) {
   return useQuery<Segment[]>({

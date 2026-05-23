@@ -3,9 +3,8 @@ import { useParams } from "next/navigation"
 import Link from "next/link"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { ArrowLeft } from "lucide-react"
-import { TermsTable } from "@/components/glossary/TermsTable"
-import { CSVUploadButton } from "@/components/glossary/CSVUploadButton"
-import { NavBar } from "@/components/NavBar"
+import { TermsTable } from "@/features/glossary/TermsTable"
+import { CSVUploadButton } from "@/features/glossary/CSVUploadButton"
 import type { Glossary } from "@/lib/types"
 
 export default function GlossaryDetailPage() {
@@ -40,7 +39,6 @@ export default function GlossaryDetailPage() {
   if (isLoading) {
     return (
       <div>
-        <NavBar />
         <div className="px-8 py-8">
           <p className="text-slate-400">Loading…</p>
         </div>
@@ -51,7 +49,6 @@ export default function GlossaryDetailPage() {
   if (!glossary) {
     return (
       <div>
-        <NavBar />
         <div className="px-8 py-8">
           <p className="text-red-500">Glossary not found.</p>
           <Link href="/glossaries" className="text-violet-600 underline mt-2 inline-block">
@@ -64,7 +61,6 @@ export default function GlossaryDetailPage() {
 
   return (
     <div>
-      <NavBar />
       <div className="px-8 py-8">
         {/* Header */}
         <div className="mb-6">

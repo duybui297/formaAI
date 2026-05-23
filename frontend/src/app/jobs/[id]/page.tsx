@@ -5,11 +5,10 @@ import { ArrowLeft } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
-import { StageIndicator } from "@/components/StageIndicator"
-import { ProgressBar } from "@/components/ProgressBar"
-import { ErrorDetails } from "@/components/ErrorDetails"
-import { JobMetaRow } from "@/components/JobMetaRow"
-import { NavBar } from "@/components/NavBar"
+import { StageIndicator } from "@/features/jobs/StageIndicator"
+import { ProgressBar } from "@/features/jobs/ProgressBar"
+import { ErrorDetails } from "@/features/jobs/ErrorDetails"
+import { JobMetaRow } from "@/features/jobs/JobMetaRow"
 import { useJobProgress } from "@/hooks/useJobProgress"
 import { useCounterAnimation } from "@/hooks/useCounterAnimation"
 import type { JobStatus } from "@/lib/types"
@@ -34,7 +33,6 @@ export default function JobStatusPage({
   if (isLoading) {
     return (
       <>
-        <NavBar />
         <main className="max-w-3xl mx-auto px-8 py-12 space-y-4">
           <Skeleton className="h-4 w-24" />
           <Skeleton className="h-6 w-64" />
@@ -48,11 +46,10 @@ export default function JobStatusPage({
   if (!job) {
     return (
       <>
-        <NavBar />
         <main className="max-w-3xl mx-auto px-8 py-12">
           <p className="text-slate-500 text-sm">
             Job not found.{" "}
-            <Link href="/jobs" className="underline">
+            <Link href="/translator" className="underline">
               Back to jobs
             </Link>
           </p>
@@ -70,11 +67,10 @@ export default function JobStatusPage({
 
   return (
     <>
-      <NavBar />
       <main className="max-w-3xl mx-auto px-8 py-12 space-y-6">
         {/* Back link */}
         <Link
-          href="/jobs"
+          href="/translator"
           className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-700"
         >
           <ArrowLeft className="h-4 w-4" />

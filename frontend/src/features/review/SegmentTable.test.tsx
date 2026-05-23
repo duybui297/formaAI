@@ -1,6 +1,6 @@
 import { describe, it } from "vitest"
 // NOTE: SegmentTable will be created in Plan 06
-// import { SegmentTable } from "@/components/SegmentTable"
+// import { SegmentTable } from "@/features/review/SegmentTable"
 
 describe("SegmentTable", () => {
   it.todo("renders all segments without DOM explosion — REV-01")

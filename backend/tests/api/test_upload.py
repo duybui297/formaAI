@@ -108,7 +108,7 @@ async def app_and_tmp(tmp_path):
     """
     from app.db.models import Base
     from app.db.session import get_session
-    from app.api.dependencies import get_arq_pool, get_settings
+    from app.api.deps import get_arq_pool, get_settings
     from app.main import app
 
     engine = create_async_engine(TEST_DB_URL, echo=False)

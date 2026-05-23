@@ -30,20 +30,14 @@ export function NavBar() {
   const pathname = usePathname()
   return (
     <header className="h-14 bg-white border-b border-slate-200 flex items-center px-8">
-      <div className="max-w-3xl mx-auto w-full flex items-center justify-between">
+      <div className="w-full flex items-center justify-between">
         <span className="text-[28px] font-semibold leading-none">AI Translation</span>
         <nav className="flex items-center gap-6">
           <Link
-            href="/upload"
-            className={`text-sm ${pathname === "/upload" ? "text-indigo-600 font-medium" : "text-slate-600 hover:text-slate-900"}`}
+            href="/translator"
+            className={`text-sm ${pathname?.startsWith("/translator") || pathname === "/upload" || pathname?.startsWith("/jobs") ? "text-indigo-600 font-medium" : "text-slate-600 hover:text-slate-900"}`}
           >
-            Upload
-          </Link>
-          <Link
-            href="/jobs"
-            className={`text-sm ${pathname?.startsWith("/jobs") ? "text-indigo-600 font-medium" : "text-slate-600 hover:text-slate-900"}`}
-          >
-            Jobs
+            Translator
           </Link>
           <Link
             href="/glossaries"
