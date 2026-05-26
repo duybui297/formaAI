@@ -32,12 +32,14 @@ async def create_job(
     has_tracked_changes: bool = False,
     tracked_changes_action: str | None = None,
     glossary_id: str | None = None,
+    user_id: str | None = None,
 ) -> Job:
     """
     Insert a new Job row with status=queued.
 
     Returns the persisted Job (with auto-generated ID and timestamps).
     glossary_id: optional FK to glossaries.id (D-02-01); None if no glossary selected.
+    user_id: optional FK to users.id (auth phase 2); enables per-user job filtering.
     """
     job = Job(
         source_lang=source_lang,
@@ -49,6 +51,7 @@ async def create_job(
         tracked_changes_action=tracked_changes_action,
         glossary_id=glossary_id,
         status=JobStatus.queued,
+        user_id=user_id,
     )
     session.add(job)
     await session.commit()
@@ -59,6 +62,18 @@ async def create_job(
 async def get_job(session: AsyncSession, job_id: str) -> Job | None:
     """Return the Job with the given ID, or None if not found."""
     result = await session.execute(select(Job).where(Job.id == job_id))
+    return result.scalar_one_or_none()
+
+
+async def get_job_for_user(
+    session: AsyncSession,
+    job_id: str,
+    user_id: str,
+) -> Job | None:
+    """Return the Job owned by user_id, or None if not found / not owned."""
+    result = await session.execute(
+        select(Job).where(Job.id == job_id, Job.user_id == user_id)
+    )
     return result.scalar_one_or_none()
 
 

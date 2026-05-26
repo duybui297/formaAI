@@ -7,6 +7,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { authFetch } from "@/lib/auth"
 import type { Glossary } from "@/lib/types"
 
 // Sentinel value for the "None" option — Radix UI throws at runtime when value=""
@@ -25,13 +26,14 @@ export function GlossarySelect({ sourceLang, targetLang, value, onChange }: Glos
   const { data: glossaries = [], isLoading } = useQuery<Glossary[]>({
     queryKey: ["glossaries", sourceLang, targetLang],
     queryFn: async () => {
-      const res = await fetch(
-        `/api/glossaries?source_lang=${sourceLang}&target_lang=${targetLang}`
+      const res = await authFetch(
+        `/glossaries?source_lang=${sourceLang}&target_lang=${targetLang}`,
+        { throwOnError: false }
       )
       if (!res.ok) throw new Error("Failed to load glossaries")
       const data = await res.json()
       // API returns {"glossaries": [...]} — must unwrap
-      return data.glossaries as Glossary[]
+      return (data.glossaries ?? []) as Glossary[]
     },
     enabled,
   })

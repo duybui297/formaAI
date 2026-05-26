@@ -48,6 +48,27 @@ class Settings(BaseSettings):
         description="JSON map of 'src->tgt' to float expansion ratio threshold. Default 1.5 if pair absent.",
     )
 
+    # Auth
+    secret_key: SecretStr = Field(
+        description="JWT secret key. Generate with: python -c \"import secrets; print(secrets.token_urlsafe(64))\""
+    )
+    algorithm: str = "HS256"
+    access_token_expire_minutes: int = 15
+    refresh_token_expire_days: int = 30
+    login_max_attempts: int = 5
+    login_attempt_window_minutes: int = 10
+    login_lockout_minutes: int = 15
+    password_reset_token_expire_minutes: int = 60  # 1 hour
+    forgot_password_cooldown_seconds: int = 60  # prevent spam — minimum time between reset emails
+
+    # Email SMTP
+    smtp_host: str = "smtp.gmail.com"
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: SecretStr = SecretStr("")
+    smtp_from: str = "noreply@forma.app"
+    smtp_tls: bool = True
+
     @field_validator("token_budget")
     @classmethod
     def validate_token_budget(cls, v: int) -> int:

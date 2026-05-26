@@ -12,6 +12,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { authFetch } from "@/lib/auth"
 import type { GlossaryTerm } from "@/lib/types"
 
 interface TermsTableProps {
@@ -45,7 +46,7 @@ function TermAddRow({
     if (!canAdd) return
     setSaving(true)
     try {
-      const res = await fetch(`/api/glossaries/${glossaryId}/terms`, {
+      const res = await authFetch(`/glossaries/${glossaryId}/terms`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -53,6 +54,7 @@ function TermAddRow({
           target_term: targetTerm.trim(),
           notes: notes.trim() || null,
         }),
+        throwOnError: false,
       })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
@@ -131,7 +133,7 @@ export function TermsTable({ glossaryId, terms, onTermsChange }: TermsTableProps
 
   const saveEdit = async (termId: string) => {
     try {
-      const res = await fetch(`/api/glossaries/${glossaryId}/terms/${termId}`, {
+      const res = await authFetch(`/glossaries/${glossaryId}/terms/${termId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -139,6 +141,7 @@ export function TermsTable({ glossaryId, terms, onTermsChange }: TermsTableProps
           target_term: editState.target_term.trim(),
           notes: editState.notes.trim() || null,
         }),
+        throwOnError: false,
       })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
@@ -154,8 +157,9 @@ export function TermsTable({ glossaryId, terms, onTermsChange }: TermsTableProps
 
   const deleteTerm = async (termId: string) => {
     try {
-      const res = await fetch(`/api/glossaries/${glossaryId}/terms/${termId}`, {
+      const res = await authFetch(`/glossaries/${glossaryId}/terms/${termId}`, {
         method: "DELETE",
+        throwOnError: false,
       })
       if (!res.ok) {
         toast({ variant: "destructive", description: "Failed to delete term." })

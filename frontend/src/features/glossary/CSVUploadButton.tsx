@@ -3,6 +3,7 @@ import { useRef } from "react"
 import { Upload } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { Button } from "@/components/ui/button"
+import { authFetch } from "@/lib/auth"
 
 interface CSVUploadButtonProps {
   glossaryId: string
@@ -21,9 +22,10 @@ export function CSVUploadButton({ glossaryId, onImported }: CSVUploadButtonProps
     form.append("file", file)
 
     try {
-      const res = await fetch(`/api/glossaries/${glossaryId}/terms/import`, {
+      const res = await authFetch(`/glossaries/${glossaryId}/terms/import`, {
         method: "POST",
         body: form,
+        throwOnError: false,
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) {

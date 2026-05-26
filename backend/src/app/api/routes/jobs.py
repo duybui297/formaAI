@@ -16,9 +16,10 @@ from fastapi.responses import FileResponse
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Job
+from app.api.deps import get_current_active_user
+from app.db.models import Job, User
 from app.db.session import get_session
-from app.services.job_service import get_job
+from app.services.job_service import get_job, get_job_for_user
 
 log = structlog.get_logger()
 
@@ -57,13 +58,18 @@ def _job_to_dict(job: Job) -> dict:
 @router.get("/jobs")
 async def list_jobs(
     session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_active_user),
 ) -> dict:
-    """JOB-01: Return last 50 jobs, newest first (Jobs List Page).
+    """JOB-01: Return last 50 jobs for the current user, newest first (Jobs List Page).
 
-    # TODO(phase-2): add JWT auth + per-user filtering
+    Auth: requires valid JWT (get_current_active_user).
+    Per-user filtering via job.user_id FK.
     """
     result = await session.execute(
-        select(Job).order_by(desc(Job.created_at)).limit(50)
+        select(Job)
+        .where(Job.user_id == current_user.id)
+        .order_by(desc(Job.created_at))
+        .limit(50)
     )
     jobs = result.scalars().all()
     return {"jobs": [_job_to_dict(j) for j in jobs]}
@@ -73,17 +79,18 @@ async def list_jobs(
 async def get_job_status(
     job_id: str,
     session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_active_user),
 ) -> dict:
-    """JOB-01/04: Return job status + progress counters.
+    """JOB-01/04: Return job status + progress counters for the current user.
 
+    Auth: requires valid JWT (get_current_active_user).
+    Ownership: job must belong to current_user.
     Returns D-10 fields: id, status, stage, source_lang, target_lang,
     detected_lang, input_format, original_filename, segments_done,
     segments_total, retry_count, error_msg, has_tracked_changes,
     created_at, updated_at.
-
-    # TODO(phase-2): add JWT auth
     """
-    job = await get_job(session, job_id)
+    job = await get_job_for_user(session, job_id, current_user.id)
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
     return _job_to_dict(job)
@@ -94,6 +101,7 @@ async def download_artifact(
     job_id: str,
     artifact: str,
     session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_active_user),
 ) -> FileResponse:
     """D-04-22: Download one of three compose-stage artifacts.
 
@@ -101,10 +109,13 @@ async def download_artifact(
     T-04-09: artifact parameter validated against strict allowlist; path computed
              from job_id (UUID from DB), never from user input.
     T-04-11: 409 returned if job not in done/needs_review.
+
+    Auth: requires valid JWT (get_current_active_user).
+    Ownership: job must belong to current_user.
     """
     from app.core.config import get_settings  # noqa: PLC0415
 
-    job = await get_job(session, job_id)
+    job = await get_job_for_user(session, job_id, current_user.id)
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
     if job.status.value not in _DOWNLOADABLE_STATUSES:
@@ -154,13 +165,20 @@ async def download_artifact(
 async def serve_page_image(
     job_id: str,
     page_n: int,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_active_user),
 ) -> FileResponse:
     """D-04-10/11: Serve cached page PNG for image-crop preview in review UI.
 
     T-04-10: page_n is typed as int (FastAPI auto-validates); path constructed
              from job_id (UUID from DB) + page_n (int) — no directory traversal.
+    Auth: requires valid JWT. Ownership enforced via job lookup.
     """
     from app.core.config import get_settings  # noqa: PLC0415
+
+    job = await get_job_for_user(session, job_id, current_user.id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
 
     settings = get_settings()
     file_path = os.path.join(
@@ -178,6 +196,7 @@ async def serve_page_image(
 async def download_translated_file(
     job_id: str,
     session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_active_user),
 ) -> FileResponse:
     """JOB-04: Stream the translated output file for completed jobs.
 
@@ -187,9 +206,10 @@ async def download_translated_file(
     HTTP 404 — job not found or output file missing/deleted
     HTTP 409 — job not yet in a terminal state (done/needs_review)
 
-    # TODO(phase-2): add JWT auth
+    Auth: requires valid JWT (get_current_active_user).
+    Ownership: job must belong to current_user.
     """
-    job = await get_job(session, job_id)
+    job = await get_job_for_user(session, job_id, current_user.id)
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
 

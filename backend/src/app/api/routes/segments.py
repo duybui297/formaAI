@@ -12,11 +12,13 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import FlagType, Job, JobStatus, Segment, SegmentFlag
+from app.api.deps import get_current_active_user
+from app.db.models import FlagType, Job, JobStatus, Segment, SegmentFlag, User
 from app.db.session import get_session
 from app.llm.translator import translate_batch
 from app.schemas.segment import SegmentPatchRequest, segment_to_dict
 from app.services.glossary_service import load_glossary_terms_for_job
+from app.services.job_service import get_job_for_user
 
 log = structlog.get_logger()
 router = APIRouter()
@@ -33,10 +35,14 @@ _REVIEWABLE_STATUSES = frozenset({JobStatus.done, JobStatus.needs_review})
 async def list_segments(
     job_id: str,
     session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_active_user),
 ) -> dict:
-    """REV-01: Return all segments with embedded flags for the review UI."""
-    job_result = await session.execute(select(Job).where(Job.id == job_id))
-    job = job_result.scalar_one_or_none()
+    """REV-01: Return all segments with embedded flags for the review UI.
+
+    Auth: requires valid JWT (get_current_active_user).
+    Ownership: job must belong to current_user.
+    """
+    job = await get_job_for_user(session, job_id, current_user.id)
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
 
@@ -73,23 +79,20 @@ async def patch_segment(
     segment_id: str,
     body: SegmentPatchRequest,
     session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_active_user),
 ) -> dict:
     """REV-02: Persist edited_text. edited_text=null clears the edit.
 
     409 if job is not in done/needs_review state — prevents editing during active worker run.
     Scoped by (job_id, segment_id) — compound PK prevents cross-job collision.
-    """
-    seg_result = await session.execute(
-        select(Segment).where(Segment.job_id == job_id, Segment.id == segment_id)
-    )
-    seg = seg_result.scalar_one_or_none()
-    if seg is None:
-        raise HTTPException(status_code=404, detail="Segment not found")
 
-    # Gate: prevent editing while worker is still running (worker race guard)
-    job_result = await session.execute(select(Job).where(Job.id == job_id))
-    job = job_result.scalar_one_or_none()
-    if job is None or job.status not in _REVIEWABLE_STATUSES:
+    Auth: requires valid JWT (get_current_active_user).
+    Ownership: job must belong to current_user.
+    """
+    job = await get_job_for_user(session, job_id, current_user.id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if job.status not in _REVIEWABLE_STATUSES:
         raise HTTPException(
             status_code=409,
             detail=(
@@ -98,8 +101,14 @@ async def patch_segment(
             ),
         )
 
+    seg_result = await session.execute(
+        select(Segment).where(Segment.job_id == job_id, Segment.id == segment_id)
+    )
+    seg = seg_result.scalar_one_or_none()
+    if seg is None:
+        raise HTTPException(status_code=404, detail="Segment not found")
+
     values_to_update: dict = {"edited_text": body.edited_text}
-    # D-04-12: update edited_source_text when provided (not None)
     if body.edited_source_text is not None:
         values_to_update["edited_source_text"] = body.edited_source_text
 
@@ -119,6 +128,7 @@ async def regenerate_segment(
     segment_id: str,
     request: Request,
     session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_active_user),
 ) -> dict:
     """REV-04: Sync single-segment re-translate.
 
@@ -126,21 +136,25 @@ async def regenerate_segment(
     D-02-21: uses job's locked glossary.
     LLM client loaded from app.state (set in lifespan).
     Scoped by (job_id, segment_id) — compound PK prevents cross-job collision.
+
+    Auth: requires valid JWT (get_current_active_user).
+    Ownership: job must belong to current_user.
     """
+    job = await get_job_for_user(session, job_id, current_user.id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if job.status not in _REVIEWABLE_STATUSES:
+        raise HTTPException(
+            status_code=409,
+            detail="Job is not in a reviewable state (done or needs_review)",
+        )
+
     seg_result = await session.execute(
         select(Segment).where(Segment.job_id == job_id, Segment.id == segment_id)
     )
     seg = seg_result.scalar_one_or_none()
     if seg is None:
         raise HTTPException(status_code=404, detail="Segment not found")
-
-    job_result = await session.execute(select(Job).where(Job.id == job_id))
-    job = job_result.scalar_one_or_none()
-    if job is None or job.status not in _REVIEWABLE_STATUSES:
-        raise HTTPException(
-            status_code=409,
-            detail="Job is not in a reviewable state (done or needs_review)",
-        )
 
     glossary = await load_glossary_terms_for_job(session, job.glossary_id)
 

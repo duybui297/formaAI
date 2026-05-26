@@ -11,6 +11,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog"
 import { LanguageSelect } from "@/components/LanguageSelect"
+import { authFetch } from "@/lib/auth"
 
 interface GlossaryCreateDialogProps {
   open: boolean
@@ -36,10 +37,11 @@ export function GlossaryCreateDialog({
     if (!canSubmit) return
     setSubmitting(true)
     try {
-      const res = await fetch("/api/glossaries", {
+      const res = await authFetch("/glossaries", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: name.trim(), source_lang: sourceLang, target_lang: targetLang }),
+        throwOnError: false,
       })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))

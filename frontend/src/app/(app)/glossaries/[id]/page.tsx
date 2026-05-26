@@ -5,6 +5,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { ArrowLeft } from "lucide-react"
 import { TermsTable } from "@/features/glossary/TermsTable"
 import { CSVUploadButton } from "@/features/glossary/CSVUploadButton"
+import { authFetch } from "@/lib/auth"
 import type { Glossary } from "@/lib/types"
 
 export default function GlossaryDetailPage() {
@@ -18,7 +19,7 @@ export default function GlossaryDetailPage() {
   } = useQuery<Glossary>({
     queryKey: ["glossary", id],
     queryFn: async () => {
-      const res = await fetch(`/api/glossaries/${id}`)
+      const res = await authFetch(`/glossaries/${id}`, { throwOnError: false })
       if (!res.ok) throw new Error("Failed to load glossary")
       // Single-item endpoint returns Glossary directly (no wrapper)
       return res.json()
