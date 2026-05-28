@@ -3,6 +3,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
+import { authFetch } from "@/lib/auth";
 import type { JobSummary } from "@/lib/types";
 
 interface ReviewPageHeaderProps {
@@ -18,7 +19,7 @@ export function ReviewPageHeader({ job }: ReviewPageHeaderProps) {
   const handleExport = async () => {
     setExporting(true);
     try {
-      const res = await fetch(`/api/jobs/${job.id}/export`, {
+      const res = await authFetch(`/jobs/${job.id}/export`, {
         method: "POST",
       });
       if (!res.ok) {

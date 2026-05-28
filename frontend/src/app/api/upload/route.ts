@@ -15,9 +15,20 @@ export async function POST(request: Request) {
     backendForm.append("tracked_changes_action", trackedAction as string)
   }
 
+  // Forward Authorization from cookie (sessionStorage is inaccessible in server API routes)
+  const cookieHeader = request.headers.get("cookie") || ""
+  const tokenMatch = cookieHeader.match(/(?:^|;\s*)forma_access_token=([^;]*)/)
+  const token = tokenMatch ? decodeURIComponent(tokenMatch[1]) : null
+
+  const headers: HeadersInit = {}
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`
+  }
+
   try {
     const response = await fetch(`${backendUrl}/upload`, {
       method: "POST",
+      headers,
       body: backendForm,
     })
     const data = await response.json()

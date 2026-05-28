@@ -19,6 +19,7 @@ import {
 import { useSegments } from "@/hooks/useSegments";
 import { useReviewKeyboard } from "@/hooks/useReviewKeyboard";
 import { useToast } from "@/hooks/use-toast";
+import { authFetch } from "@/lib/auth";
 import type { JobSummary, Segment } from "@/lib/types";
 
 // Next.js 16 async params: unwrap with React.use() per D-20
@@ -41,7 +42,7 @@ export default function ReviewPage({
   const { data: job } = useQuery<JobSummary>({
     queryKey: ["job", jobId],
     queryFn: () =>
-      fetch(`/api/jobs/${jobId}`).then((r) => {
+      authFetch(`/jobs/${jobId}`).then((r) => {
         if (!r.ok) throw new Error("Job not found");
         return r.json();
       }),
@@ -90,15 +91,32 @@ export default function ReviewPage({
   });
 
   // Phase 4: D-04-22 — Download menu handler
-  const handleDownload = (artifact: "bilingual_pdf" | "translated_pdf" | "translated_docx") => {
+  const handleDownload = async (artifact: "bilingual_pdf" | "translated_pdf" | "translated_docx") => {
     setDownloading(true);
-    const a = document.createElement("a");
-    a.href = `/api/jobs/${jobId}/artifacts?artifact=${artifact}`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    // Reset downloading state after short delay (browser starts download async)
-    setTimeout(() => setDownloading(false), 1500);
+    try {
+      const res = await authFetch(`/jobs/${jobId}/artifacts?artifact=${artifact}`, {
+        method: "GET",
+      });
+      if (!res.ok) {
+        toast({ title: "Download failed. Try again.", variant: "destructive" });
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      const extMatch = job.original_filename.match(/\.[^./\\]+$/);
+      const ext = extMatch ? extMatch[0] : ".docx";
+      a.download = job.original_filename.replace(/(\.\w+)?$/, `_translated${ext}`);
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 100);
+    } catch {
+      toast({ title: "Network error — download could not be initiated.", variant: "destructive" });
+    } finally {
+      setDownloading(false);
+    }
   };
 
   const canDownload = ["done", "needs_review"].includes(job?.status ?? "");

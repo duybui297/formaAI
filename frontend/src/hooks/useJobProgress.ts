@@ -3,6 +3,7 @@ import { useQueryClient, useQuery } from "@tanstack/react-query"
 import { fetchEventSource } from "@microsoft/fetch-event-source"
 import { useEffect, useRef } from "react"
 import type { JobProgress } from "@/lib/types"
+import { getToken } from "@/lib/auth"
 
 const TERMINAL = new Set(["done", "failed", "needs_review"])
 
@@ -14,8 +15,15 @@ export function useJobProgress(jobId: string) {
     const ctrl = new AbortController()
     sseOpen.current = true
 
+    const token = getToken()
+    const headers: Record<string, string> = {}
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`
+    }
+
     fetchEventSource(`/api/jobs/${jobId}/stream`, {
       signal: ctrl.signal,
+      headers,
       onmessage(ev) {
         const data: JobProgress = JSON.parse(ev.data)
         queryClient.setQueryData(["job", jobId], data)
@@ -33,7 +41,7 @@ export function useJobProgress(jobId: string) {
 
   return useQuery<JobProgress>({
     queryKey: ["job", jobId],
-    queryFn: () => fetch(`/api/jobs/${jobId}`).then(r => r.json()),
+    queryFn: () => authFetch(`/jobs/${jobId}`).then(r => r.json()),
     refetchInterval: (query) => {
       const status = query.state.data?.status
       if (status && TERMINAL.has(status)) return false

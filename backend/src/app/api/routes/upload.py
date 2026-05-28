@@ -20,8 +20,9 @@ import structlog
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_arq_pool
+from app.api.deps import get_arq_pool, get_current_active_user
 from app.api.routes.languages import _VALID_TARGET_CODES
+from app.db.models import User
 from app.db.session import get_session
 from app.services.glossary_service import get_glossary
 from app.services.job_service import create_job
@@ -49,6 +50,7 @@ async def upload_document(
     is_scanned_override: bool | None = Form(None),
     session: AsyncSession = Depends(get_session),
     arq_pool=Depends(get_arq_pool),
+    current_user: User = Depends(get_current_active_user),
 ) -> dict:
     """
     UPLD-01/02/03/05: Upload document, validate, create job row, enqueue translation.
@@ -57,7 +59,7 @@ async def upload_document(
     Returns: {job_id: str, has_tracked_changes: bool}
     HTTP 202 — job created and queued, not yet complete.
 
-    # TODO(phase-2): add JWT auth
+    Auth: requires valid JWT (get_current_active_user).
     """
     # --- Fast path: Content-Length header sanity check (T-06a-01) ---
     content_length = request.headers.get("content-length")
@@ -170,6 +172,7 @@ async def upload_document(
         has_tracked_changes=has_tracked,
         tracked_changes_action=tracked_changes_action,
         glossary_id=glossary_id,
+        user_id=current_user.id,
     )
 
     # --- Persist file to per-job directory (D-04: .data/jobs/{job_id}/source.{ext}) ---

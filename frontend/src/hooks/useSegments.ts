@@ -2,12 +2,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import type { Segment, SegmentsResponse } from "@/lib/types";
+import { authFetch } from "@/lib/auth";
 
 export function useSegments(jobId: string) {
   return useQuery<Segment[]>({
     queryKey: ["segments", jobId],
     queryFn: async () => {
-      const res = await fetch(`/api/jobs/${jobId}/segments`);
+      const res = await authFetch(`/jobs/${jobId}/segments`);
       if (!res.ok) throw new Error("Failed to load segments");
       const data: SegmentsResponse = await res.json();
       return data.segments;
@@ -34,7 +35,7 @@ export function useSegmentPatch(jobId: string) {
       if (editedSourceText !== undefined) {
         body.edited_source_text = editedSourceText;
       }
-      const res = await fetch(`/api/jobs/${jobId}/segments/${segmentId}`, {
+      const res = await authFetch(`/jobs/${jobId}/segments/${segmentId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -87,7 +88,7 @@ export function useSegmentRegenerate(jobId: string) {
 
   return useMutation({
     mutationFn: async (segmentId: string) => {
-      const res = await fetch(`/api/jobs/${jobId}/segments/${segmentId}/regenerate`, {
+      const res = await authFetch(`/jobs/${jobId}/segments/${segmentId}/regenerate`, {
         method: "POST",
       });
       if (!res.ok) throw new Error("Regenerate failed");

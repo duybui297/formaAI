@@ -1,5 +1,8 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  images: {
+    unoptimized: true,
+  },
   // D-20: Turbopack is default in Next.js 16 (--turbopack flag in dev script)
   // No webpack config — Turbopack handles bundling
   async rewrites() {

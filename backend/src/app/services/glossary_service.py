@@ -59,9 +59,10 @@ async def create_glossary(
     name: str,
     source_lang: str,
     target_lang: str,
+    user_id: str | None = None,
 ) -> Glossary:
     """GLOS-01: Create a new named glossary for a language pair."""
-    g = Glossary(name=name, source_lang=source_lang, target_lang=target_lang)
+    g = Glossary(name=name, source_lang=source_lang, target_lang=target_lang, user_id=user_id)
     session.add(g)
     await session.commit()
     await session.refresh(g)
@@ -75,17 +76,33 @@ async def get_glossary(session: AsyncSession, glossary_id: str) -> Glossary | No
     return result.scalar_one_or_none()
 
 
+async def get_glossary_for_user(
+    session: AsyncSession,
+    glossary_id: str,
+    user_id: str,
+) -> Glossary | None:
+    """Fetch a glossary by ID owned by user_id. Returns None if not found or not owned."""
+    result = await session.execute(
+        select(Glossary).where(Glossary.id == glossary_id, Glossary.user_id == user_id)
+    )
+    return result.scalar_one_or_none()
+
+
 async def list_glossaries(
     session: AsyncSession,
     source_lang: str | None = None,
     target_lang: str | None = None,
+    user_id: str | None = None,
 ) -> list[Glossary]:
-    """GLOS-05: List all glossaries, optionally filtered by language pair (UPLD-04 picker)."""
-    q = select(Glossary).order_by(Glossary.created_at.desc())
+    """GLOS-05: List glossaries, optionally filtered by language pair (UPLD-04 picker) and owner."""
+    q = select(Glossary)
+    if user_id is not None:
+        q = q.where(Glossary.user_id == user_id)
     if source_lang is not None:
         q = q.where(Glossary.source_lang == source_lang)
     if target_lang is not None:
         q = q.where(Glossary.target_lang == target_lang)
+    q = q.order_by(Glossary.created_at.desc())
     result = await session.execute(q)
     return list(result.scalars().all())
 

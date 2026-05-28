@@ -5,6 +5,7 @@ import { Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { GlossaryList } from "@/features/glossary/GlossaryList"
 import { GlossaryCreateDialog } from "@/features/glossary/GlossaryCreateDialog"
+import { authFetch } from "@/lib/auth"
 import type { Glossary } from "@/lib/types"
 
 export default function GlossariesPage() {
@@ -13,15 +14,22 @@ export default function GlossariesPage() {
 
   const { data: glossaries = [], isLoading } = useQuery<Glossary[]>({
     queryKey: ["glossaries"],
-    queryFn: () =>
-      fetch("/api/glossaries")
-        .then((r) => r.json())
-        .then((d) => d.glossaries as Glossary[]),  // unwrap: API returns {"glossaries": [...]}
+    queryFn: async () => {
+      const res = await authFetch("/glossaries", { throwOnError: false })
+      if (!res.ok) {
+        if (res.status === 401) {
+          return [] as Glossary[]
+        }
+        throw new Error(`Failed to load glossaries: ${res.status}`)
+      }
+      const d = await res.json()
+      return (d.glossaries ?? []) as Glossary[]
+    },
   })
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) =>
-      fetch(`/api/glossaries/${id}`, { method: "DELETE" }).then((r) => {
+      authFetch(`/glossaries/${id}`, { method: "DELETE", throwOnError: false }).then((r) => {
         if (!r.ok) throw new Error("Delete failed")
       }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["glossaries"] }),

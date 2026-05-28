@@ -1,10 +1,11 @@
 import type { Language, JobProgress, JobSummary } from "@/lib/types"
+import { authFetch } from "@/lib/auth"
 
 // next.config.mjs rewrites /api/* → backend; NEXT_PUBLIC_API_URL overrides for direct calls
 const API_BASE = "/api"
 
 async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
-  const res = await fetch(`${API_BASE}${path}`, init)
+  const res = await authFetch(path, init)
   if (!res.ok) {
     const text = await res.text().catch(() => "")
     throw new Error(`API error ${res.status}: ${text}`)
@@ -42,7 +43,7 @@ export async function createJob(options: CreateJobOptions): Promise<{ job_id: st
   form.append("source_lang", options.source_lang)
   form.append("target_lang", options.target_lang)
 
-  const res = await fetch(`${API_BASE}/jobs`, {
+  const res = await authFetch("/jobs", {
     method: "POST",
     body: form,
   })

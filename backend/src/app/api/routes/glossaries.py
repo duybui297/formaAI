@@ -21,7 +21,8 @@ from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFil
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Glossary, GlossaryTerm
+from app.api.deps import get_current_active_user
+from app.db.models import Glossary, GlossaryTerm, User
 from app.db.session import get_session
 from app.schemas.glossary import (
     CreateGlossaryRequest,
@@ -35,6 +36,7 @@ from app.services.glossary_service import (
     delete_glossary,
     delete_term,
     get_glossary,
+    get_glossary_for_user,
     import_csv_terms,
     list_glossaries,
     update_glossary_name,
@@ -86,12 +88,13 @@ async def list_glossaries_endpoint(
     source_lang: str | None = None,
     target_lang: str | None = None,
     session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_active_user),
 ) -> dict:
-    """GLOS-01/05: List glossaries. Optional source_lang + target_lang filter for UPLD-04 picker.
+    """GLOS-01/05: List glossaries for the current user. Optional source_lang + target_lang filter for UPLD-04 picker.
 
-    Response: {"glossaries": [...]} — wrapped, matching Phase 1 /jobs pattern.
+    Auth: requires valid JWT (get_current_active_user).
     """
-    glossaries = await list_glossaries(session, source_lang=source_lang, target_lang=target_lang)
+    glossaries = await list_glossaries(session, source_lang=source_lang, target_lang=target_lang, user_id=current_user.id)
     return {"glossaries": [_glossary_to_dict(g) for g in glossaries]}
 
 
@@ -99,13 +102,18 @@ async def list_glossaries_endpoint(
 async def create_glossary_endpoint(
     body: CreateGlossaryRequest,
     session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_active_user),
 ) -> dict:
-    """GLOS-01: Create a new named glossary for a language pair."""
+    """GLOS-01: Create a new named glossary for a language pair.
+
+    Auth: requires valid JWT (get_current_active_user).
+    """
     g = await create_glossary(
         session,
         name=body.name,
         source_lang=body.source_lang,
         target_lang=body.target_lang,
+        user_id=current_user.id,
     )
     return _glossary_to_dict(g)
 
@@ -114,9 +122,14 @@ async def create_glossary_endpoint(
 async def get_glossary_endpoint(
     glossary_id: str,
     session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_active_user),
 ) -> dict:
-    """GLOS-01/05: Get a glossary with its term list."""
-    g = await get_glossary(session, glossary_id)
+    """GLOS-01/05: Get a glossary with its term list.
+
+    Auth: requires valid JWT (get_current_active_user).
+    Ownership: glossary must belong to current_user.
+    """
+    g = await get_glossary_for_user(session, glossary_id, current_user.id)
     if g is None:
         raise HTTPException(status_code=404, detail="Glossary not found")
     return _glossary_to_dict(g, include_terms=True)
@@ -127,11 +140,19 @@ async def rename_glossary_endpoint(
     glossary_id: str,
     body: RenameGlossaryRequest,
     session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_active_user),
 ) -> dict:
-    """GLOS-05: Rename a glossary."""
-    g = await update_glossary_name(session, glossary_id, body.name)
+    """GLOS-05: Rename a glossary.
+
+    Auth: requires valid JWT (get_current_active_user).
+    Ownership: glossary must belong to current_user.
+    """
+    g = await get_glossary_for_user(session, glossary_id, current_user.id)
     if g is None:
         raise HTTPException(status_code=404, detail="Glossary not found")
+    g.name = body.name
+    await session.commit()
+    await session.refresh(g)
     return _glossary_to_dict(g)
 
 
@@ -139,11 +160,18 @@ async def rename_glossary_endpoint(
 async def delete_glossary_endpoint(
     glossary_id: str,
     session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_active_user),
 ) -> Response:
-    """GLOS-05: Delete glossary and all its terms (CASCADE)."""
-    deleted = await delete_glossary(session, glossary_id)
-    if not deleted:
+    """GLOS-05: Delete glossary and all its terms (CASCADE).
+
+    Auth: requires valid JWT (get_current_active_user).
+    Ownership: glossary must belong to current_user.
+    """
+    g = await get_glossary_for_user(session, glossary_id, current_user.id)
+    if g is None:
         raise HTTPException(status_code=404, detail="Glossary not found")
+    await session.delete(g)
+    await session.commit()
     return Response(status_code=204)
 
 
@@ -158,9 +186,14 @@ async def delete_glossary_endpoint(
 async def list_terms_endpoint(
     glossary_id: str,
     session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_active_user),
 ) -> dict:
-    """GLOS-01: List terms for a glossary."""
-    g = await get_glossary(session, glossary_id)
+    """GLOS-01: List terms for a glossary.
+
+    Auth: requires valid JWT (get_current_active_user).
+    Ownership: glossary must belong to current_user.
+    """
+    g = await get_glossary_for_user(session, glossary_id, current_user.id)
     if g is None:
         raise HTTPException(status_code=404, detail="Glossary not found")
     return {"terms": [_term_to_dict(t) for t in (g.terms or [])]}
@@ -171,9 +204,14 @@ async def add_term_endpoint(
     glossary_id: str,
     body: CreateTermRequest,
     session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_active_user),
 ) -> dict:
-    """GLOS-01: Add a term pair to a glossary."""
-    g = await get_glossary(session, glossary_id)
+    """GLOS-01: Add a term pair to a glossary.
+
+    Auth: requires valid JWT (get_current_active_user).
+    Ownership: glossary must belong to current_user.
+    """
+    g = await get_glossary_for_user(session, glossary_id, current_user.id)
     if g is None:
         raise HTTPException(status_code=404, detail="Glossary not found")
     try:
@@ -199,6 +237,7 @@ async def import_terms_endpoint(
     glossary_id: str,
     file: UploadFile = File(...),
     session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_active_user),
 ) -> dict:
     """GLOS-02: Bulk import terms from CSV or TBX file.
 
@@ -208,8 +247,11 @@ async def import_terms_endpoint(
 
     IMPORTANT: Declared before /{term_id} routes so FastAPI does not match
     the literal "import" segment as a term_id path parameter.
+
+    Auth: requires valid JWT (get_current_active_user).
+    Ownership: glossary must belong to current_user.
     """
-    g = await get_glossary(session, glossary_id)
+    g = await get_glossary_for_user(session, glossary_id, current_user.id)
     if g is None:
         raise HTTPException(status_code=404, detail="Glossary not found")
 
@@ -239,14 +281,18 @@ async def update_term_endpoint(
     term_id: str,
     body: UpdateTermRequest,
     session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_active_user),
 ) -> dict:
     """GLOS-01: Update source_term, target_term, or notes on an existing term.
 
     glossary_id is validated (404 if glossary not found).
     Returns updated term dict.
     409 if updated source_term creates a duplicate (D-02-03).
+
+    Auth: requires valid JWT (get_current_active_user).
+    Ownership: glossary must belong to current_user.
     """
-    g = await get_glossary(session, glossary_id)
+    g = await get_glossary_for_user(session, glossary_id, current_user.id)
     if g is None:
         raise HTTPException(status_code=404, detail="Glossary not found")
     try:

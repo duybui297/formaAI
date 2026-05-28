@@ -24,7 +24,8 @@ from fastapi import APIRouter, Depends
 from sse_starlette import EventSourceResponse
 from starlette.requests import Request
 
-from app.api.deps import get_redis
+from app.api.deps import get_current_active_user, get_redis
+from app.db.models import User
 
 log = structlog.get_logger()
 
@@ -40,6 +41,7 @@ async def stream_job_progress(
     job_id: str,
     request: Request,
     redis=Depends(get_redis),
+    current_user: User = Depends(get_current_active_user),
 ) -> EventSourceResponse:
     """
     JOB-02/03: SSE stream of job progress events.
@@ -50,7 +52,7 @@ async def stream_job_progress(
     Pitfall #3: pub/sub subscription is always released in the finally block
     to prevent Redis memory leaks on abrupt client disconnect.
 
-    # TODO(phase-2): add JWT auth
+    Auth: requires valid JWT (get_current_active_user).
     """
 
     async def _job_progress_generator():
