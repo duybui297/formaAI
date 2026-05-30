@@ -1,4 +1,12 @@
 <!-- GSD:project-start source:PROJECT.md -->
+## ⚠️ Session Continuity — READ FIRST
+
+**Before doing anything, read [`SESSIONS.md`](./SESSIONS.md)** to recover context from previous
+sessions (decisions, infra setup, demo accounts, open gaps, conventions). It is the running memory
+across sessions. When this session does meaningful work, append a new `## Session N` block to the end
+of `SESSIONS.md` (never delete past entries). Also follow [`RULES.md`](./RULES.md) for the
+verification-driven task workflow (`scripts/verify_task.py`, `featurelist.json`, `PROGRESS.md`).
+
 ## Project
 
 **AI Translation PoC**

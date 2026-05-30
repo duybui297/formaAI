@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { AppSidebar } from "@/components/layout/AppSidebar"
+import { ExpiryBanner } from "@/features/licenses/ExpiryBanner"
 import { Loader2 } from "lucide-react"
 
 const AUTH_COOKIE = "forma_access_token"
@@ -31,5 +32,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     )
   }
 
-  return <AppSidebar>{children}</AppSidebar>
+  return (
+    <>
+      <ExpiryBanner />
+      <AppSidebar>{children}</AppSidebar>
+    </>
+  )
 }

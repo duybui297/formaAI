@@ -20,6 +20,7 @@ import json
 import os
 
 import structlog
+from arq import cron
 from arq.connections import RedisSettings
 from docx import Document
 from openai import APIConnectionError, APIStatusError, RateLimitError
@@ -890,6 +891,34 @@ async def _run_translation(ctx: dict, session, job_id: str) -> None:
         raise  # re-raise so arq marks the job as failed in its own queue
 
 
+# ---------------------------------------------------------------------------
+# TASK-2.4: License expiry reconciliation cron task
+# ---------------------------------------------------------------------------
+
+
+async def reconcile_expirations_task(ctx: dict) -> None:
+    """arq cron task: expire overdue licenses + clean Redis cache.
+
+    Runs daily at 02:00 (server local time as observed by arq scheduler).
+    Delegates to app.licensing.reconciliation.reconcile_expirations which
+    processes in batches of 500 and writes LicenseActivity audit rows.
+    """
+    from app.licensing.reconciliation import reconcile_expirations  # noqa: PLC0415
+
+    session_factory = ctx["session_factory"]
+    redis = ctx["redis"]
+
+    async with session_factory() as session:
+        result = await reconcile_expirations(session, redis)
+
+    log.info(
+        "reconcile_expirations_task_done",
+        expired=result.expired_count,
+        warnings=result.warning_count,
+        batches=result.batches,
+    )
+
+
 class WorkerSettings:
     """
     arq WorkerSettings.
@@ -899,6 +928,9 @@ class WorkerSettings:
     """
 
     functions = [translate_job]  # direct reference — NEVER use string
+    cron_jobs = [
+        cron(reconcile_expirations_task, hour=2, minute=0),
+    ]
     on_startup = startup
     on_shutdown = shutdown
     # max_jobs=1: DashScope intl free tier has a tight QPS cap — running multiple

@@ -211,9 +211,8 @@ function LoginForm() {
               )}
             </Button>
           </form>
-          {/* TODO: Next version */}
           {/* Register link */}
-          {/* <p className="mt-6 text-center text-sm text-[#6B7280]">
+          <p className="mt-6 text-center text-sm text-[#6B7280]">
             Don&apos;t have an account?{" "}
             <Link
               href="/register"
@@ -221,7 +220,7 @@ function LoginForm() {
             >
               Create one
             </Link>
-          </p> */}
+          </p>
         </div>
       </div>
     </div>

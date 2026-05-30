@@ -70,6 +70,22 @@ async def get_current_active_user(
     return current_user
 
 
+async def require_admin(
+    current_user: User = Depends(get_current_active_user),
+) -> User:
+    """Dependency that allows only users with is_superuser=True (admin).
+
+    Returns 403 for authenticated non-admin users.
+    Uses is_superuser (existing column) as the admin flag — no new column needed.
+    """
+    if not current_user.is_superuser:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required",
+        )
+    return current_user
+
+
 async def get_optional_user(
     credentials: HTTPAuthorizationCredentials | None = Depends(security),
     session: AsyncSession = Depends(get_session),

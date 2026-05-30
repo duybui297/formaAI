@@ -20,7 +20,8 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.api.middleware.cors import add_cors_middleware
-from app.api.routes import auth, export, glossaries, health, jobs, languages, segments, sse, upload
+from app.api.middleware.license import LicenseValidationMiddleware
+from app.api.routes import admin_licenses, auth, export, glossaries, health, jobs, languages, licenses, ping, segments, sse, upload
 from app.core.config import get_settings
 from app.core.logging import configure_logging
 from app.llm.client import make_llm_client
@@ -74,6 +75,7 @@ app = FastAPI(
 )
 
 add_cors_middleware(app)
+app.add_middleware(LicenseValidationMiddleware)
 
 # Mount routers — no prefix (keep URLs flat for PoC simplicity)
 app.include_router(health.router)
@@ -85,3 +87,6 @@ app.include_router(segments.router)
 app.include_router(export.router)
 app.include_router(sse.router)
 app.include_router(auth.router)
+app.include_router(admin_licenses.router)
+app.include_router(licenses.router)
+app.include_router(ping.router)

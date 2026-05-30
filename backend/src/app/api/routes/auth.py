@@ -190,6 +190,7 @@ async def register(
         email=user.email,
         full_name=user.full_name,
         is_active=user.is_active,
+        is_superuser=user.is_superuser,
     )
 
 
@@ -358,6 +359,7 @@ async def get_me(
         email=user.email,
         full_name=user.full_name,
         is_active=user.is_active,
+        is_superuser=user.is_superuser,
     )
 
 

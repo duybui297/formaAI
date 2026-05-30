@@ -126,3 +126,97 @@ export interface Glossary {
   updated_at: string
   terms?: GlossaryTerm[]      // only populated by GET /glossaries/{id}
 }
+
+// --- License Management types (TASK-3.1) ---
+
+export type LicenseTier = "starter" | "professional" | "enterprise"
+export type LicenseStatus = "active" | "suspended" | "revoked" | "expired"
+
+export interface License {
+  id: string
+  key_masked: string          // e.g. ****-****-****-AB12
+  tier: LicenseTier
+  status: LicenseStatus
+  customer_id: string | null
+  max_devices: number
+  issued_at: string
+  activated_at: string | null
+  expired_at: string | null
+}
+
+export interface LicenseActivity {
+  id: string
+  license_id: string
+  action: string
+  actor: string | null
+  detail: string | null
+  created_at: string
+}
+
+export interface LicensesListParams {
+  tier?: LicenseTier
+  status?: LicenseStatus
+  issued_after?: string
+  issued_before?: string
+  page?: number
+  page_size?: number
+  sort_by?: string
+  sort_dir?: "asc" | "desc"
+}
+
+export interface LicensesListResponse {
+  licenses: License[]
+  total: number
+  page: number
+  page_size: number
+}
+
+export interface CreateLicenseRequest {
+  tier: LicenseTier
+  customer_id?: string
+  max_devices?: number
+  expired_at?: string
+}
+
+export interface CreateLicenseResponse {
+  license: License
+  raw_key: string
+}
+
+// --- License Activation types (TASK-3.2) ---
+
+export type ActivateErrorCode = "INVALID_KEY" | "ALREADY_ACTIVATED" | "EXPIRED"
+
+export interface ActivateLicenseRequest {
+  key: string
+}
+
+export interface ActivateLicenseResponse {
+  tier: LicenseTier
+  expiry: string | null       // ISO date string; null if no expiry
+  status: LicenseStatus
+  features: string[]
+}
+
+export interface ActivateLicenseError {
+  code: ActivateErrorCode
+  message: string
+}
+
+// --- License Checkout types (TASK-3.3) ---
+
+export type CheckoutPlan = "free" | "pro" | "business"
+
+export interface CheckoutLicenseRequest {
+  plan: CheckoutPlan
+}
+
+export interface CheckoutLicenseResponse {
+  raw_key: string
+  /** Backend returns TRIAL | PRO | ENTERPRISE (uppercase) — distinct from admin LicenseTier */
+  tier: string
+  status: string
+  id?: string
+  issued_at?: string
+  expired_at?: string | null
+}
