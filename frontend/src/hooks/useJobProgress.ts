@@ -3,7 +3,7 @@ import { useQueryClient, useQuery } from "@tanstack/react-query"
 import { fetchEventSource } from "@microsoft/fetch-event-source"
 import { useEffect, useRef } from "react"
 import type { JobProgress } from "@/lib/types"
-import { getToken } from "@/lib/auth"
+import { getToken, authFetch } from "@/lib/auth"
 
 const TERMINAL = new Set(["done", "failed", "needs_review"])
 

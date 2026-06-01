@@ -2,7 +2,7 @@
 import { useState } from "react"
 import Link from "next/link"
 import { toast } from "@/hooks/use-toast"
-import { Loader2, ArrowLeft, Check } from "lucide-react"
+import { Loader2, ArrowLeft } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -58,14 +58,7 @@ function ForgotForm() {
       await forgotPasswordApi(email)
       if (showToast) {
         toast({
-          title: (
-            <div className="flex items-center gap-2">
-              <span className="w-5 h-5 rounded-full bg-green-500 flex items-center justify-center flex-shrink-0">
-                <Check className="w-3 h-3 text-white" strokeWidth={3} />
-              </span>
-              Email sent
-            </div>
-          ),
+          title: "Email sent",
           description: "Check your inbox for the reset link.",
           duration: 3000,
         })

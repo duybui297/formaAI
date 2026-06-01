@@ -15,14 +15,18 @@ Live status for tasks defined in [`FEATURELIST.md`](./FEATURELIST.md) / [`featur
 |------|------|-------|----------|-----------|--------|---------|-----------|-------|
 | 1.1 | Design Database Schema for License Tables | DB | Critical | — | DONE | 2026-05-29 | 2026-05-29 | all behaviors PASSING |
 | 1.2 | Implement Secure License Key Generation Algorithm | BE | Critical | 1.1 | DONE | 2026-05-29 | 2026-05-29 | all behaviors PASSING |
-| 2.1 | API Create License (Admin) with Idempotency | BE/DB | Critical | 1.1, 1.2 | DONE | 2026-05-29 | 2026-05-29 | all behaviors PASSING |
+| 2.1 | API Create License (Admin) with Idempotency | BE/DB | Critical | 1.1, 1.2 | DONE | 2026-05-29 | 2026-05-30 | all behaviors PASSING |
 | 2.2 | API Activate License with Distributed Lock | BE | Critical | 2.1 | DONE | 2026-05-29 | 2026-05-29 | all behaviors PASSING |
 | 2.3 | License Validation Middleware | BE | Critical | 2.2 | DONE | 2026-05-29 | 2026-05-29 | all behaviors PASSING |
 | 2.4 | Background Cron Job — Expiration Reconciliation | BE | High | 2.2 | DONE | 2026-05-29 | 2026-05-29 | all behaviors PASSING |
+| 2.5 | Admin License CRUD APIs | BE | High | 2.1, 2.2 | DONE | 2026-05-30 | 2026-05-30 | all behaviors PASSING |
 | 3.1 | Admin Dashboard — License Lifecycle Management | FE | High | 2.1 | DONE | 2026-05-29 | 2026-05-29 | all behaviors PASSING |
-| 3.2 | Client Activation Screen & Expiry Warning Banner | FE | High | 2.2 | DONE | 2026-05-29 | 2026-05-29 | all behaviors PASSING |
+| 3.2 | Client Activation Screen & Expiry Warning Banner | FE | High | 2.2 | DONE | 2026-05-29 | 2026-05-30 | all behaviors PASSING |
 | 3.3 | Pricing → Self-serve License (user-facing) | FE/BE | High | 2.1, 3.2 | DONE | 2026-05-30 | 2026-05-30 | all behaviors PASSING |
 | 3.4 | User Registration | FE/BE | High | — | DONE | 2026-05-30 | 2026-05-30 | all behaviors PASSING |
+| 3.5 | Pricing Lead Capture + Activate Fix | FE/BE/DB | High | 3.2, 3.3 | DONE | | 2026-05-30 | all behaviors PASSING |
+| 3.6 | Admin User Management | FE/BE/DB | High | 3.4 | DONE | 2026-05-30 | 2026-05-30 | all behaviors PASSING |
+| 3.7 | Translation Entitlement Enforcement | FE/BE | High | 2.2 | DONE | 2026-05-30 | 2026-05-30 | all behaviors PASSING |
 | 4.1 | Concurrency & Time-Travel Testing | BE | High | 2.2, 2.3, 2.4 | DONE | 2026-05-29 | 2026-05-29 | all behaviors PASSING |
 | 4.2 | Integration & Security Testing | BE/DevOps | Medium | 4.1 | BLOCKED | 2026-05-29 | | 4.2-d: P99<50ms @1000u needs separate load-gen host + multi-node deploy; single dev box hits 250ms (a/b/c PASS) |
 
@@ -30,11 +34,11 @@ Live status for tasks defined in [`FEATURELIST.md`](./FEATURELIST.md) / [`featur
 
 | Metric | Value |
 |--------|-------|
-| Total tasks | 12 |
-| DONE | 11 / 12 |
+| Total tasks | 16 |
+| DONE | 15 / 16 |
 | IN_PROGRESS | 0 |
 | BLOCKED | 1 |
-| Est. days total | 35 |
+| Est. days total | 46 |
 | Est. days remaining | 3 |
 
 ## Changelog
@@ -64,3 +68,21 @@ Live status for tasks defined in [`FEATURELIST.md`](./FEATURELIST.md) / [`featur
 - 2026-05-30  TASK-3.3  IN_PROGRESS→DONE  reconciled from featurelist.json
 - 2026-05-30  TASK-3.4  TODO→IN_PROGRESS  started
 - 2026-05-30  TASK-3.4  IN_PROGRESS→DONE  reconciled from featurelist.json
+- 2026-05-30  TASK-2.5  TODO→IN_PROGRESS  started
+- 2026-05-30  TASK-2.5  IN_PROGRESS→DONE  reconciled from featurelist.json
+- 2026-05-30  TASK-2.1  DONE→IN_PROGRESS  reconciled from featurelist.json
+- 2026-05-30  TASK-2.5  DONE→IN_PROGRESS  reconciled from featurelist.json
+- 2026-05-30  TASK-4.2  BLOCKED→IN_PROGRESS  reconciled from featurelist.json
+- 2026-05-30  TASK-4.2  →BLOCKED  4.2-d: P99<50ms @1000u needs separate load-gen host + multi-node deploy; single dev box hits 250ms (a/b/c PASS)
+- 2026-05-30  TASK-2.1  IN_PROGRESS→DONE  reconciled from featurelist.json
+- 2026-05-30  TASK-2.5  IN_PROGRESS→DONE  reconciled from featurelist.json
+- 2026-05-30  TASK-3.5  TODO→IN_PROGRESS  reconciled from featurelist.json
+- 2026-05-30  TASK-3.3  DONE→IN_PROGRESS  reconciled from featurelist.json
+- 2026-05-30  TASK-3.2  DONE→IN_PROGRESS  reconciled from featurelist.json
+- 2026-05-30  TASK-3.2  IN_PROGRESS→DONE  reconciled from featurelist.json
+- 2026-05-30  TASK-3.3  IN_PROGRESS→DONE  reconciled from featurelist.json
+- 2026-05-30  TASK-3.5  IN_PROGRESS→DONE  reconciled from featurelist.json
+- 2026-05-30  TASK-3.6  TODO→IN_PROGRESS  started
+- 2026-05-30  TASK-3.6  IN_PROGRESS→DONE  reconciled from featurelist.json
+- 2026-05-30  TASK-3.7  TODO→IN_PROGRESS  started
+- 2026-05-30  TASK-3.7  IN_PROGRESS→DONE  reconciled from featurelist.json

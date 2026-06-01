@@ -475,10 +475,10 @@ describe("UploadForm error display (G3 gap closure)", () => {
     // fetch directly to test the error rendering branch.
     // Use act to simulate what submitWithAction does: call fetch and handle the error.
     await act(async () => {
-      const res = await (global.fetch as ReturnType<typeof vi.fn>)("/api/upload", {
+      const res = (await (global.fetch as ReturnType<typeof vi.fn>)("/api/upload", {
         method: "POST",
         body: new FormData(),
-      })
+      })) as Response
       const data = await res.json()
       expect(data.detail).toBe("Unsupported file type. Upload a DOCX, PDF, or PPTX.")
       expect(res.ok).toBe(false)

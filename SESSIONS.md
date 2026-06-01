@@ -64,3 +64,29 @@ BLOCKED: **4.2** Integration & Security — 4.2-a/b/c PASS; **4.2-d** (load P99<
 **Notable fixes:** uv-run verify commands; docker postgres 5433; root .env secrets; pull-denied (`make up`); is_superuser exposure + admin gating + admin route guard; login→register link; **license router `/api`-prefix 404 bug** (browser couldn't reach checkout/admin/activate — routers now have no `/api` prefix to match the proxy that strips it).
 
 **Left open:** admin CRUD backend endpoints (gap hidden by mocked e2e), 4.2-d infra, gen_backlog stale, no commits yet.
+
+---
+
+## Session 2 — 2026-05-30
+
+**What was built (4 new tasks through the verify loop, board now 15/16 DONE; 4.2 still BLOCKED):**
+
+- **TASK-2.5 Admin License CRUD APIs** — the backend the admin dashboard (3.1) was calling but that didn't exist (gap was hidden by mocked e2e). `GET /admin/licenses` (paginate/filter/sort), `GET /{id}`, `GET /{id}/activities`, bulk `POST /suspend` + `/revoke` ({ids}), `POST /{id}/extend` ({expired_at}). Then reconciled BE→FE contract: list envelope key `licenses[]`, `key_masked`, bare activities array, and a **vocab mapping layer** (`app/licensing/vocab.py`) — admin API speaks FE vocab (tier starter/professional/enterprise, lowercase status incl `pending`, `customer_id` as **email** resolved to a user) while the domain keeps TRIAL/PRO/ENTERPRISE + uppercase + UUID. `key_masked` = `****-****-****-XXXX` (last 4 of key_hash — raw key never persisted). Create decoupled into `AdminCreateLicenseRequest` (email/FE-tier) vs `InternalCreateLicenseRequest` (UUID/BE-enum) so self-serve checkout (3.3) didn't break.
+
+- **TASK-3.5 Pricing Lead Capture + Activate Fix** — removed self-serve key issuance from `/pricing`; plan CTAs now open an email lead-capture popup → `POST /api/leads` (new `leads` table, migration 0014) → thank-you. BE `/licenses/checkout` retained but unused by pricing. Also fixed the **broken /activate**: FE sent `{key}` but BE wanted `{raw_key}` (422); BE `ActivateResponse` now returns `{tier, status, expiry, features[]}` (features from `plans.TIER_FEATURES`). Rewrote 3.3-c to the popup behaviour.
+
+- **TASK-3.6 Admin User Management** — new admin sidebar tab `/admin/users`. BE `admin_users.py`: list (search/role/active filter, paginate, excludes soft-deleted), create (409 dup / 422 weak), PATCH (activate/deactivate + promote/demote), DELETE (**soft-delete** via new `users.deleted_at`, migration 0015). Guards: no self deactivate/demote/delete, can't remove the last admin. `get_current_active_user` now rejects deleted/inactive users (login blocked). FE page mirrors licenses; own-row actions disabled.
+
+- **TASK-3.7 Translation Entitlement Enforcement** — the pricing tiers were **marketing-only** (no enforcement; any logged-in user could translate unlimited). Now enforced: `app/licensing/plans.py` ENTITLEMENTS (TRIAL 5MB/10-mo/no-OCR/no-glossary · PRO 50MB/∞/OCR/glossary · ENTERPRISE 100MB/∞/OCR/glossary) + resolver `app/licensing/entitlements.py` (highest active tier; **superuser→ENTERPRISE**; none→None). `/upload` now requires an active license (403 LICENSE_REQUIRED), enforces per-tier file size (413), monthly quota (403 QUOTA_EXCEEDED, counts Job rows in the calendar month — Job.user_id already existed), and OCR/glossary gates (403 FEATURE_NOT_IN_PLAN). Worker also gates **auto-detected** scanned-PDF OCR (3.7-h, `translate_worker.py` `case "scanned_pdf"`): TRIAL owner → job FAILED with FEATURE_NOT_IN_PLAN/ocr; null-owner legacy jobs skip the gate. New `GET /api/licenses/me` returns the entitlement summary; FE `TranslatorWorkspace` blocks unlicensed users (→ /pricing, /activate) and `UploadForm` reflects tier (size hint, quota remaining, OCR/glossary disabled on TRIAL).
+
+**Demo flow change:** normal user `/pricing` → email popup (NO key). Keys are admin-issued at `/admin/licenses` → given to customer → `/activate`. Translation now requires an ACTIVE license (admin/superuser exempt).
+
+**Docs:** added root **README.md** (overview + quick-start + admin API + doc map). Run guide already in RUN.md.
+
+**Migrations to apply on deploy:** `docker compose exec api alembic upgrade head` → 0013 (license EXTENDED enum), 0014 (leads), 0015 (users.deleted_at).
+
+**Left open / caveats:**
+- ~69 pre-existing BE failures in unrelated suites (upload/SSE/segments/healthcheck/**jobs**: `test_jobs.py`/`test_jobs_download.py` lack an auth mock); not caused by this session — needs a conftest auth fixture sweep.
+- Pre-existing FE TS errors in non-license files (jobs/review, forgot-password, UploadForm.test, useJobProgress).
+- 4.2-d load test still BLOCKED (needs separate load-gen host).
+- No commits yet this session.

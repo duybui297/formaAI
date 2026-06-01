@@ -48,6 +48,15 @@
       "days": 2
     },
     {
+      "id": "TASK-2.5",
+      "name": "Admin License CRUD APIs",
+      "deps": [
+        "TASK-2.1",
+        "TASK-2.2"
+      ],
+      "days": 3
+    },
+    {
       "id": "TASK-3.1",
       "name": "Admin Dashboard \u2014 License Lifecycle Management",
       "deps": [
@@ -77,6 +86,31 @@
       "name": "User Registration",
       "deps": [],
       "days": 2
+    },
+    {
+      "id": "TASK-3.5",
+      "name": "Pricing Lead Capture + Activate Fix",
+      "deps": [
+        "TASK-3.2",
+        "TASK-3.3"
+      ],
+      "days": 2
+    },
+    {
+      "id": "TASK-3.6",
+      "name": "Admin User Management",
+      "deps": [
+        "TASK-3.4"
+      ],
+      "days": 3
+    },
+    {
+      "id": "TASK-3.7",
+      "name": "Translation Entitlement Enforcement",
+      "deps": [
+        "TASK-2.2"
+      ],
+      "days": 3
     },
     {
       "id": "TASK-4.1",

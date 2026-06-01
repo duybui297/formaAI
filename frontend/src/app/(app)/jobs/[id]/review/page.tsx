@@ -92,6 +92,7 @@ export default function ReviewPage({
 
   // Phase 4: D-04-22 — Download menu handler
   const handleDownload = async (artifact: "bilingual_pdf" | "translated_pdf" | "translated_docx") => {
+    if (!job) return;
     setDownloading(true);
     try {
       const res = await authFetch(`/jobs/${jobId}/artifacts?artifact=${artifact}`, {

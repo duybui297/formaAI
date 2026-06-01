@@ -61,6 +61,7 @@
 | `2.1-b` | Non-admin caller gets 403; admin gets 201 with the raw key returned exactly once. | `cd backend && uv run pytest -o addopts="" tests/api/test_admin_licenses.py -k rbac_and_one_time_key -q` |
 | `2.1-c` | Created license persists status=PENDING with a CREATED row in license_activities. | `cd backend && uv run pytest -o addopts="" tests/api/test_admin_licenses.py -k persists_pending_and_audit -q` |
 | `2.1-d` | Repeating the same Idempotency-Key does not create a duplicate license. | `cd backend && uv run pytest -o addopts="" tests/api/test_admin_licenses.py -k idempotent_create -q` |
+| `2.1-e` | FE create contract: accepts FE tier vocab (starter/professional/enterprise) + `customer_id` as an EMAIL resolved to an existing user (unknown → 400) + optional max_devices/expired_at; returns 201 `{license:{FE License shape, key_masked, customer_id=email}, raw_key}`. | `cd backend && uv run pytest -o addopts="" tests/api/test_admin_licenses.py -k create_fe_contract -q` |
 
 ### TASK-2.2 — API Activate License with Distributed Lock
 - **Layer:** BE · **Priority:** Critical · **Est:** 4d · **Depends on:** TASK-2.1
@@ -92,6 +93,19 @@
 | `2.4-b` | Bulk update is processed in batches of 500 (no single giant transaction). | `cd backend && uv run pytest -o addopts="" tests/test_expiry_reconciliation.py -k batches_of_500 -q` |
 | `2.4-c` | Redis keys license:{key_hash} for expired licenses are deleted (clock-skew cleanup). | `cd backend && uv run pytest -o addopts="" tests/test_expiry_reconciliation.py -k deletes_redis_keys -q` |
 | `2.4-d` | Expiry / 7-day-warning events are published for email notification. | `cd backend && uv run pytest -o addopts="" tests/test_expiry_reconciliation.py -k publishes_expiry_events -q` |
+
+### TASK-2.5 — Admin License CRUD APIs
+- **Layer:** BE · **Priority:** High · **Est:** 3d · **Depends on:** TASK-2.1, TASK-2.2
+- Backend endpoints powering the admin dashboard (TASK-3.1): list/filter/paginate, detail, activities, suspend/revoke, extend.
+
+| Feature | Behavior | Verification |
+|---------|----------|--------------|
+| `2.5-a` | GET /api/admin/licenses returns the FE-contract envelope `{licenses[], total, page, page_size}` (items use FE `License` shape: `key_masked`, …); filter tier/status/issued_after/issued_before + sort_by/sort_dir; admin-gated (non-admin 403). | `cd backend && uv run pytest -o addopts="" tests/api/test_admin_license_crud.py -k list_filter_paginate -q` |
+| `2.5-b` | GET /api/admin/licenses/{id} returns the FE `License` shape (`id`, `key_masked`, `tier`, `status`, `customer_id`, `max_devices`, `issued_at`, `activated_at`, `expired_at`); unknown id → 404; non-admin → 403. | `cd backend && uv run pytest -o addopts="" tests/api/test_admin_license_crud.py -k detail_and_404 -q` |
+| `2.5-c` | GET /api/admin/licenses/{id}/activities returns a bare `LicenseActivity[]` (`id`, `license_id`, `action`, `actor`, `detail`, `created_at`) newest-first; admin-gated. | `cd backend && uv run pytest -o addopts="" tests/api/test_admin_license_crud.py -k activities_timeline -q` |
+| `2.5-d` | POST /api/admin/licenses/suspend and /api/admin/licenses/revoke take a bulk `{ids:[...]}` body, transition each (→SUSPENDED / →REVOKED), append an activity row per license, invalidate each Redis key; admin-gated. | `cd backend && uv run pytest -o addopts="" tests/api/test_admin_license_crud.py -k suspend_revoke -q` |
+| `2.5-e` | POST /api/admin/licenses/{id}/extend takes an absolute `{expired_at:"<ISO>"}` body, sets expired_at, appends an EXTENDED activity row, refreshes Redis TTL, returns the updated `License`. | `cd backend && uv run pytest -o addopts="" tests/api/test_admin_license_crud.py -k extend_expiry -q` |
+| `2.5-f` | Read endpoints (list/detail/activities) + filters speak FE vocab: tier starter/professional/enterprise (↔TRIAL/PRO/ENTERPRISE), status lowercase incl `pending` (↔BE enum), customer_id as owner email; FE-vocab filter params decoded to BE enum. | `cd backend && uv run pytest -o addopts="" tests/api/test_admin_license_crud.py -k fe_vocab_mapping -q` |
 
 ---
 
@@ -125,7 +139,7 @@
 |---------|----------|--------------|
 | `3.3-a` | POST /api/licenses/checkout (authenticated user) creates a PENDING license of the chosen tier for the CURRENT user (customer_id=current_user), returns the raw key once. Not admin-gated. | `cd backend && uv run pytest -o addopts="" tests/api/test_checkout.py -k self_serve_creates_pending -q` |
 | `3.3-b` | Plan→tier mapping is correct (Free→TRIAL, Pro→PRO, Business→ENTERPRISE) with per-tier max_devices/validity; invalid plan rejected. | `cd backend && uv run pytest -o addopts="" tests/api/test_checkout.py -k plan_tier_mapping -q` |
-| `3.3-c` | /pricing (user view) plan CTA calls checkout → shows one-time key dialog + a link to /activate. | `cd frontend && npx playwright test e2e/pricing.spec.ts -g 'plan checkout issues key'` |
+| `3.3-c` | /pricing plan CTA opens an email lead-capture popup (no self-serve key dialog, no checkout call); valid email → POST /api/leads → thank-you. | `cd frontend && npx playwright test e2e/pricing.spec.ts -g 'plan opens lead capture'` |
 | `3.3-d` | /pricing plan names/features are aligned to the license tiers (TRIAL/PRO/ENTERPRISE). | `cd frontend && npx playwright test e2e/pricing.spec.ts -g 'plans aligned to tiers'` |
 
 ### TASK-3.4 — User Registration
@@ -139,6 +153,47 @@
 | `3.4-c` | Weak/short password (<8 chars) or invalid email is rejected with 422. | `cd backend && uv run pytest -o addopts="" tests/api/test_register.py -k invalid_input_rejected -q` |
 | `3.4-d` | /register form submits a valid account → user is created and lands authenticated (auto-login → app). | `cd frontend && npx playwright test e2e/register.spec.ts -g 'register success'` |
 | `3.4-e` | Client validation: password mismatch / invalid email shows an error and blocks submit. | `cd frontend && npx playwright test e2e/register.spec.ts -g 'register validation'` |
+
+### TASK-3.5 — Pricing Lead Capture + Activate Fix
+- **Layer:** FE/BE/DB · **Priority:** High · **Est:** 2d · **Depends on:** TASK-3.2, TASK-3.3
+- Normal users no longer self-serve a license from `/pricing`: plan CTAs now capture a marketing-lead email. Also fixes the broken `/activate` request/response contract. The BE `POST /api/licenses/checkout` endpoint is retained (admin/internal) but no longer called by `/pricing`.
+
+| Feature | Behavior | Verification |
+|---------|----------|--------------|
+| `3.5-a` | Alembic `upgrade head` creates a `leads` table (id, email, plan, created_at), cleanly + idempotently. | `cd backend && uv run pytest -o addopts="" tests/db/test_leads_schema.py -k leads_table -q` |
+| `3.5-b` | POST /api/leads stores `{email, plan}` → 201; invalid email → 422; open (no auth — it's a lead, not a license). | `cd backend && uv run pytest -o addopts="" tests/api/test_leads.py -k creates_lead -q` |
+| `3.5-c` | POST /api/licenses/activate accepts `{raw_key}` and returns `{tier, status, expiry, features[]}` (features from the tier plan); bad key → documented error. | `cd backend && uv run pytest -o addopts="" tests/api/test_activate.py -k activate_response_contract -q` |
+| `3.5-d` | /activate submits `{raw_key}` (not `{key}`) and renders tier/expiry/features on success (fixes 422 + undefined display). | `cd frontend && npx playwright test e2e/activate.spec.ts -g 'activate success contract'` |
+
+### TASK-3.6 — Admin User Management
+- **Layer:** FE/BE/DB · **Priority:** High · **Est:** 3d · **Depends on:** TASK-3.4
+- New admin tab `/admin/users`: list/search/paginate, create, activate/deactivate, promote/demote admin, soft-delete. Guards prevent self-harm and removing the last admin.
+
+| Feature | Behavior | Verification |
+|---------|----------|--------------|
+| `3.6-a` | Alembic `upgrade head` adds nullable `users.deleted_at` (soft-delete marker), cleanly + idempotently. | `cd backend && uv run pytest -o addopts="" tests/db/test_user_schema.py -k users_deleted_at -q` |
+| `3.6-b` | GET /api/admin/users → `{users[], total, page, page_size}`; search email/name + filter role/active; excludes soft-deleted; admin-gated (403 non-admin). | `cd backend && uv run pytest -o addopts="" tests/api/test_admin_users.py -k list_filter_paginate -q` |
+| `3.6-c` | POST /api/admin/users creates `{email, full_name?, password, is_superuser?, is_active?}` → 201 (password hashed, never returned); dup email → 409; invalid email / weak pw → 422. | `cd backend && uv run pytest -o addopts="" tests/api/test_admin_users.py -k create_user -q` |
+| `3.6-d` | PATCH /api/admin/users/{id} updates full_name/is_active/is_superuser; guards: no self deactivate/demote, last admin cannot be demoted/deactivated → 400/409. | `cd backend && uv run pytest -o addopts="" tests/api/test_admin_users.py -k update_guards -q` |
+| `3.6-e` | DELETE /api/admin/users/{id} soft-deletes (deleted_at + is_active=false, hidden, cannot log in); no self-delete; last admin cannot be deleted → 400/409. | `cd backend && uv run pytest -o addopts="" tests/api/test_admin_users.py -k soft_delete_guards -q` |
+| `3.6-f` | Admin sees a 'Users' tab → /admin/users; non-admin can't see it nor reach the route (guard redirects). | `cd frontend && npx playwright test e2e/admin-users.spec.ts -g 'users tab visible admin only'` |
+| `3.6-g` | /admin/users lists users (email/name/role badge/active chip) + search + pagination; create-user dialog; row actions activate/deactivate, promote/demote, delete; own-row actions disabled. | `cd frontend && npx playwright test e2e/admin-users.spec.ts -g 'list create and row actions'` |
+
+### TASK-3.7 — Translation Entitlement Enforcement
+- **Layer:** FE/BE · **Priority:** High · **Est:** 3d · **Depends on:** TASK-2.2
+- Wires the pricing tiers to real enforcement: translation now requires an ACTIVE license and applies per-tier limits. Replaces the dead `/v1/` middleware approach with a per-request entitlement resolver keyed off the logged-in user's active license. Superusers are exempt (treated as ENTERPRISE).
+- **Entitlements:** TRIAL = 5MB / 10 docs-mo / no OCR / no glossary · PRO = 50MB / unlimited / OCR / glossary · ENTERPRISE = 100MB / unlimited / OCR / glossary.
+
+| Feature | Behavior | Verification |
+|---------|----------|--------------|
+| `3.7-a` | plans.py defines per-tier ENTITLEMENTS (max_file_bytes, monthly_quota, ocr_allowed, glossary_allowed) + a resolver (highest active tier; superuser→ENTERPRISE; none→None). | `cd backend && uv run pytest -o addopts="" tests/test_entitlements.py -k tier_entitlements_and_resolver -q` |
+| `3.7-b` | GET /api/licenses/me → `{has_active, tier, max_file_bytes, monthly_quota, quota_used, ocr_allowed, glossary_allowed}`; no active license → has_active=false. | `cd backend && uv run pytest -o addopts="" tests/api/test_entitlements_api.py -k licenses_me -q` |
+| `3.7-c` | POST /upload requires an active license → 403 `LICENSE_REQUIRED` when absent; superuser exempt. | `cd backend && uv run pytest -o addopts="" tests/api/test_entitlements_api.py -k upload_requires_license -q` |
+| `3.7-d` | POST /upload enforces per-tier max file size (5/50/100MB) → 413 over limit. | `cd backend && uv run pytest -o addopts="" tests/api/test_entitlements_api.py -k per_tier_file_size -q` |
+| `3.7-e` | POST /upload enforces monthly quota (TRIAL 10/mo, PRO/ENT unlimited) → 403 `QUOTA_EXCEEDED`; resets per calendar month. | `cd backend && uv run pytest -o addopts="" tests/api/test_entitlements_api.py -k monthly_quota -q` |
+| `3.7-f` | OCR + glossary gated by tier: TRIAL requesting OCR / attaching glossary_id → 403 `FEATURE_NOT_IN_PLAN`; PRO/ENT allowed. | `cd backend && uv run pytest -o addopts="" tests/api/test_entitlements_api.py -k ocr_glossary_gated -q` |
+| `3.7-g` | Unlicensed user blocked from translate UI (prompt → /pricing, /activate); licensed UI reflects tier (size hint, quota, OCR/glossary disabled on TRIAL). | `cd frontend && npx playwright test e2e/entitlements.spec.ts -g 'translate gated by license and tier'` |
+| `3.7-h` | Worker gates auto-detected OCR: scanned PDF + TRIAL owner → worker skips OCR and fails the job with FEATURE_NOT_IN_PLAN (feature=ocr); PRO/ENTERPRISE → OCR runs. | `cd backend && uv run pytest -o addopts="" tests/test_worker_ocr_gate.py -k worker_blocks_ocr_for_trial -q` |
 
 ---
 

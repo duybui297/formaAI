@@ -164,9 +164,9 @@
       "verification": "cd backend && uv run pytest -o addopts=\"\" tests/api/test_admin_licenses.py -k invalid_body -q",
       "state": "PASSING",
       "evidence": {
-        "date": "2026-05-29",
+        "date": "2026-05-30",
         "command": "cd backend && uv run pytest -o addopts=\"\" tests/api/test_admin_licenses.py -k invalid_body -q",
-        "output_excerpt": ".                                                                        [100%]\n1 passed, 3 deselected in 0.70s",
+        "output_excerpt": ".                                                                        [100%]\n1 passed, 4 deselected in 0.58s",
         "artifact": null
       }
     },
@@ -176,13 +176,13 @@
       "phase": "PHASE 2 — Backend Core Logic",
       "layer": "BE/DB",
       "priority": "Critical",
-      "behavior": "Non-admin caller gets 403; admin gets 201 with the raw key returned exactly once.",
+      "behavior": "Non-admin caller gets 403; admin gets 201 with the FE-contract nested body {license, raw_key} — raw_key returned exactly once.",
       "verification": "cd backend && uv run pytest -o addopts=\"\" tests/api/test_admin_licenses.py -k rbac_and_one_time_key -q",
       "state": "PASSING",
       "evidence": {
-        "date": "2026-05-29",
+        "date": "2026-05-30",
         "command": "cd backend && uv run pytest -o addopts=\"\" tests/api/test_admin_licenses.py -k rbac_and_one_time_key -q",
-        "output_excerpt": ".                                                                        [100%]\n1 passed, 3 deselected in 0.75s",
+        "output_excerpt": ".                                                                        [100%]\n1 passed, 4 deselected in 0.94s",
         "artifact": null
       }
     },
@@ -196,9 +196,9 @@
       "verification": "cd backend && uv run pytest -o addopts=\"\" tests/api/test_admin_licenses.py -k persists_pending_and_audit -q",
       "state": "PASSING",
       "evidence": {
-        "date": "2026-05-29",
+        "date": "2026-05-30",
         "command": "cd backend && uv run pytest -o addopts=\"\" tests/api/test_admin_licenses.py -k persists_pending_and_audit -q",
-        "output_excerpt": ".                                                                        [100%]\n1 passed, 3 deselected in 0.76s",
+        "output_excerpt": ".                                                                        [100%]\n1 passed, 4 deselected in 0.76s",
         "artifact": null
       }
     },
@@ -212,9 +212,25 @@
       "verification": "cd backend && uv run pytest -o addopts=\"\" tests/api/test_admin_licenses.py -k idempotent_create -q",
       "state": "PASSING",
       "evidence": {
-        "date": "2026-05-29",
+        "date": "2026-05-30",
         "command": "cd backend && uv run pytest -o addopts=\"\" tests/api/test_admin_licenses.py -k idempotent_create -q",
-        "output_excerpt": ".                                                                        [100%]\n1 passed, 3 deselected in 0.75s",
+        "output_excerpt": ".                                                                        [100%]\n1 passed, 4 deselected in 0.77s",
+        "artifact": null
+      }
+    },
+    {
+      "id": "2.1-e",
+      "task": "TASK-2.1",
+      "phase": "PHASE 2 — Backend Core Logic",
+      "layer": "BE/DB",
+      "priority": "Critical",
+      "behavior": "POST /api/admin/licenses honours the FE create contract: accepts FE tier vocab (starter/professional/enterprise), customer_id as an EMAIL resolved to an existing user (unknown email → 400), optional max_devices/expired_at; returns 201 {license:{FE License shape, key_masked, customer_id=email, lowercase status/tier}, raw_key}.",
+      "verification": "cd backend && uv run pytest -o addopts=\"\" tests/api/test_admin_licenses.py -k create_fe_contract -q",
+      "state": "PASSING",
+      "evidence": {
+        "date": "2026-05-30",
+        "command": "cd backend && uv run pytest -o addopts=\"\" tests/api/test_admin_licenses.py -k create_fe_contract -q",
+        "output_excerpt": ".                                                                        [100%]\n1 passed, 4 deselected in 1.11s",
         "artifact": null
       }
     },
@@ -427,6 +443,102 @@
       }
     },
     {
+      "id": "2.5-a",
+      "task": "TASK-2.5",
+      "phase": "PHASE 2 — Backend Core Logic",
+      "layer": "BE",
+      "priority": "High",
+      "behavior": "GET /api/admin/licenses returns the FE-contract paginated envelope {licenses[], total, page, page_size}; each item matches the FE License shape (id, key_masked, tier, status, customer_id, max_devices, issued_at, activated_at, expired_at); supports filter by tier/status/issued_after/issued_before and sort_by/sort_dir; admin-gated (non-admin 403).",
+      "verification": "cd backend && uv run pytest -o addopts=\"\" tests/api/test_admin_license_crud.py -k list_filter_paginate -q",
+      "state": "PASSING",
+      "evidence": {
+        "date": "2026-05-30",
+        "command": "cd backend && uv run pytest -o addopts=\"\" tests/api/test_admin_license_crud.py -k list_filter_paginate -q",
+        "output_excerpt": ".                                                                        [100%]\n1 passed, 5 deselected in 1.25s",
+        "artifact": null
+      }
+    },
+    {
+      "id": "2.5-b",
+      "task": "TASK-2.5",
+      "phase": "PHASE 2 — Backend Core Logic",
+      "layer": "BE",
+      "priority": "High",
+      "behavior": "GET /api/admin/licenses/{id} returns the FE License shape (id, key_masked, tier, status, customer_id, max_devices, issued_at, activated_at, expired_at); unknown id returns 404; non-admin gets 403.",
+      "verification": "cd backend && uv run pytest -o addopts=\"\" tests/api/test_admin_license_crud.py -k detail_and_404 -q",
+      "state": "PASSING",
+      "evidence": {
+        "date": "2026-05-30",
+        "command": "cd backend && uv run pytest -o addopts=\"\" tests/api/test_admin_license_crud.py -k detail_and_404 -q",
+        "output_excerpt": ".                                                                        [100%]\n1 passed, 5 deselected in 1.06s",
+        "artifact": null
+      }
+    },
+    {
+      "id": "2.5-c",
+      "task": "TASK-2.5",
+      "phase": "PHASE 2 — Backend Core Logic",
+      "layer": "BE",
+      "priority": "High",
+      "behavior": "GET /api/admin/licenses/{id}/activities returns a bare JSON array of LicenseActivity (id, license_id, action, actor, detail, created_at) ordered newest-first; admin-gated.",
+      "verification": "cd backend && uv run pytest -o addopts=\"\" tests/api/test_admin_license_crud.py -k activities_timeline -q",
+      "state": "PASSING",
+      "evidence": {
+        "date": "2026-05-30",
+        "command": "cd backend && uv run pytest -o addopts=\"\" tests/api/test_admin_license_crud.py -k activities_timeline -q",
+        "output_excerpt": ".                                                                        [100%]\n1 passed, 5 deselected in 1.11s",
+        "artifact": null
+      }
+    },
+    {
+      "id": "2.5-d",
+      "task": "TASK-2.5",
+      "phase": "PHASE 2 — Backend Core Logic",
+      "layer": "BE",
+      "priority": "High",
+      "behavior": "POST /api/admin/licenses/suspend and /api/admin/licenses/revoke take a bulk {ids:[...]} body, transition each license (→SUSPENDED / →REVOKED), append a SUSPENDED/REVOKED row per license, and invalidate each Redis cache key; admin-gated.",
+      "verification": "cd backend && uv run pytest -o addopts=\"\" tests/api/test_admin_license_crud.py -k suspend_revoke -q",
+      "state": "PASSING",
+      "evidence": {
+        "date": "2026-05-30",
+        "command": "cd backend && uv run pytest -o addopts=\"\" tests/api/test_admin_license_crud.py -k suspend_revoke -q",
+        "output_excerpt": ".                                                                        [100%]\n1 passed, 5 deselected in 1.19s",
+        "artifact": null
+      }
+    },
+    {
+      "id": "2.5-e",
+      "task": "TASK-2.5",
+      "phase": "PHASE 2 — Backend Core Logic",
+      "layer": "BE",
+      "priority": "High",
+      "behavior": "POST /api/admin/licenses/{id}/extend takes an absolute {expired_at:\"<ISO>\"} body, sets expired_at to it, appends an EXTENDED activity row, refreshes the Redis TTL to the new expiry, and returns the updated License shape.",
+      "verification": "cd backend && uv run pytest -o addopts=\"\" tests/api/test_admin_license_crud.py -k extend_expiry -q",
+      "state": "PASSING",
+      "evidence": {
+        "date": "2026-05-30",
+        "command": "cd backend && uv run pytest -o addopts=\"\" tests/api/test_admin_license_crud.py -k extend_expiry -q",
+        "output_excerpt": ".                                                                        [100%]\n1 passed, 5 deselected in 0.90s",
+        "artifact": null
+      }
+    },
+    {
+      "id": "2.5-f",
+      "task": "TASK-2.5",
+      "phase": "PHASE 2 — Backend Core Logic",
+      "layer": "BE",
+      "priority": "High",
+      "behavior": "All admin license read endpoints (list/detail/activities) and the list filters speak the FE vocabulary: tier as starter/professional/enterprise (↔ BE TRIAL/PRO/ENTERPRISE), status lowercase active/suspended/revoked/expired/pending (↔ BE enum), and customer_id returned as the owner's email; FE-vocab tier/status filter params are decoded to the BE enum.",
+      "verification": "cd backend && uv run pytest -o addopts=\"\" tests/api/test_admin_license_crud.py -k fe_vocab_mapping -q",
+      "state": "PASSING",
+      "evidence": {
+        "date": "2026-05-30",
+        "command": "cd backend && uv run pytest -o addopts=\"\" tests/api/test_admin_license_crud.py -k fe_vocab_mapping -q",
+        "output_excerpt": ".                                                                        [100%]\n1 passed, 5 deselected in 1.29s",
+        "artifact": null
+      }
+    },
+    {
       "id": "3.1-a",
       "task": "TASK-3.1",
       "phase": "PHASE 3 — Frontend",
@@ -500,9 +612,9 @@
       "verification": "cd frontend && npx playwright test e2e/activate.spec.ts -g 'autoformat and submit'",
       "state": "PASSING",
       "evidence": {
-        "date": "2026-05-29",
+        "date": "2026-05-30",
         "command": "cd frontend && npx playwright test e2e/activate.spec.ts -g 'autoformat and submit'",
-        "output_excerpt": "  1 passed (2.5s)\n\u001b[2m[WebServer] \u001b[22m\u001b[33m\u001b[1m⚠\u001b[22m\u001b[39m Warning: Next.js inferred your workspace root, but it may not be correct.\n\u001b[2m[WebServer] \u001b[22m We detected multiple lockfiles and selected the directory of /Users/letannguyen/package-lock.json as the root directory.\n\u001b[2m[WebServer] \u001b[22m To silence this warning, set `turbopack.root` in your Next.js config, or consider removing one of the lockfiles if it's not needed.\n\u001b[2m[WebServer] \u001b[22m   See https://nextjs.org/docs/app/api-reference/config/next-config-js/turbopack#root-directory for more information.\n\u001b[2m[WebServer] \u001b[22m Detected additional lockfiles: \n\u001b[2m[WebServer] \u001b[22m   * /Users/letannguyen/Desktop/source/ai-translation/frontend/package-lock.json\n\u001b[2m[WebServer] \u001b[22m",
+        "output_excerpt": "  1 passed (1.9s)\n\u001b[2m[WebServer] \u001b[22m\u001b[33m\u001b[1m⚠\u001b[22m\u001b[39m Warning: Next.js inferred your workspace root, but it may not be correct.\n\u001b[2m[WebServer] \u001b[22m We detected multiple lockfiles and selected the directory of /Users/letannguyen/package-lock.json as the root directory.\n\u001b[2m[WebServer] \u001b[22m To silence this warning, set `turbopack.root` in your Next.js config, or consider removing one of the lockfiles if it's not needed.\n\u001b[2m[WebServer] \u001b[22m   See https://nextjs.org/docs/app/api-reference/config/next-config-js/turbopack#root-directory for more information.\n\u001b[2m[WebServer] \u001b[22m Detected additional lockfiles: \n\u001b[2m[WebServer] \u001b[22m   * /Users/letannguyen/Desktop/source/ai-translation/frontend/package-lock.json\n\u001b[2m[WebServer] \u001b[22m",
         "artifact": null
       }
     },
@@ -516,9 +628,9 @@
       "verification": "cd frontend && npx playwright test e2e/activate.spec.ts -g 'success and error states'",
       "state": "PASSING",
       "evidence": {
-        "date": "2026-05-29",
+        "date": "2026-05-30",
         "command": "cd frontend && npx playwright test e2e/activate.spec.ts -g 'success and error states'",
-        "output_excerpt": "  1 passed (3.1s)\n\u001b[2m[WebServer] \u001b[22m\u001b[33m\u001b[1m⚠\u001b[22m\u001b[39m Warning: Next.js inferred your workspace root, but it may not be correct.\n\u001b[2m[WebServer] \u001b[22m We detected multiple lockfiles and selected the directory of /Users/letannguyen/package-lock.json as the root directory.\n\u001b[2m[WebServer] \u001b[22m To silence this warning, set `turbopack.root` in your Next.js config, or consider removing one of the lockfiles if it's not needed.\n\u001b[2m[WebServer] \u001b[22m   See https://nextjs.org/docs/app/api-reference/config/next-config-js/turbopack#root-directory for more information.\n\u001b[2m[WebServer] \u001b[22m Detected additional lockfiles: \n\u001b[2m[WebServer] \u001b[22m   * /Users/letannguyen/Desktop/source/ai-translation/frontend/package-lock.json\n\u001b[2m[WebServer] \u001b[22m",
+        "output_excerpt": "  1 passed (2.4s)\n\u001b[2m[WebServer] \u001b[22m\u001b[33m\u001b[1m⚠\u001b[22m\u001b[39m Warning: Next.js inferred your workspace root, but it may not be correct.\n\u001b[2m[WebServer] \u001b[22m We detected multiple lockfiles and selected the directory of /Users/letannguyen/package-lock.json as the root directory.\n\u001b[2m[WebServer] \u001b[22m To silence this warning, set `turbopack.root` in your Next.js config, or consider removing one of the lockfiles if it's not needed.\n\u001b[2m[WebServer] \u001b[22m   See https://nextjs.org/docs/app/api-reference/config/next-config-js/turbopack#root-directory for more information.\n\u001b[2m[WebServer] \u001b[22m Detected additional lockfiles: \n\u001b[2m[WebServer] \u001b[22m   * /Users/letannguyen/Desktop/source/ai-translation/frontend/package-lock.json\n\u001b[2m[WebServer] \u001b[22m",
         "artifact": null
       }
     },
@@ -532,9 +644,9 @@
       "verification": "cd frontend && npx playwright test e2e/activate.spec.ts -g 'expiry warning banner'",
       "state": "PASSING",
       "evidence": {
-        "date": "2026-05-29",
+        "date": "2026-05-30",
         "command": "cd frontend && npx playwright test e2e/activate.spec.ts -g 'expiry warning banner'",
-        "output_excerpt": "  1 passed (2.8s)\n\u001b[2m[WebServer] \u001b[22m\u001b[33m\u001b[1m⚠\u001b[22m\u001b[39m Warning: Next.js inferred your workspace root, but it may not be correct.\n\u001b[2m[WebServer] \u001b[22m We detected multiple lockfiles and selected the directory of /Users/letannguyen/package-lock.json as the root directory.\n\u001b[2m[WebServer] \u001b[22m To silence this warning, set `turbopack.root` in your Next.js config, or consider removing one of the lockfiles if it's not needed.\n\u001b[2m[WebServer] \u001b[22m   See https://nextjs.org/docs/app/api-reference/config/next-config-js/turbopack#root-directory for more information.\n\u001b[2m[WebServer] \u001b[22m Detected additional lockfiles: \n\u001b[2m[WebServer] \u001b[22m   * /Users/letannguyen/Desktop/source/ai-translation/frontend/package-lock.json\n\u001b[2m[WebServer] \u001b[22m",
+        "output_excerpt": "  1 passed (2.3s)\n\u001b[2m[WebServer] \u001b[22m\u001b[33m\u001b[1m⚠\u001b[22m\u001b[39m Warning: Next.js inferred your workspace root, but it may not be correct.\n\u001b[2m[WebServer] \u001b[22m We detected multiple lockfiles and selected the directory of /Users/letannguyen/package-lock.json as the root directory.\n\u001b[2m[WebServer] \u001b[22m To silence this warning, set `turbopack.root` in your Next.js config, or consider removing one of the lockfiles if it's not needed.\n\u001b[2m[WebServer] \u001b[22m   See https://nextjs.org/docs/app/api-reference/config/next-config-js/turbopack#root-directory for more information.\n\u001b[2m[WebServer] \u001b[22m Detected additional lockfiles: \n\u001b[2m[WebServer] \u001b[22m   * /Users/letannguyen/Desktop/source/ai-translation/frontend/package-lock.json\n\u001b[2m[WebServer] \u001b[22m",
         "artifact": null
       }
     },
@@ -548,9 +660,9 @@
       "verification": "cd frontend && npx playwright test e2e/activate.spec.ts -g 'banner dismiss persists'",
       "state": "PASSING",
       "evidence": {
-        "date": "2026-05-29",
+        "date": "2026-05-30",
         "command": "cd frontend && npx playwright test e2e/activate.spec.ts -g 'banner dismiss persists'",
-        "output_excerpt": "  1 passed (2.8s)\n\u001b[2m[WebServer] \u001b[22m\u001b[33m\u001b[1m⚠\u001b[22m\u001b[39m Warning: Next.js inferred your workspace root, but it may not be correct.\n\u001b[2m[WebServer] \u001b[22m We detected multiple lockfiles and selected the directory of /Users/letannguyen/package-lock.json as the root directory.\n\u001b[2m[WebServer] \u001b[22m To silence this warning, set `turbopack.root` in your Next.js config, or consider removing one of the lockfiles if it's not needed.\n\u001b[2m[WebServer] \u001b[22m   See https://nextjs.org/docs/app/api-reference/config/next-config-js/turbopack#root-directory for more information.\n\u001b[2m[WebServer] \u001b[22m Detected additional lockfiles: \n\u001b[2m[WebServer] \u001b[22m   * /Users/letannguyen/Desktop/source/ai-translation/frontend/package-lock.json\n\u001b[2m[WebServer] \u001b[22m",
+        "output_excerpt": "  1 passed (2.4s)\n\u001b[2m[WebServer] \u001b[22m\u001b[33m\u001b[1m⚠\u001b[22m\u001b[39m Warning: Next.js inferred your workspace root, but it may not be correct.\n\u001b[2m[WebServer] \u001b[22m We detected multiple lockfiles and selected the directory of /Users/letannguyen/package-lock.json as the root directory.\n\u001b[2m[WebServer] \u001b[22m To silence this warning, set `turbopack.root` in your Next.js config, or consider removing one of the lockfiles if it's not needed.\n\u001b[2m[WebServer] \u001b[22m   See https://nextjs.org/docs/app/api-reference/config/next-config-js/turbopack#root-directory for more information.\n\u001b[2m[WebServer] \u001b[22m Detected additional lockfiles: \n\u001b[2m[WebServer] \u001b[22m   * /Users/letannguyen/Desktop/source/ai-translation/frontend/package-lock.json\n\u001b[2m[WebServer] \u001b[22m",
         "artifact": null
       }
     },
@@ -689,7 +801,7 @@
       "evidence": {
         "date": "2026-05-30",
         "command": "cd backend && uv run pytest -o addopts=\"\" tests/api/test_checkout.py -k self_serve_creates_pending -q",
-        "output_excerpt": ".                                                                        [100%]\n1 passed, 1 deselected in 0.70s",
+        "output_excerpt": ".                                                                        [100%]\n1 passed, 1 deselected in 0.62s",
         "artifact": null
       }
     },
@@ -705,7 +817,7 @@
       "evidence": {
         "date": "2026-05-30",
         "command": "cd backend && uv run pytest -o addopts=\"\" tests/api/test_checkout.py -k plan_tier_mapping -q",
-        "output_excerpt": ".                                                                        [100%]\n1 passed, 1 deselected in 0.58s",
+        "output_excerpt": ".                                                                        [100%]\n1 passed, 1 deselected in 0.61s",
         "artifact": null
       }
     },
@@ -715,13 +827,13 @@
       "phase": "PHASE 3 — Frontend",
       "layer": "FE",
       "priority": "High",
-      "behavior": "/pricing (user view) plan CTA calls checkout → shows one-time key dialog + a link to /activate.",
-      "verification": "cd frontend && npx playwright test e2e/pricing.spec.ts -g 'plan checkout issues key'",
+      "behavior": "/pricing (user view) plan CTA opens an email lead-capture popup (no self-serve key dialog, no checkout call); submitting a valid email POSTs to /api/leads and shows a thank-you message.",
+      "verification": "cd frontend && npx playwright test e2e/pricing.spec.ts -g 'plan opens lead capture'",
       "state": "PASSING",
       "evidence": {
         "date": "2026-05-30",
-        "command": "cd frontend && npx playwright test e2e/pricing.spec.ts -g 'plan checkout issues key'",
-        "output_excerpt": "\u001b[2m[WebServer] \u001b[22m We detected multiple lockfiles and selected the directory of /Users/letannguyen/package-lock.json as the root directory.\n\u001b[2m[WebServer] \u001b[22m To silence this warning, set `turbopack.root` in your Next.js config, or consider removing one of the lockfiles if it's not needed.\n\u001b[2m[WebServer] \u001b[22m   See https://nextjs.org/docs/app/api-reference/config/next-config-js/turbopack#root-directory for more information.\n\u001b[2m[WebServer] \u001b[22m Detected additional lockfiles: \n\u001b[2m[WebServer] \u001b[22m   * /Users/letannguyen/Desktop/source/ai-translation/frontend/package-lock.json\n\u001b[2m[WebServer] \u001b[22m\n\u001b[2m[WebServer] \u001b[22m\u001b[36m[browser]\u001b[39m \u001b[33mWarning: Missing `Description` or `aria-describedby={undefined}` for {DialogContent}.\u001b[39m\n\u001b[2m[WebServer] \u001b[22m\u001b[36m[browser]\u001b[39m \u001b[33mWarning: Missing `Description` or `aria-describedby={undefined}` for {DialogContent}.\u001b[39m",
+        "command": "cd frontend && npx playwright test e2e/pricing.spec.ts -g 'plan opens lead capture'",
+        "output_excerpt": "  1 passed (2.2s)\n\u001b[2m[WebServer] \u001b[22m\u001b[33m\u001b[1m⚠\u001b[22m\u001b[39m Warning: Next.js inferred your workspace root, but it may not be correct.\n\u001b[2m[WebServer] \u001b[22m We detected multiple lockfiles and selected the directory of /Users/letannguyen/package-lock.json as the root directory.\n\u001b[2m[WebServer] \u001b[22m To silence this warning, set `turbopack.root` in your Next.js config, or consider removing one of the lockfiles if it's not needed.\n\u001b[2m[WebServer] \u001b[22m   See https://nextjs.org/docs/app/api-reference/config/next-config-js/turbopack#root-directory for more information.\n\u001b[2m[WebServer] \u001b[22m Detected additional lockfiles: \n\u001b[2m[WebServer] \u001b[22m   * /Users/letannguyen/Desktop/source/ai-translation/frontend/package-lock.json\n\u001b[2m[WebServer] \u001b[22m",
         "artifact": null
       }
     },
@@ -737,7 +849,7 @@
       "evidence": {
         "date": "2026-05-30",
         "command": "cd frontend && npx playwright test e2e/pricing.spec.ts -g 'plans aligned to tiers'",
-        "output_excerpt": "  1 passed (2.2s)\n\u001b[2m[WebServer] \u001b[22m\u001b[33m\u001b[1m⚠\u001b[22m\u001b[39m Warning: Next.js inferred your workspace root, but it may not be correct.\n\u001b[2m[WebServer] \u001b[22m We detected multiple lockfiles and selected the directory of /Users/letannguyen/package-lock.json as the root directory.\n\u001b[2m[WebServer] \u001b[22m To silence this warning, set `turbopack.root` in your Next.js config, or consider removing one of the lockfiles if it's not needed.\n\u001b[2m[WebServer] \u001b[22m   See https://nextjs.org/docs/app/api-reference/config/next-config-js/turbopack#root-directory for more information.\n\u001b[2m[WebServer] \u001b[22m Detected additional lockfiles: \n\u001b[2m[WebServer] \u001b[22m   * /Users/letannguyen/Desktop/source/ai-translation/frontend/package-lock.json\n\u001b[2m[WebServer] \u001b[22m",
+        "output_excerpt": "  1 passed (2.1s)\n\u001b[2m[WebServer] \u001b[22m\u001b[33m\u001b[1m⚠\u001b[22m\u001b[39m Warning: Next.js inferred your workspace root, but it may not be correct.\n\u001b[2m[WebServer] \u001b[22m We detected multiple lockfiles and selected the directory of /Users/letannguyen/package-lock.json as the root directory.\n\u001b[2m[WebServer] \u001b[22m To silence this warning, set `turbopack.root` in your Next.js config, or consider removing one of the lockfiles if it's not needed.\n\u001b[2m[WebServer] \u001b[22m   See https://nextjs.org/docs/app/api-reference/config/next-config-js/turbopack#root-directory for more information.\n\u001b[2m[WebServer] \u001b[22m Detected additional lockfiles: \n\u001b[2m[WebServer] \u001b[22m   * /Users/letannguyen/Desktop/source/ai-translation/frontend/package-lock.json\n\u001b[2m[WebServer] \u001b[22m",
         "artifact": null
       }
     },
@@ -818,6 +930,310 @@
         "date": "2026-05-30",
         "command": "cd frontend && npx playwright test e2e/register.spec.ts -g 'register validation'",
         "output_excerpt": "  1 passed (2.1s)\n\u001b[2m[WebServer] \u001b[22m\u001b[33m\u001b[1m⚠\u001b[22m\u001b[39m Warning: Next.js inferred your workspace root, but it may not be correct.\n\u001b[2m[WebServer] \u001b[22m We detected multiple lockfiles and selected the directory of /Users/letannguyen/package-lock.json as the root directory.\n\u001b[2m[WebServer] \u001b[22m To silence this warning, set `turbopack.root` in your Next.js config, or consider removing one of the lockfiles if it's not needed.\n\u001b[2m[WebServer] \u001b[22m   See https://nextjs.org/docs/app/api-reference/config/next-config-js/turbopack#root-directory for more information.\n\u001b[2m[WebServer] \u001b[22m Detected additional lockfiles: \n\u001b[2m[WebServer] \u001b[22m   * /Users/letannguyen/Desktop/source/ai-translation/frontend/package-lock.json\n\u001b[2m[WebServer] \u001b[22m",
+        "artifact": null
+      }
+    },
+    {
+      "id": "3.5-a",
+      "task": "TASK-3.5",
+      "phase": "PHASE 3 — Frontend",
+      "layer": "DB",
+      "priority": "High",
+      "behavior": "Alembic upgrade head creates a `leads` table (id, email, plan, created_at) cleanly and idempotently.",
+      "verification": "cd backend && uv run pytest -o addopts=\"\" tests/db/test_leads_schema.py -k leads_table -q",
+      "state": "PASSING",
+      "evidence": {
+        "date": "2026-05-30",
+        "command": "cd backend && uv run pytest -o addopts=\"\" tests/db/test_leads_schema.py -k leads_table -q",
+        "output_excerpt": ".                                                                        [100%]\n1 passed in 0.02s",
+        "artifact": null
+      }
+    },
+    {
+      "id": "3.5-b",
+      "task": "TASK-3.5",
+      "phase": "PHASE 3 — Frontend",
+      "layer": "BE",
+      "priority": "High",
+      "behavior": "POST /api/leads stores a lead {email, plan} and returns 201; an invalid email is rejected with 422. Endpoint is open (no auth) — it is a marketing lead, not a license.",
+      "verification": "cd backend && uv run pytest -o addopts=\"\" tests/api/test_leads.py -k creates_lead -q",
+      "state": "PASSING",
+      "evidence": {
+        "date": "2026-05-30",
+        "command": "cd backend && uv run pytest -o addopts=\"\" tests/api/test_leads.py -k creates_lead -q",
+        "output_excerpt": "....                                                                     [100%]\n4 passed in 0.61s",
+        "artifact": null
+      }
+    },
+    {
+      "id": "3.5-c",
+      "task": "TASK-3.5",
+      "phase": "PHASE 3 — Frontend",
+      "layer": "BE",
+      "priority": "High",
+      "behavior": "POST /api/licenses/activate happy path accepts {raw_key} and returns the FE-contract body {tier, status, expiry, features[]} (features derived from the tier's plan); a bad/unknown key returns the documented error.",
+      "verification": "cd backend && uv run pytest -o addopts=\"\" tests/api/test_activate.py -k activate_response_contract -q",
+      "state": "PASSING",
+      "evidence": {
+        "date": "2026-05-30",
+        "command": "cd backend && uv run pytest -o addopts=\"\" tests/api/test_activate.py -k activate_response_contract -q",
+        "output_excerpt": ".                                                                        [100%]\n1 passed, 4 deselected in 0.60s",
+        "artifact": null
+      }
+    },
+    {
+      "id": "3.5-d",
+      "task": "TASK-3.5",
+      "phase": "PHASE 3 — Frontend",
+      "layer": "FE",
+      "priority": "High",
+      "behavior": "/activate submits {raw_key} (not {key}) to POST /api/licenses/activate and on success renders tier, expiry, and features from the response (fixes the 422 + undefined-field display).",
+      "verification": "cd frontend && npx playwright test e2e/activate.spec.ts -g 'activate success contract'",
+      "state": "PASSING",
+      "evidence": {
+        "date": "2026-05-30",
+        "command": "cd frontend && npx playwright test e2e/activate.spec.ts -g 'activate success contract'",
+        "output_excerpt": "  1 passed (2.1s)\n\u001b[2m[WebServer] \u001b[22m\u001b[33m\u001b[1m⚠\u001b[22m\u001b[39m Warning: Next.js inferred your workspace root, but it may not be correct.\n\u001b[2m[WebServer] \u001b[22m We detected multiple lockfiles and selected the directory of /Users/letannguyen/package-lock.json as the root directory.\n\u001b[2m[WebServer] \u001b[22m To silence this warning, set `turbopack.root` in your Next.js config, or consider removing one of the lockfiles if it's not needed.\n\u001b[2m[WebServer] \u001b[22m   See https://nextjs.org/docs/app/api-reference/config/next-config-js/turbopack#root-directory for more information.\n\u001b[2m[WebServer] \u001b[22m Detected additional lockfiles: \n\u001b[2m[WebServer] \u001b[22m   * /Users/letannguyen/Desktop/source/ai-translation/frontend/package-lock.json\n\u001b[2m[WebServer] \u001b[22m",
+        "artifact": null
+      }
+    },
+    {
+      "id": "3.6-a",
+      "task": "TASK-3.6",
+      "phase": "PHASE 3 — Frontend",
+      "layer": "DB",
+      "priority": "High",
+      "behavior": "Alembic upgrade head adds a nullable users.deleted_at column (soft-delete marker), cleanly + idempotently; existing rows keep deleted_at NULL.",
+      "verification": "cd backend && uv run pytest -o addopts=\"\" tests/db/test_user_schema.py -k users_deleted_at -q",
+      "state": "PASSING",
+      "evidence": {
+        "date": "2026-05-30",
+        "command": "cd backend && uv run pytest -o addopts=\"\" tests/db/test_user_schema.py -k users_deleted_at -q",
+        "output_excerpt": ".                                                                        [100%]\n1 passed in 0.02s",
+        "artifact": null
+      }
+    },
+    {
+      "id": "3.6-b",
+      "task": "TASK-3.6",
+      "phase": "PHASE 3 — Frontend",
+      "layer": "BE",
+      "priority": "High",
+      "behavior": "GET /api/admin/users returns a paginated envelope {users[], total, page, page_size} (each: id, email, full_name, is_active, is_superuser, created_at), supports search by email/full_name and filter by role/active, excludes soft-deleted users, and is admin-gated (non-admin 403).",
+      "verification": "cd backend && uv run pytest -o addopts=\"\" tests/api/test_admin_users.py -k list_filter_paginate -q",
+      "state": "PASSING",
+      "evidence": {
+        "date": "2026-05-30",
+        "command": "cd backend && uv run pytest -o addopts=\"\" tests/api/test_admin_users.py -k list_filter_paginate -q",
+        "output_excerpt": ".                                                                        [100%]\n1 passed, 3 deselected in 1.13s",
+        "artifact": null
+      }
+    },
+    {
+      "id": "3.6-c",
+      "task": "TASK-3.6",
+      "phase": "PHASE 3 — Frontend",
+      "layer": "BE",
+      "priority": "High",
+      "behavior": "POST /api/admin/users creates a user {email, full_name?, password, is_superuser?, is_active?} → 201 with the user (password stored hashed, never returned); duplicate email → 409; invalid email or weak password (<8) → 422; admin-gated.",
+      "verification": "cd backend && uv run pytest -o addopts=\"\" tests/api/test_admin_users.py -k create_user -q",
+      "state": "PASSING",
+      "evidence": {
+        "date": "2026-05-30",
+        "command": "cd backend && uv run pytest -o addopts=\"\" tests/api/test_admin_users.py -k create_user -q",
+        "output_excerpt": ".                                                                        [100%]\n1 passed, 3 deselected in 1.30s",
+        "artifact": null
+      }
+    },
+    {
+      "id": "3.6-d",
+      "task": "TASK-3.6",
+      "phase": "PHASE 3 — Frontend",
+      "layer": "BE",
+      "priority": "High",
+      "behavior": "PATCH /api/admin/users/{id} updates full_name/is_active/is_superuser (activate/deactivate + promote/demote); GUARDS: an admin cannot deactivate or demote their own account, and the last remaining active admin cannot be demoted/deactivated → 400/409.",
+      "verification": "cd backend && uv run pytest -o addopts=\"\" tests/api/test_admin_users.py -k update_guards -q",
+      "state": "PASSING",
+      "evidence": {
+        "date": "2026-05-30",
+        "command": "cd backend && uv run pytest -o addopts=\"\" tests/api/test_admin_users.py -k update_guards -q",
+        "output_excerpt": ".                                                                        [100%]\n1 passed, 3 deselected in 1.01s",
+        "artifact": null
+      }
+    },
+    {
+      "id": "3.6-e",
+      "task": "TASK-3.6",
+      "phase": "PHASE 3 — Frontend",
+      "layer": "BE",
+      "priority": "High",
+      "behavior": "DELETE /api/admin/users/{id} soft-deletes (sets deleted_at + is_active=false; user disappears from the list and can no longer log in); an admin cannot delete their own account and the last remaining admin cannot be deleted → 400/409.",
+      "verification": "cd backend && uv run pytest -o addopts=\"\" tests/api/test_admin_users.py -k soft_delete_guards -q",
+      "state": "PASSING",
+      "evidence": {
+        "date": "2026-05-30",
+        "command": "cd backend && uv run pytest -o addopts=\"\" tests/api/test_admin_users.py -k soft_delete_guards -q",
+        "output_excerpt": ".                                                                        [100%]\n1 passed, 3 deselected in 1.33s",
+        "artifact": null
+      }
+    },
+    {
+      "id": "3.6-f",
+      "task": "TASK-3.6",
+      "phase": "PHASE 3 — Frontend",
+      "layer": "FE",
+      "priority": "High",
+      "behavior": "An admin sees a 'Users' tab in the admin sidebar linking to /admin/users; a non-admin neither sees the tab nor can reach /admin/users (guard redirects).",
+      "verification": "cd frontend && npx playwright test e2e/admin-users.spec.ts -g 'users tab visible admin only'",
+      "state": "PASSING",
+      "evidence": {
+        "date": "2026-05-30",
+        "command": "cd frontend && npx playwright test e2e/admin-users.spec.ts -g 'users tab visible admin only'",
+        "output_excerpt": "  1 passed (4.0s)\n\u001b[2m[WebServer] \u001b[22m\u001b[33m\u001b[1m⚠\u001b[22m\u001b[39m Warning: Next.js inferred your workspace root, but it may not be correct.\n\u001b[2m[WebServer] \u001b[22m We detected multiple lockfiles and selected the directory of /Users/letannguyen/package-lock.json as the root directory.\n\u001b[2m[WebServer] \u001b[22m To silence this warning, set `turbopack.root` in your Next.js config, or consider removing one of the lockfiles if it's not needed.\n\u001b[2m[WebServer] \u001b[22m   See https://nextjs.org/docs/app/api-reference/config/next-config-js/turbopack#root-directory for more information.\n\u001b[2m[WebServer] \u001b[22m Detected additional lockfiles: \n\u001b[2m[WebServer] \u001b[22m   * /Users/letannguyen/Desktop/source/ai-translation/frontend/package-lock.json\n\u001b[2m[WebServer] \u001b[22m",
+        "artifact": null
+      }
+    },
+    {
+      "id": "3.6-g",
+      "task": "TASK-3.6",
+      "phase": "PHASE 3 — Frontend",
+      "layer": "FE",
+      "priority": "High",
+      "behavior": "/admin/users lists users (email, name, role badge, active chip) with search + pagination; a create-user dialog POSTs to the API; row actions activate/deactivate, promote/demote, and delete call the API; actions on the current admin's own row are disabled.",
+      "verification": "cd frontend && npx playwright test e2e/admin-users.spec.ts -g 'list create and row actions'",
+      "state": "PASSING",
+      "evidence": {
+        "date": "2026-05-30",
+        "command": "cd frontend && npx playwright test e2e/admin-users.spec.ts -g 'list create and row actions'",
+        "output_excerpt": "\u001b[2m[WebServer] \u001b[22m   See https://nextjs.org/docs/app/api-reference/config/next-config-js/turbopack#root-directory for more information.\n\u001b[2m[WebServer] \u001b[22m Detected additional lockfiles: \n\u001b[2m[WebServer] \u001b[22m   * /Users/letannguyen/Desktop/source/ai-translation/frontend/package-lock.json\n\u001b[2m[WebServer] \u001b[22m\n\u001b[2m[WebServer] \u001b[22m\u001b[36m[browser]\u001b[39m \u001b[33mWarning: Missing `Description` or `aria-describedby={undefined}` for {DialogContent}.\u001b[39m\n\u001b[2m[WebServer] \u001b[22m\u001b[36m[browser]\u001b[39m \u001b[33mWarning: Missing `Description` or `aria-describedby={undefined}` for {DialogContent}.\u001b[39m\n\u001b[2m[WebServer] \u001b[22m\u001b[36m[browser]\u001b[39m \u001b[33mWarning: Missing `Description` or `aria-describedby={undefined}` for {DialogContent}.\u001b[39m\n\u001b[2m[WebServer] \u001b[22m\u001b[36m[browser]\u001b[39m \u001b[33mWarning: Missing `Description` or `aria-describedby={undefined}` for {DialogContent}.\u001b[39m",
+        "artifact": null
+      }
+    },
+    {
+      "id": "3.7-a",
+      "task": "TASK-3.7",
+      "phase": "PHASE 3 — Frontend",
+      "layer": "BE",
+      "priority": "High",
+      "behavior": "plans.py defines per-tier ENTITLEMENTS (max_file_bytes: TRIAL 5MB / PRO 50MB / ENTERPRISE 100MB; monthly_quota: TRIAL 10, PRO/ENTERPRISE None=unlimited; ocr_allowed + glossary_allowed: TRIAL false, PRO/ENTERPRISE true) and a resolver returns the entitlements for a user (highest-tier ACTIVE license; superuser → ENTERPRISE/unlimited; no active license → None).",
+      "verification": "cd backend && uv run pytest -o addopts=\"\" tests/test_entitlements.py -k tier_entitlements_and_resolver -q",
+      "state": "PASSING",
+      "evidence": {
+        "date": "2026-05-30",
+        "command": "cd backend && uv run pytest -o addopts=\"\" tests/test_entitlements.py -k tier_entitlements_and_resolver -q",
+        "output_excerpt": "...........                                                              [100%]\n11 passed in 0.05s",
+        "artifact": null
+      }
+    },
+    {
+      "id": "3.7-b",
+      "task": "TASK-3.7",
+      "phase": "PHASE 3 — Frontend",
+      "layer": "BE",
+      "priority": "High",
+      "behavior": "GET /api/licenses/me (authenticated) returns the caller's entitlement summary {has_active, tier, max_file_bytes, monthly_quota, quota_used, ocr_allowed, glossary_allowed}; a user with no active license returns has_active=false.",
+      "verification": "cd backend && uv run pytest -o addopts=\"\" tests/api/test_entitlements_api.py -k licenses_me -q",
+      "state": "PASSING",
+      "evidence": {
+        "date": "2026-05-30",
+        "command": "cd backend && uv run pytest -o addopts=\"\" tests/api/test_entitlements_api.py -k licenses_me -q",
+        "output_excerpt": ".....                                                                    [100%]\n5 passed, 15 deselected in 0.48s",
+        "artifact": null
+      }
+    },
+    {
+      "id": "3.7-c",
+      "task": "TASK-3.7",
+      "phase": "PHASE 3 — Frontend",
+      "layer": "BE",
+      "priority": "High",
+      "behavior": "POST /upload requires an ACTIVE license: a logged-in user with no active license gets 403 {error: LICENSE_REQUIRED}; a superuser is exempt; a user with an active license proceeds.",
+      "verification": "cd backend && uv run pytest -o addopts=\"\" tests/api/test_entitlements_api.py -k upload_requires_license -q",
+      "state": "PASSING",
+      "evidence": {
+        "date": "2026-05-30",
+        "command": "cd backend && uv run pytest -o addopts=\"\" tests/api/test_entitlements_api.py -k upload_requires_license -q",
+        "output_excerpt": "...                                                                      [100%]\n3 passed, 17 deselected in 0.45s",
+        "artifact": null
+      }
+    },
+    {
+      "id": "3.7-d",
+      "task": "TASK-3.7",
+      "phase": "PHASE 3 — Frontend",
+      "layer": "BE",
+      "priority": "High",
+      "behavior": "POST /upload enforces the per-tier max file size (TRIAL 5MB / PRO 50MB / ENTERPRISE 100MB) instead of the old global 25MB cap; an over-limit file returns 413 with the tier's limit in the message.",
+      "verification": "cd backend && uv run pytest -o addopts=\"\" tests/api/test_entitlements_api.py -k per_tier_file_size -q",
+      "state": "PASSING",
+      "evidence": {
+        "date": "2026-05-30",
+        "command": "cd backend && uv run pytest -o addopts=\"\" tests/api/test_entitlements_api.py -k per_tier_file_size -q",
+        "output_excerpt": "....                                                                     [100%]\n4 passed, 16 deselected in 0.48s",
+        "artifact": null
+      }
+    },
+    {
+      "id": "3.7-e",
+      "task": "TASK-3.7",
+      "phase": "PHASE 3 — Frontend",
+      "layer": "BE",
+      "priority": "High",
+      "behavior": "POST /upload enforces the monthly document quota (TRIAL 10 jobs/calendar-month; PRO/ENTERPRISE unlimited); the 11th TRIAL upload in a month returns 403 {error: QUOTA_EXCEEDED}; the count resets at the month boundary.",
+      "verification": "cd backend && uv run pytest -o addopts=\"\" tests/api/test_entitlements_api.py -k monthly_quota -q",
+      "state": "PASSING",
+      "evidence": {
+        "date": "2026-05-30",
+        "command": "cd backend && uv run pytest -o addopts=\"\" tests/api/test_entitlements_api.py -k monthly_quota -q",
+        "output_excerpt": "....                                                                     [100%]\n4 passed, 16 deselected in 0.52s",
+        "artifact": null
+      }
+    },
+    {
+      "id": "3.7-f",
+      "task": "TASK-3.7",
+      "phase": "PHASE 3 — Frontend",
+      "layer": "BE",
+      "priority": "High",
+      "behavior": "OCR and glossary are gated by tier: a TRIAL user requesting OCR or attaching a glossary_id is rejected (403 {error: FEATURE_NOT_IN_PLAN}); PRO/ENTERPRISE are allowed.",
+      "verification": "cd backend && uv run pytest -o addopts=\"\" tests/api/test_entitlements_api.py -k ocr_glossary_gated -q",
+      "state": "PASSING",
+      "evidence": {
+        "date": "2026-05-30",
+        "command": "cd backend && uv run pytest -o addopts=\"\" tests/api/test_entitlements_api.py -k ocr_glossary_gated -q",
+        "output_excerpt": "....                                                                     [100%]\n4 passed, 16 deselected in 0.47s",
+        "artifact": null
+      }
+    },
+    {
+      "id": "3.7-g",
+      "task": "TASK-3.7",
+      "phase": "PHASE 3 — Frontend",
+      "layer": "FE",
+      "priority": "High",
+      "behavior": "A logged-in user with no active license is blocked from the translate UI (prompt + link to /pricing and /activate); when licensed, the upload screen reflects the tier (file-size hint, quota remaining, OCR/glossary disabled on TRIAL).",
+      "verification": "cd frontend && npx playwright test e2e/entitlements.spec.ts -g 'translate gated by license and tier'",
+      "state": "PASSING",
+      "evidence": {
+        "date": "2026-05-30",
+        "command": "cd frontend && npx playwright test e2e/entitlements.spec.ts -g 'translate gated by license and tier'",
+        "output_excerpt": "  1 passed (3.6s)\n\u001b[2m[WebServer] \u001b[22m\u001b[33m\u001b[1m⚠\u001b[22m\u001b[39m Warning: Next.js inferred your workspace root, but it may not be correct.\n\u001b[2m[WebServer] \u001b[22m We detected multiple lockfiles and selected the directory of /Users/letannguyen/package-lock.json as the root directory.\n\u001b[2m[WebServer] \u001b[22m To silence this warning, set `turbopack.root` in your Next.js config, or consider removing one of the lockfiles if it's not needed.\n\u001b[2m[WebServer] \u001b[22m   See https://nextjs.org/docs/app/api-reference/config/next-config-js/turbopack#root-directory for more information.\n\u001b[2m[WebServer] \u001b[22m Detected additional lockfiles: \n\u001b[2m[WebServer] \u001b[22m   * /Users/letannguyen/Desktop/source/ai-translation/frontend/package-lock.json\n\u001b[2m[WebServer] \u001b[22m",
+        "artifact": null
+      }
+    },
+    {
+      "id": "3.7-h",
+      "task": "TASK-3.7",
+      "phase": "PHASE 3 — Frontend",
+      "layer": "BE",
+      "priority": "High",
+      "behavior": "Worker gates AUTO-DETECTED OCR: when a job's PDF is detected as scanned and the job owner's tier disallows OCR (TRIAL), the worker does NOT run OCR — it fails the job with a FEATURE_NOT_IN_PLAN (feature=ocr) error; a PRO/ENTERPRISE owner's scanned PDF runs OCR normally.",
+      "verification": "cd backend && uv run pytest -o addopts=\"\" tests/test_worker_ocr_gate.py -k worker_blocks_ocr_for_trial -q",
+      "state": "PASSING",
+      "evidence": {
+        "date": "2026-05-30",
+        "command": "cd backend && uv run pytest -o addopts=\"\" tests/test_worker_ocr_gate.py -k worker_blocks_ocr_for_trial -q",
+        "output_excerpt": "  <frozen importlib._bootstrap>:488: DeprecationWarning: builtin type SwigPyObject has no __module__ attribute\n\ntests/test_worker_ocr_gate.py::test_worker_blocks_ocr_for_trial\n  <frozen importlib._bootstrap>:488: DeprecationWarning: builtin type swigvarlink has no __module__ attribute\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n1 passed, 2 deselected, 5 warnings in 0.40s\n<sys>:0: DeprecationWarning: builtin type swigvarlink has no __module__ attribute",
         "artifact": null
       }
     }
