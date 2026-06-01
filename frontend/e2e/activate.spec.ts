@@ -116,7 +116,7 @@ test("autoformat and submit", async ({ page }) => {
 
   // POST was called
   await page.waitForResponse("**/api/licenses/activate");
-  expect(capturedBody).toMatchObject({ key: "ABCD-1234-EFGH-5678" });
+  expect(capturedBody).toMatchObject({ raw_key: "ABCD-1234-EFGH-5678" });
 
   // Success card appears
   await expect(page.getByTestId("activate-success")).toBeVisible();
@@ -421,4 +421,63 @@ test("banner dismiss persists", async ({ page, context }) => {
   );
 
   await expect(page.getByTestId("expiry-banner")).not.toBeVisible();
+});
+
+// ---------------------------------------------------------------------------
+// 3.5-d: activate success contract
+// ---------------------------------------------------------------------------
+
+test("activate success contract", async ({ page }) => {
+  // /activate is public — no auth cookie required
+  const ACTIVATE_RESPONSE = {
+    id: "lic-abc123",
+    tier: "pro",
+    status: "active",
+    activated_at: "2026-05-30T10:00:00.000Z",
+    expired_at: "2027-05-30T10:00:00.000Z",
+    expiry: "2027-05-30T10:00:00.000Z",
+    features: ["Translation", "Glossary", "Priority Support"],
+  };
+
+  let capturedBody: unknown = null;
+
+  await page.route("**/api/licenses/activate", async (route) => {
+    capturedBody = JSON.parse(route.request().postData() ?? "{}");
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(ACTIVATE_RESPONSE),
+    });
+  });
+
+  await page.goto("/activate");
+
+  const input = page.getByTestId("license-key-input");
+  await expect(input).toBeVisible();
+  await input.fill("GOOD-KEY1-GOOD-KEY2");
+
+  const submitBtn = page.getByTestId("activate-submit");
+  await expect(submitBtn).toBeEnabled();
+  await submitBtn.click();
+
+  await page.waitForResponse("**/api/licenses/activate");
+
+  // Assert request body uses raw_key (not key)
+  expect((capturedBody as Record<string, unknown>)?.raw_key).toBe("GOOD-KEY1-GOOD-KEY2");
+  expect((capturedBody as Record<string, unknown>)?.key).toBeUndefined();
+
+  // Assert success view renders
+  const successCard = page.getByTestId("activate-success");
+  await expect(successCard).toBeVisible();
+
+  // Assert tier is rendered (capitalized from "pro" → "Pro")
+  await expect(page.getByTestId("success-tier")).toContainText("Pro");
+
+  // Assert expiry is rendered
+  await expect(page.getByTestId("success-expiry")).not.toBeEmpty();
+
+  // Assert at least one feature is rendered
+  const featuresEl = page.getByTestId("success-features");
+  await expect(featuresEl).toBeVisible();
+  await expect(featuresEl).toContainText("Translation");
 });

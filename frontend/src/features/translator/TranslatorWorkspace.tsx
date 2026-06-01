@@ -10,6 +10,7 @@ import {
   CheckCircle2,
   AlertCircle,
   X,
+  Lock,
 } from "lucide-react"
 import { Skeleton } from "@/components/ui/skeleton"
 import { UploadForm } from "@/features/upload/UploadForm"
@@ -19,6 +20,7 @@ import { ErrorDetails } from "@/features/jobs/ErrorDetails"
 import { JobMetaRow } from "@/features/jobs/JobMetaRow"
 import { useJobProgress } from "@/hooks/useJobProgress"
 import { useCounterAnimation } from "@/hooks/useCounterAnimation"
+import { useEntitlement } from "@/hooks/useEntitlement"
 import { listJobs } from "@/lib/api"
 import { cn } from "@/lib/utils"
 import type { JobStatus, JobSummary } from "@/lib/types"
@@ -144,11 +146,15 @@ function JobProgressCard({ jobId, onClose }: { jobId: string; onClose: () => voi
 export function TranslatorWorkspace() {
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null)
 
+  const { data: entitlement, isLoading: entitlementLoading } = useEntitlement()
+
   const { data: jobs = [], isLoading: jobsLoading } = useQuery({
     queryKey: ["jobs"],
     queryFn: listJobs,
     refetchInterval: 5_000,
   })
+
+  const isBlocked = !entitlementLoading && entitlement != null && !entitlement.has_active
 
   return (
     <div className="overflow-y-auto h-full p-6 md:p-8 lg:p-10">
@@ -159,8 +165,47 @@ export function TranslatorWorkspace() {
           <p className="text-zinc-500 mt-1">Translate documents with perfect formatting preservation.</p>
         </div>
 
-        {/* Upload form (3-col grid inside) */}
-        <UploadForm onJobCreated={(id) => setSelectedJobId(id)} />
+        {/* License gate — blocked state */}
+        {isBlocked && (
+          <div
+            className="bg-amber-50 border border-amber-200 rounded-2xl p-10 text-center space-y-4"
+            data-testid="entitlement-blocked"
+          >
+            <div className="flex justify-center">
+              <div className="w-14 h-14 bg-amber-100 rounded-full flex items-center justify-center">
+                <Lock className="w-7 h-7 text-amber-600" />
+              </div>
+            </div>
+            <h2 className="text-xl font-semibold text-zinc-900">License Required</h2>
+            <p className="text-zinc-600 max-w-md mx-auto">
+              You need an active license to translate documents. Choose a plan or activate an existing key.
+            </p>
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
+              <Link
+                href="/pricing"
+                className="inline-flex items-center justify-center gap-2 bg-indigo-600 text-white px-6 py-2.5 rounded-lg font-semibold hover:bg-indigo-700 transition"
+                data-testid="blocked-pricing-link"
+              >
+                Choose a plan
+              </Link>
+              <Link
+                href="/activate"
+                className="inline-flex items-center justify-center gap-2 bg-white border border-zinc-200 text-zinc-700 px-6 py-2.5 rounded-lg font-semibold hover:bg-zinc-50 transition"
+                data-testid="blocked-activate-link"
+              >
+                Activate a key
+              </Link>
+            </div>
+          </div>
+        )}
+
+        {/* Upload form — only when not blocked */}
+        {!isBlocked && (
+          <UploadForm
+            onJobCreated={(id) => setSelectedJobId(id)}
+            entitlement={entitlement}
+          />
+        )}
 
         {/* Active job progress */}
         {selectedJobId && (

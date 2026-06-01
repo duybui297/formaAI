@@ -10,8 +10,9 @@ import { TrackedChangesModal } from "./TrackedChangesModal"
 import { UploadCloud, FileText, Languages, BookA, PlayCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { detectTrackedChanges } from "@/lib/detectTrackedChanges"
+import type { Entitlement } from "@/lib/types"
 
-const MAX_SIZE_BYTES = 25 * 1024 * 1024
+const DEFAULT_MAX_SIZE_BYTES = 25 * 1024 * 1024
 // Phase 3: PPTX and native PDF pipelines added. Keep allowlist in sync with backend.
 const ALLOWED_EXTS = new Set([".docx", ".pptx", ".pdf"])
 
@@ -25,9 +26,13 @@ function formatBytes(bytes: number): string {
 
 interface UploadFormProps {
   onJobCreated?: (jobId: string) => void
+  entitlement?: Entitlement | null
 }
 
-export function UploadForm({ onJobCreated }: UploadFormProps = {}) {
+export function UploadForm({ onJobCreated, entitlement }: UploadFormProps = {}) {
+  const maxSizeBytes = entitlement?.max_file_bytes ?? DEFAULT_MAX_SIZE_BYTES
+  const ocrAllowed = entitlement == null || entitlement.ocr_allowed !== false
+  const glossaryAllowed = entitlement == null || entitlement.glossary_allowed !== false
   const router = useRouter()
   const { toast } = useToast()
 
@@ -63,8 +68,8 @@ export function UploadForm({ onJobCreated }: UploadFormProps = {}) {
       toast({ variant: "destructive", description: msg })
       return
     }
-    if (f.size > MAX_SIZE_BYTES) {
-      const msg = "File too large — maximum is 25 MB."
+    if (f.size > maxSizeBytes) {
+      const msg = `File too large — your plan allows up to ${formatBytes(maxSizeBytes)}.`
       setError(msg)
       toast({ variant: "destructive", description: msg })
       return
@@ -84,7 +89,7 @@ export function UploadForm({ onJobCreated }: UploadFormProps = {}) {
     const hasTC = ext === ".docx" ? await detectTrackedChanges(f) : false
     setHasTrackedChanges(hasTC)
     setDetecting(false)
-  }, [toast])
+  }, [toast, maxSizeBytes])
 
   const onDrop = useCallback(
     (e: React.DragEvent) => {
@@ -139,7 +144,27 @@ export function UploadForm({ onJobCreated }: UploadFormProps = {}) {
         }
 
         if (!res.ok) {
-          const msg = data.detail || data.error || "Upload failed. Please try again."
+          // Handle structured license error bodies from backend
+          let msg: string
+          const detail = data.detail
+          if (typeof detail === "object" && detail !== null) {
+            const errCode = detail.error as string | undefined
+            if (errCode === "LICENSE_REQUIRED") {
+              msg = detail.message ?? "A valid license is required to translate documents."
+            } else if (errCode === "QUOTA_EXCEEDED") {
+              msg = detail.message ?? "Monthly translation quota exceeded. Upgrade your plan."
+            } else if (errCode === "FEATURE_NOT_IN_PLAN") {
+              const feature = detail.feature as string | undefined
+              const featureName = feature === "ocr" ? "OCR" : feature === "glossary" ? "Glossary" : feature ?? "This feature"
+              msg = detail.message ?? `${featureName} is not available on your current plan.`
+            } else {
+              msg = detail.message ?? "Upload failed. Please try again."
+            }
+          } else if (typeof detail === "string") {
+            msg = detail
+          } else {
+            msg = data.error ?? "Upload failed. Please try again."
+          }
           setError(msg)
           toast({
             variant: "destructive",
@@ -223,7 +248,9 @@ export function UploadForm({ onJobCreated }: UploadFormProps = {}) {
                        dragState === "multi" ? "One file at a time only" :
                        "Drag & drop your file here"}
                     </p>
-                    <p className="text-sm text-zinc-500 mt-1">Supports DOCX, PDF, PPTX up to 25MB</p>
+                    <p className="text-sm text-zinc-500 mt-1">
+                      Supports DOCX, PDF, PPTX up to {formatBytes(maxSizeBytes)}
+                    </p>
                   </div>
                   <div className="flex items-center gap-4 mt-2 w-64">
                     <div className="h-px bg-zinc-300 flex-1" />
@@ -262,6 +289,30 @@ export function UploadForm({ onJobCreated }: UploadFormProps = {}) {
 
           {/* Right 2/5 — Settings Sidebar */}
           <div className="lg:col-span-2 space-y-6">
+            {/* Entitlement info — quota + file size limits */}
+            {entitlement?.has_active && (
+              <div
+                className="bg-indigo-50 border border-indigo-100 rounded-xl px-4 py-3 text-sm space-y-1"
+                data-testid="entitlement-info"
+              >
+                <p className="text-indigo-800 font-medium">
+                  {entitlement.tier ?? "Active"} plan
+                </p>
+                <p className="text-indigo-700" data-testid="max-file-size">
+                  Max file size: {formatBytes(maxSizeBytes)}
+                </p>
+                {entitlement.monthly_quota != null ? (
+                  <p className="text-indigo-700" data-testid="quota-remaining">
+                    {entitlement.monthly_quota - entitlement.quota_used} / {entitlement.monthly_quota} documents left this month
+                  </p>
+                ) : (
+                  <p className="text-indigo-700" data-testid="quota-remaining">
+                    Unlimited documents
+                  </p>
+                )}
+              </div>
+            )}
+
             {/* Language Pair */}
             <div className="bg-white p-6 rounded-xl border border-zinc-200 shadow-md space-y-5">
               <h3 className="font-semibold text-zinc-900 flex items-center gap-2 mb-2">
@@ -285,19 +336,35 @@ export function UploadForm({ onJobCreated }: UploadFormProps = {}) {
               </div>
             </div>
 
-            {/* Glossary */}
-            <div className="bg-white p-6 rounded-xl border border-zinc-200 shadow-md space-y-4">
-              <h3 className="font-semibold text-zinc-900 flex items-center gap-2">
-                <BookA className="w-4 h-4 text-indigo-500" />
-                Glossary
-              </h3>
-              <GlossarySelect
-                sourceLang={sourceLang === "auto" ? "" : sourceLang}
-                targetLang={targetLang}
-                value={glossaryId}
-                onChange={setGlossaryId}
-              />
-            </div>
+            {/* Glossary — hidden when glossary_allowed === false */}
+            {glossaryAllowed ? (
+              <div className="bg-white p-6 rounded-xl border border-zinc-200 shadow-md space-y-4">
+                <h3 className="font-semibold text-zinc-900 flex items-center gap-2">
+                  <BookA className="w-4 h-4 text-indigo-500" />
+                  Glossary
+                </h3>
+                <GlossarySelect
+                  sourceLang={sourceLang === "auto" ? "" : sourceLang}
+                  targetLang={targetLang}
+                  value={glossaryId}
+                  onChange={setGlossaryId}
+                />
+              </div>
+            ) : (
+              <div
+                className="bg-white p-6 rounded-xl border border-zinc-200 shadow-md space-y-4 opacity-60"
+                data-testid="glossary-disabled"
+              >
+                <h3 className="font-semibold text-zinc-500 flex items-center gap-2">
+                  <BookA className="w-4 h-4 text-zinc-400" />
+                  Glossary
+                  <span className="ml-auto text-xs font-normal text-zinc-400 bg-zinc-100 px-2 py-0.5 rounded-full">
+                    Pro feature
+                  </span>
+                </h3>
+                <p className="text-xs text-zinc-400">Upgrade to Pro to use custom glossaries.</p>
+              </div>
+            )}
 
             {/* Start Translation Button */}
             <button

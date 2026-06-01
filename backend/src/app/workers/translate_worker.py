@@ -353,6 +353,40 @@ async def _run_translation(ctx: dict, session, job_id: str) -> None:
                 import pymupdf  # noqa: PLC0415
                 from app.pipeline.scanned_pdf.extractor import extract_scanned_pdf_segments  # noqa: PLC0415
 
+                # TASK-3.7-h: Gate auto-detected OCR by tier BEFORE running OCR.
+                # The upload route only gates is_scanned_override=True (explicit flag);
+                # this gate closes the gap for auto-detected scanned PDFs.
+                #
+                # Null user_id: legacy jobs pre-dating auth have no owner — allow OCR
+                # to keep existing behaviour; do not break un-owned jobs.
+                if job.user_id is not None:
+                    from sqlalchemy import select as _select  # noqa: PLC0415
+                    from app.db.models import User as _User  # noqa: PLC0415
+                    from app.licensing.entitlements import resolve_entitlements as _resolve  # noqa: PLC0415
+
+                    _user_row = await session.scalar(_select(_User).where(_User.id == job.user_id))
+                    if _user_row is not None:
+                        _ent = await _resolve(user=_user_row, session=session)
+                        if _ent is not None and not _ent.ocr_allowed:
+                            _ocr_block_msg = "OCR is not available on your current plan."
+                            append_error_log(data_dir, job_id, _ocr_block_msg)
+                            await transition_to_failed(session, job_id, error_msg=_ocr_block_msg)
+                            await _publish_progress(
+                                redis, job_id, "failed", "failed", 0, 0, 0, 0,
+                                _ocr_block_msg,
+                                error={
+                                    "error": "FEATURE_NOT_IN_PLAN",
+                                    "feature": "ocr",
+                                    "message": _ocr_block_msg,
+                                },
+                            )
+                            log.warning(
+                                "worker_ocr_gate_blocked",
+                                job_id=job_id,
+                                user_id=job.user_id,
+                            )
+                            return
+
                 _pdf_doc = pymupdf.open(job.input_path)
                 _pages_dir = os.path.join(settings.data_dir, "jobs", job_id, "pages")
                 os.makedirs(_pages_dir, exist_ok=True)

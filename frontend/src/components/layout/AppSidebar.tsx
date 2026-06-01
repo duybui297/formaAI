@@ -13,6 +13,7 @@ import {
   LogOut,
   User as UserIcon,
   ShieldCheck,
+  Users,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { getMeApi, logoutApi } from "@/lib/auth"
@@ -29,6 +30,7 @@ const navItems = [
 
 const adminNavItems = [
   { name: "Licenses", path: "/admin/licenses", icon: ShieldCheck },
+  { name: "Users", path: "/admin/users", icon: Users },
 ]
 
 function DashScopeHealthDot() {

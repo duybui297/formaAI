@@ -130,7 +130,7 @@ export interface Glossary {
 // --- License Management types (TASK-3.1) ---
 
 export type LicenseTier = "starter" | "professional" | "enterprise"
-export type LicenseStatus = "active" | "suspended" | "revoked" | "expired"
+export type LicenseStatus = "pending" | "active" | "suspended" | "revoked" | "expired"
 
 export interface License {
   id: string
@@ -188,13 +188,16 @@ export interface CreateLicenseResponse {
 export type ActivateErrorCode = "INVALID_KEY" | "ALREADY_ACTIVATED" | "EXPIRED"
 
 export interface ActivateLicenseRequest {
-  key: string
+  raw_key: string
 }
 
 export interface ActivateLicenseResponse {
-  tier: LicenseTier
+  id?: string
+  tier: string                // backend returns lowercase e.g. "pro", "starter"
+  status: string              // backend returns lowercase e.g. "active"
+  activated_at?: string | null
+  expired_at?: string | null
   expiry: string | null       // ISO date string; null if no expiry
-  status: LicenseStatus
   features: string[]
 }
 
@@ -219,4 +222,72 @@ export interface CheckoutLicenseResponse {
   id?: string
   issued_at?: string
   expired_at?: string | null
+}
+
+// --- Admin User Management types (TASK-3.6) ---
+
+export interface AdminUser {
+  id: string
+  email: string
+  full_name: string | null
+  is_active: boolean
+  is_superuser: boolean
+  created_at: string
+}
+
+export interface AdminUsersListParams {
+  page?: number
+  page_size?: number
+  search?: string
+  role?: "admin" | "user"
+  active?: boolean
+}
+
+export interface AdminUsersListResponse {
+  users: AdminUser[]
+  total: number
+  page: number
+  page_size: number
+}
+
+export interface CreateAdminUserRequest {
+  email: string
+  full_name?: string
+  password: string
+  is_superuser?: boolean
+  is_active?: boolean
+}
+
+export interface UpdateAdminUserRequest {
+  full_name?: string
+  is_active?: boolean
+  is_superuser?: boolean
+}
+
+// --- Entitlement types (TASK-3.7) ---
+
+export type EntitlementTier = "TRIAL" | "PRO" | "ENTERPRISE"
+
+export interface Entitlement {
+  has_active: boolean
+  tier: EntitlementTier | null
+  max_file_bytes: number | null
+  monthly_quota: number | null
+  quota_used: number
+  ocr_allowed: boolean | null
+  glossary_allowed: boolean | null
+}
+
+// --- Lead Capture types (TASK-3.5) ---
+
+export interface LeadRequest {
+  email: string
+  plan: CheckoutPlan
+}
+
+export interface LeadResponse {
+  id: string
+  email: string
+  plan: string
+  created_at: string
 }

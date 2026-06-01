@@ -164,11 +164,15 @@ async def test_first_activation_succeeds(activate_app):
         assert r.status_code == 200, r.text
         data = r.json()
 
-    assert data["status"] == "ACTIVE"
+    assert data["status"] == "active"
     assert data["activated_at"] is not None
     assert data["expired_at"] is not None
     assert data["id"] == license_id
-    assert data["tier"] == "PRO"
+    assert data["tier"] == "pro"
+    # FE-contract fields (TASK-3.5-c)
+    assert data["expiry"] is not None
+    assert isinstance(data["features"], list)
+    assert len(data["features"]) > 0
 
     # Verify DB state
     async with session_factory() as session:
@@ -262,8 +266,8 @@ async def test_cache_ttl_matches_expiry(activate_app):
     raw_val = await fake_redis.get(cache_key)
     assert raw_val is not None
     cached = json.loads(raw_val)
-    assert cached["status"] == "ACTIVE"
-    assert cached["tier"] == "PRO"
+    assert cached["status"] == "ACTIVE"   # Redis cache keeps uppercase (BE internal)
+    assert cached["tier"] == "PRO"        # Redis cache keeps uppercase (BE internal)
     assert cached["id"] == license_id
 
 
@@ -331,3 +335,65 @@ async def test_lock_released_on_exception(activate_app):
     assert commit_called, "Patched commit was never called — test setup error"
 
     await fake_redis.aclose()
+
+
+# ---------------------------------------------------------------------------
+# 3.5-c: activate_response_contract
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_activate_response_contract(activate_app):
+    """
+    POST /licenses/activate on a fresh PENDING license returns 200 with
+    the FE-contract body:
+      - tier:     lowercase string ("trial" | "pro" | "enterprise")
+      - status:   lowercase "active"
+      - expiry:   ISO datetime string (non-null)
+      - features: non-empty list[str]
+
+    Also verifies legacy fields (id, activated_at, expired_at) still present.
+    """
+    app, session_factory, _fake_redis = activate_app
+
+    customer = await _make_user(session_factory)
+    license_id, raw_key = await _make_pending_license(
+        session_factory, customer_id=customer.id
+    )
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        r = await c.post("/licenses/activate", json={"raw_key": raw_key})
+        assert r.status_code == 200, r.text
+        data = r.json()
+
+    # FE-contract required fields
+    assert "tier" in data, f"Missing 'tier' in response: {data}"
+    assert "status" in data, f"Missing 'status' in response: {data}"
+    assert "expiry" in data, f"Missing 'expiry' in response: {data}"
+    assert "features" in data, f"Missing 'features' in response: {data}"
+
+    # tier: lowercase string
+    assert data["tier"] == data["tier"].lower(), (
+        f"tier must be lowercase, got {data['tier']!r}"
+    )
+    assert data["tier"] in ("trial", "pro", "enterprise"), (
+        f"tier must be one of trial/pro/enterprise, got {data['tier']!r}"
+    )
+
+    # status: lowercase "active"
+    assert data["status"] == "active", f"Expected status='active', got {data['status']!r}"
+
+    # expiry: non-null ISO datetime string
+    assert data["expiry"] is not None, "expiry must not be null on a fresh activation"
+    from datetime import datetime as _dt
+    _dt.fromisoformat(data["expiry"])  # must parse without exception
+
+    # features: non-empty list
+    assert isinstance(data["features"], list), (
+        f"features must be a list, got {type(data['features'])}"
+    )
+    assert len(data["features"]) > 0, "features must be non-empty"
+
+    # Legacy fields still present
+    assert data["id"] == license_id
+    assert data["activated_at"] is not None
+    assert data["expired_at"] is not None

@@ -101,14 +101,16 @@ async def app_and_tmp(tmp_path):
     - SQLite in-memory DB, tables created
     - tmp_path used as data_dir
     - arq_pool mocked (enqueue_job is an AsyncMock)
+    - get_current_active_user overridden with a superuser (TASK-3.7: bypasses
+      entitlement checks so pre-existing upload tests stay green)
 
-    Uses dependency_overrides for get_session, get_arq_pool, and get_settings
-    so the app runs without real Redis/DB/arq. The module-level app singleton
-    from main.py is used directly with overrides applied per-test.
+    Uses dependency_overrides for get_session, get_arq_pool, get_settings,
+    and get_current_active_user so the app runs without real Redis/DB/arq/JWT.
     """
-    from app.db.models import Base
+    import uuid as _uuid
+    from app.db.models import Base, User
     from app.db.session import get_session
-    from app.api.deps import get_arq_pool, get_settings
+    from app.api.deps import get_arq_pool, get_current_active_user, get_settings
     from app.main import app
 
     engine = create_async_engine(TEST_DB_URL, echo=False)
@@ -123,6 +125,15 @@ async def app_and_tmp(tmp_path):
         database_url=MagicMock(get_secret_value=lambda: TEST_DB_URL),
         redis_url="redis://localhost:6379/0",
         data_dir=str(tmp_path),
+        ocr_text_density_threshold=0.05,
+    )
+
+    superuser = User(
+        id=str(_uuid.uuid4()),
+        email="superuser@test.com",
+        hashed_password="x",
+        is_active=True,
+        is_superuser=True,
     )
 
     # Set app.state directly so the running app can find settings/arq_pool
@@ -141,9 +152,13 @@ async def app_and_tmp(tmp_path):
     def override_get_settings(request=None):
         return mock_settings
 
+    def override_get_current_active_user():
+        return superuser
+
     app.dependency_overrides[get_session] = override_get_session
     app.dependency_overrides[get_arq_pool] = override_get_arq_pool
     app.dependency_overrides[get_settings] = override_get_settings
+    app.dependency_overrides[get_current_active_user] = override_get_current_active_user
 
     yield app, mock_arq
 
@@ -167,23 +182,29 @@ async def app_and_tmp(tmp_path):
 
 @pytest.mark.asyncio
 async def test_upload_rejects_oversized_via_content_length(app_and_tmp):
-    """413 returned when Content-Length header exceeds 25 MB."""
+    """413 returned when Content-Length header exceeds the ENTERPRISE ceiling (100 MB).
+
+    TASK-3.7: superuser → ENTERPRISE (100MB limit). Tests use 101MB to exceed.
+    """
     app, _ = app_and_tmp
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         response = await c.post(
             "/upload",
             files={"file": ("test.docx", b"x", "application/octet-stream")},
             data={"source_lang": "auto", "target_lang": "en"},
-            headers={"content-length": str(26 * 1024 * 1024)},
+            headers={"content-length": str(101 * 1024 * 1024)},
         )
     assert response.status_code == 413
 
 
 @pytest.mark.asyncio
 async def test_upload_rejects_oversized_streaming(app_and_tmp):
-    """413 returned when actual file content exceeds 25 MB (streaming guard)."""
+    """413 returned when actual file content exceeds ENTERPRISE ceiling (100 MB).
+
+    TASK-3.7: superuser → ENTERPRISE (100MB limit). Tests use 101MB to exceed.
+    """
     app, _ = app_and_tmp
-    oversized = b"x" * (26 * 1024 * 1024)
+    oversized = b"x" * (101 * 1024 * 1024)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         response = await c.post(
             "/upload",

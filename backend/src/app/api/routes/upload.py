@@ -4,8 +4,10 @@ POST /upload — file upload, validation, job creation, arq enqueue.
 Requirements:
 - UPLD-01: accept file upload
 - UPLD-02: restrict to .docx (Phase 1); accept .pptx/.pdf declaration but reject with 422
-- UPLD-03: reject > MAX_UPLOAD_BYTES with 413 (Content-Length fast path + streaming guard)
+- UPLD-03: reject > tier-based max_file_bytes with 413 (TASK-3.7-d replaces global 25MB)
 - UPLD-05: enqueue translate_job via shared arq pool (W11: no per-request pool creation)
+- TASK-3.7: entitlement enforcement (license required, per-tier file size, monthly quota,
+            OCR and glossary feature gates)
 
 T-06a-01: extension checked; size guarded; path constructed server-side from data_dir + UUID.
 T-06a-03: target_lang validated against _VALID_TARGET_CODES.
@@ -24,6 +26,7 @@ from app.api.deps import get_arq_pool, get_current_active_user
 from app.api.routes.languages import _VALID_TARGET_CODES
 from app.db.models import User
 from app.db.session import get_session
+from app.licensing.entitlements import count_monthly_jobs, resolve_entitlements
 from app.services.glossary_service import get_glossary
 from app.services.job_service import create_job
 
@@ -31,7 +34,9 @@ log = structlog.get_logger()
 
 router = APIRouter()
 
-MAX_UPLOAD_BYTES: int = 25 * 1024 * 1024  # 25 MB (UPLD-03)
+# TASK-3.7: Global cap removed — per-tier limits enforced after entitlement resolution.
+# Kept as absolute ceiling to prevent pathological uploads before DB hit.
+MAX_UPLOAD_BYTES: int = 100 * 1024 * 1024  # 100 MB (ENTERPRISE ceiling, hard ceiling)
 ALLOWED_EXTENSIONS: frozenset[str] = frozenset({".docx", ".pptx", ".pdf"})  # UPLD-02
 # Formats with end-to-end pipelines: DOCX (Phase 1), PPTX + native PDF (Phase 3, D-15)
 SUPPORTED_FORMATS: frozenset[str] = frozenset({".docx", ".pptx", ".pdf"})
@@ -60,11 +65,36 @@ async def upload_document(
     HTTP 202 — job created and queued, not yet complete.
 
     Auth: requires valid JWT (get_current_active_user).
+    TASK-3.7: Entitlement enforcement — license required, per-tier file size,
+              monthly quota, OCR and glossary feature gates.
     """
-    # --- Fast path: Content-Length header sanity check (T-06a-01) ---
+    # --- TASK-3.7: Resolve entitlements (license check + tier limits) ---
+    entitlement = await resolve_entitlements(user=current_user, session=session)
+    if entitlement is None:
+        raise HTTPException(
+            status_code=403,
+            detail={"error": "LICENSE_REQUIRED", "message": "An active license is required to upload documents."},
+        )
+
+    # --- TASK-3.7-f: Feature gate — OCR (is_scanned_override=True requests OCR explicitly) ---
+    if is_scanned_override is True and not entitlement.ocr_allowed:
+        raise HTTPException(
+            status_code=403,
+            detail={"error": "FEATURE_NOT_IN_PLAN", "feature": "ocr", "message": "OCR is not available on your current plan."},
+        )
+
+    # --- TASK-3.7-f: Feature gate — glossary ---
+    if glossary_id is not None and not entitlement.glossary_allowed:
+        raise HTTPException(
+            status_code=403,
+            detail={"error": "FEATURE_NOT_IN_PLAN", "feature": "glossary", "message": "Glossary support is not available on your current plan."},
+        )
+
+    # --- Fast path: Content-Length header sanity check using tier limit ---
     content_length = request.headers.get("content-length")
-    if content_length and int(content_length) > MAX_UPLOAD_BYTES:
-        raise HTTPException(status_code=413, detail="File too large — maximum is 25 MB.")
+    if content_length and int(content_length) > entitlement.max_file_bytes:
+        limit_mb = entitlement.max_file_bytes // (1024 * 1024)
+        raise HTTPException(status_code=413, detail=f"File too large — your plan allows up to {limit_mb} MB.")
 
     # --- Extension check (UPLD-02) ---
     filename = file.filename or ""
@@ -100,7 +130,7 @@ async def upload_document(
                 detail="The selected glossary does not match the language pair.",
             )
 
-    # --- Streaming size guard (defence in depth against missing Content-Length) ---
+    # --- Streaming size guard (TASK-3.7-d: per-tier limit, defence in depth) ---
     chunks: list[bytes] = []
     total = 0
     while True:
@@ -108,10 +138,20 @@ async def upload_document(
         if not chunk:
             break
         total += len(chunk)
-        if total > MAX_UPLOAD_BYTES:
-            raise HTTPException(status_code=413, detail="File too large — maximum is 25 MB.")
+        if total > entitlement.max_file_bytes:
+            limit_mb = entitlement.max_file_bytes // (1024 * 1024)
+            raise HTTPException(status_code=413, detail=f"File too large — your plan allows up to {limit_mb} MB.")
         chunks.append(chunk)
     content: bytes = b"".join(chunks)
+
+    # --- TASK-3.7-e: Monthly quota enforcement ---
+    if entitlement.monthly_quota is not None:
+        quota_used = await count_monthly_jobs(user_id=str(current_user.id), session=session)
+        if quota_used >= entitlement.monthly_quota:
+            raise HTTPException(
+                status_code=403,
+                detail={"error": "QUOTA_EXCEEDED", "message": f"Monthly translation quota of {entitlement.monthly_quota} reached."},
+            )
 
     # --- D-04-17: Scanned PDF detection ---
     is_scanned = False

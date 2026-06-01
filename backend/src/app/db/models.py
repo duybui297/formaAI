@@ -303,6 +303,7 @@ class LicenseEventType(str, enum.Enum):
     EXPIRED = "EXPIRED"
     SUSPENDED = "SUSPENDED"
     REVOKED = "REVOKED"
+    EXTENDED = "EXTENDED"
 
 
 class License(Base):
@@ -395,6 +396,25 @@ class LicenseActivity(Base):
 
 
 # ---------------------------------------------------------------------------
+# Marketing leads (TASK-3.5)
+# ---------------------------------------------------------------------------
+
+class Lead(Base):
+    """Marketing lead captured from the pricing page."""
+
+    __tablename__ = "leads"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    email: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    plan: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+# ---------------------------------------------------------------------------
 # Auth: User + PasswordResetToken
 # ---------------------------------------------------------------------------
 class User(Base):
@@ -415,6 +435,10 @@ class User(Base):
     email_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    # TASK-3.6: soft-delete timestamp; NULL = not deleted; non-NULL = deleted
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )
 
 

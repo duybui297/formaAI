@@ -1,5 +1,5 @@
 /**
- * TASK-3.3: Pricing → Self-serve License (behaviors 3.3-c, 3.3-d)
+ * TASK-3.3 / TASK-3.5: Pricing page behaviors
  *
  * All /api/* routes are mocked with page.route() — no running backend required.
  *
@@ -8,7 +8,7 @@
  * We inject it via browserContext.addCookies() and stub /api/auth/me.
  *
  * Verification commands:
- *   cd frontend && npx playwright test e2e/pricing.spec.ts -g 'plan checkout issues key'
+ *   cd frontend && npx playwright test e2e/pricing.spec.ts -g 'plan opens lead capture'
  *   cd frontend && npx playwright test e2e/pricing.spec.ts -g 'plans aligned to tiers'
  */
 
@@ -20,13 +20,11 @@ import { test, expect, type Page, type BrowserContext } from "@playwright/test";
 
 const FAKE_TOKEN = "test-pricing-jwt-token";
 
-const CHECKOUT_FIXTURE = {
-  raw_key: "TEST-KEY-1234-5678",
-  tier: "PRO",
-  status: "PENDING",
-  id: "lic-checkout-1",
-  issued_at: "2026-05-30T00:00:00.000Z",
-  expired_at: null,
+const LEAD_FIXTURE = {
+  id: "lead-1",
+  email: "test@example.com",
+  plan: "pro",
+  created_at: "2026-05-30T00:00:00.000Z",
 };
 
 // ---------------------------------------------------------------------------
@@ -76,25 +74,32 @@ async function stubBaseRoutes(page: Page) {
 }
 
 // ---------------------------------------------------------------------------
-// 3.3-c: plan checkout issues key
+// 3.3-c: plan opens lead capture
 // ---------------------------------------------------------------------------
 
-test("plan checkout issues key", async ({ page, context }) => {
+test("plan opens lead capture", async ({ page, context }) => {
   await setupAuth(context);
   await stubBaseRoutes(page);
 
-  // Track whether the checkout endpoint was actually called
-  let checkoutCalled = false;
-  let checkoutBody: unknown = null;
+  // Track leads endpoint call and capture request body
+  let leadCalled = false;
+  let leadBody: unknown = null;
 
+  await page.route("**/api/leads", async (route) => {
+    leadCalled = true;
+    leadBody = JSON.parse(route.request().postData() ?? "{}");
+    await route.fulfill({
+      status: 201,
+      contentType: "application/json",
+      body: JSON.stringify(LEAD_FIXTURE),
+    });
+  });
+
+  // Assert NO checkout endpoint is called
+  let checkoutCalled = false;
   await page.route("**/api/licenses/checkout", async (route) => {
     checkoutCalled = true;
-    checkoutBody = JSON.parse(route.request().postData() ?? "{}");
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify(CHECKOUT_FIXTURE),
-    });
+    await route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
   });
 
   await page.goto("/pricing");
@@ -104,24 +109,41 @@ test("plan checkout issues key", async ({ page, context }) => {
   await expect(proBtn).toBeVisible();
   await proBtn.click();
 
-  // Assert checkout endpoint was called
-  await page.waitForFunction(() => true); // yield to network
-  expect(checkoutCalled).toBe(true);
-  expect((checkoutBody as { plan?: string })?.plan).toBe("pro");
-
-  // Assert one-time key dialog is visible
-  const dialog = page.getByTestId("one-time-key-dialog");
+  // Assert lead-capture dialog appears (NOT one-time key dialog)
+  const dialog = page.getByTestId("lead-capture-dialog");
   await expect(dialog).toBeVisible();
 
-  // Assert the raw key is displayed
-  const keyDisplay = page.getByTestId("raw-key-display");
-  await expect(keyDisplay).toBeVisible();
-  await expect(keyDisplay).toHaveValue("TEST-KEY-1234-5678");
+  // Assert NO license key dialog / raw key is shown
+  await expect(page.getByTestId("one-time-key-dialog")).not.toBeVisible();
+  await expect(page.getByTestId("raw-key-display")).not.toBeVisible();
 
-  // Assert an /activate link is present in the dialog
-  const activateLink = page.getByTestId("activate-link");
-  await expect(activateLink).toBeVisible();
-  await expect(activateLink).toHaveAttribute("href", "/activate");
+  // Assert checkout was NOT called
+  expect(checkoutCalled).toBe(false);
+
+  // Fill in email and submit
+  const emailInput = page.getByTestId("lead-email-input");
+  await expect(emailInput).toBeVisible();
+  await emailInput.fill("test@example.com");
+
+  const submitBtn = page.getByTestId("lead-capture-submit");
+  await expect(submitBtn).toBeEnabled();
+  await submitBtn.click();
+
+  // Wait for POST /api/leads
+  await page.waitForResponse("**/api/leads");
+
+  // Assert leads endpoint was called with correct body
+  expect(leadCalled).toBe(true);
+  expect((leadBody as { email?: string; plan?: string })?.email).toBe("test@example.com");
+  expect((leadBody as { email?: string; plan?: string })?.plan).toBe("pro");
+
+  // Assert thank-you state shown
+  const successEl = page.getByTestId("lead-capture-success");
+  await expect(successEl).toBeVisible();
+
+  // Assert no raw key is ever shown
+  await expect(page.getByTestId("raw-key-display")).not.toBeVisible();
+  await expect(page.getByTestId("one-time-key-dialog")).not.toBeVisible();
 });
 
 // ---------------------------------------------------------------------------

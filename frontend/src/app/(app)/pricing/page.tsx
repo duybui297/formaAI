@@ -1,13 +1,11 @@
 "use client"
 import { useState } from "react"
-import { CheckCircle2, Zap, Loader2 } from "lucide-react"
-import Link from "next/link"
-import { checkoutLicense } from "@/lib/api"
-import type { CheckoutPlan, CheckoutLicenseResponse } from "@/lib/types"
+import { CheckCircle2, Zap, Loader2, X } from "lucide-react"
+import { submitLead } from "@/lib/api"
+import type { CheckoutPlan } from "@/lib/types"
 
 /** Tier labels as returned by the backend checkout endpoint */
 type CheckoutTier = "TRIAL" | "PRO" | "ENTERPRISE"
-import { OneTimeKeyDialog } from "@/features/licenses/OneTimeKeyDialog"
 
 const plans: {
   name: string
@@ -81,23 +79,155 @@ const plans: {
   },
 ]
 
-export default function PricingPage() {
-  const [loadingPlan, setLoadingPlan] = useState<CheckoutPlan | null>(null)
-  const [dialogKey, setDialogKey] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
+// ---------------------------------------------------------------------------
+// LeadCaptureDialog
+// ---------------------------------------------------------------------------
 
-  async function handleCheckout(plan: CheckoutPlan) {
-    setLoadingPlan(plan)
+interface LeadCaptureDialogProps {
+  open: boolean
+  plan: CheckoutPlan | null
+  onClose: () => void
+}
+
+function LeadCaptureDialog({ open, plan, onClose }: LeadCaptureDialogProps) {
+  const [email, setEmail] = useState("")
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [submitted, setSubmitted] = useState(false)
+
+  function handleClose() {
+    setEmail("")
+    setError(null)
+    setSubmitted(false)
+    onClose()
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!plan) return
+    setSubmitting(true)
     setError(null)
     try {
-      const result: CheckoutLicenseResponse = await checkoutLicense(plan)
-      setDialogKey(result.raw_key)
+      await submitLead(email, plan)
+      setSubmitted(true)
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Checkout failed")
+      setError(err instanceof Error ? err.message : "Submission failed")
     } finally {
-      setLoadingPlan(null)
+      setSubmitting(false)
     }
   }
+
+  if (!open) return null
+
+  const planName = plans.find((p) => p.plan === plan)?.name ?? plan
+
+  return (
+    <div
+      data-testid="lead-capture-dialog"
+      role="dialog"
+      aria-modal="true"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+    >
+      {/* Backdrop */}
+      <div
+        className="absolute inset-0 bg-black/40"
+        onClick={handleClose}
+        aria-hidden="true"
+      />
+
+      <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-md p-8 space-y-6">
+        <button
+          type="button"
+          onClick={handleClose}
+          className="absolute top-4 right-4 text-zinc-400 hover:text-zinc-600"
+          aria-label="Close"
+        >
+          <X className="w-5 h-5" />
+        </button>
+
+        {submitted ? (
+          <div data-testid="lead-capture-success" className="text-center space-y-3">
+            <CheckCircle2 className="w-10 h-10 text-green-500 mx-auto" />
+            <h2 className="text-xl font-semibold text-zinc-900">
+              Thanks — we&apos;ll be in touch!
+            </h2>
+            <p className="text-sm text-zinc-500">
+              Cảm ơn! Chúng tôi sẽ liên hệ ưu đãi sớm.
+            </p>
+            <button
+              type="button"
+              onClick={handleClose}
+              className="mt-4 px-5 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 transition"
+            >
+              Close
+            </button>
+          </div>
+        ) : (
+          <>
+            <div className="space-y-1">
+              <h2 className="text-xl font-semibold text-zinc-900">
+                Interested in the <span className="text-indigo-600">{planName}</span> plan?
+              </h2>
+              <p className="text-sm text-zinc-500">
+                Leave your email and we&apos;ll reach out with your offer.
+              </p>
+            </div>
+
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="space-y-1.5">
+                <label
+                  htmlFor="lead-email"
+                  className="text-sm font-medium text-zinc-700"
+                >
+                  Email address
+                </label>
+                <input
+                  id="lead-email"
+                  data-testid="lead-email-input"
+                  type="email"
+                  required
+                  value={email}
+                  onChange={(e) => {
+                    setEmail(e.target.value)
+                    setError(null)
+                  }}
+                  placeholder="you@example.com"
+                  className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              {error && (
+                <p
+                  data-testid="lead-capture-error"
+                  className="text-sm text-red-600"
+                >
+                  {error}
+                </p>
+              )}
+
+              <button
+                type="submit"
+                data-testid="lead-capture-submit"
+                disabled={submitting || !email.trim()}
+                className="w-full py-2.5 rounded-xl bg-indigo-600 text-white font-semibold text-sm hover:bg-indigo-700 transition disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
+                Send my details
+              </button>
+            </form>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// PricingPage
+// ---------------------------------------------------------------------------
+
+export default function PricingPage() {
+  const [leadPlan, setLeadPlan] = useState<CheckoutPlan | null>(null)
 
   return (
     <div className="space-y-12 pb-12 p-6 md:p-8 lg:p-10 overflow-y-auto h-full">
@@ -123,76 +253,63 @@ export default function PricingPage() {
         </div>
       </div>
 
-      {error && (
-        <div className="max-w-6xl mx-auto">
-          <p className="text-sm text-red-600 text-center bg-red-50 border border-red-200 rounded-lg px-4 py-2">
-            {error}
-          </p>
-        </div>
-      )}
-
       <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-6xl mx-auto">
-        {plans.map((plan, i) => {
-          const isLoading = loadingPlan === plan.plan
-          return (
-            <div
-              key={i}
-              data-tier={plan.tier}
-              data-plan={plan.plan}
-              className={`relative p-8 bg-white rounded-3xl border shadow-sm flex flex-col ${
-                plan.popular
-                  ? "border-indigo-600 shadow-indigo-100 shadow-xl ring-1 ring-indigo-600"
-                  : "border-zinc-200"
+        {plans.map((plan, i) => (
+          <div
+            key={i}
+            data-tier={plan.tier}
+            data-plan={plan.plan}
+            className={`relative p-8 bg-white rounded-3xl border shadow-sm flex flex-col ${
+              plan.popular
+                ? "border-indigo-600 shadow-indigo-100 shadow-xl ring-1 ring-indigo-600"
+                : "border-zinc-200"
+            }`}
+          >
+            {plan.popular && (
+              <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2">
+                <span className="bg-indigo-600 text-white text-xs font-bold uppercase tracking-wider py-1 px-3 rounded-full flex items-center gap-1">
+                  <Zap className="w-3 h-3 fill-current" /> Most Popular
+                </span>
+              </div>
+            )}
+
+            <div className="mb-6">
+              <h3 className="text-xl font-semibold text-zinc-900">{plan.name}</h3>
+              <p className="text-xs font-medium text-indigo-600 mt-1">
+                License: {plan.tier}
+              </p>
+              <p className="text-sm text-zinc-500 mt-2 min-h-[40px]">{plan.description}</p>
+            </div>
+
+            <div className="mb-8 border-b border-zinc-100 pb-8 flex-1">
+              <div className="flex items-baseline gap-2">
+                <span className="text-4xl font-bold text-zinc-900">{plan.price}</span>
+                <span className="text-sm font-medium text-zinc-500">{plan.interval}</span>
+              </div>
+            </div>
+
+            <ul className="space-y-4 mb-8">
+              {plan.features.map((feature, idx) => (
+                <li key={idx} className="flex items-start gap-3 text-sm text-zinc-700">
+                  <CheckCircle2 className="w-5 h-5 text-indigo-600 shrink-0" />
+                  <span>{feature}</span>
+                </li>
+              ))}
+            </ul>
+
+            <button
+              data-testid={`checkout-btn-${plan.plan}`}
+              onClick={() => setLeadPlan(plan.plan)}
+              className={`w-full py-3 px-4 rounded-xl font-semibold transition-all shadow-sm flex items-center justify-center gap-2 ${
+                plan.buttonVariant === "solid"
+                  ? "bg-indigo-600 text-white hover:bg-indigo-700 hover:shadow-md"
+                  : "bg-white text-zinc-900 border border-zinc-200 hover:bg-zinc-50"
               }`}
             >
-              {plan.popular && (
-                <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2">
-                  <span className="bg-indigo-600 text-white text-xs font-bold uppercase tracking-wider py-1 px-3 rounded-full flex items-center gap-1">
-                    <Zap className="w-3 h-3 fill-current" /> Most Popular
-                  </span>
-                </div>
-              )}
-
-              <div className="mb-6">
-                <h3 className="text-xl font-semibold text-zinc-900">{plan.name}</h3>
-                <p className="text-xs font-medium text-indigo-600 mt-1">
-                  License: {plan.tier}
-                </p>
-                <p className="text-sm text-zinc-500 mt-2 min-h-[40px]">{plan.description}</p>
-              </div>
-
-              <div className="mb-8 border-b border-zinc-100 pb-8 flex-1">
-                <div className="flex items-baseline gap-2">
-                  <span className="text-4xl font-bold text-zinc-900">{plan.price}</span>
-                  <span className="text-sm font-medium text-zinc-500">{plan.interval}</span>
-                </div>
-              </div>
-
-              <ul className="space-y-4 mb-8">
-                {plan.features.map((feature, idx) => (
-                  <li key={idx} className="flex items-start gap-3 text-sm text-zinc-700">
-                    <CheckCircle2 className="w-5 h-5 text-indigo-600 shrink-0" />
-                    <span>{feature}</span>
-                  </li>
-                ))}
-              </ul>
-
-              <button
-                data-testid={`checkout-btn-${plan.plan}`}
-                disabled={isLoading || loadingPlan !== null}
-                onClick={() => handleCheckout(plan.plan)}
-                className={`w-full py-3 px-4 rounded-xl font-semibold transition-all shadow-sm flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed ${
-                  plan.buttonVariant === "solid"
-                    ? "bg-indigo-600 text-white hover:bg-indigo-700 hover:shadow-md"
-                    : "bg-white text-zinc-900 border border-zinc-200 hover:bg-zinc-50"
-                }`}
-              >
-                {isLoading && <Loader2 className="w-4 h-4 animate-spin" />}
-                {plan.buttonText}
-              </button>
-            </div>
-          )
-        })}
+              {plan.buttonText}
+            </button>
+          </div>
+        ))}
       </div>
 
       <div className="max-w-3xl mx-auto text-center mt-12 bg-zinc-50 border border-zinc-200 rounded-2xl p-8">
@@ -205,23 +322,10 @@ export default function PricingPage() {
         </button>
       </div>
 
-      {/* One-time key dialog — shown after successful checkout */}
-      <OneTimeKeyDialog
-        open={dialogKey !== null}
-        rawKey={dialogKey ?? ""}
-        onClose={() => setDialogKey(null)}
-        extraContent={
-          <p className="text-sm text-zinc-600 mt-2">
-            Ready to use your key?{" "}
-            <Link
-              href="/activate"
-              data-testid="activate-link"
-              className="text-indigo-600 underline hover:text-indigo-700 font-medium"
-            >
-              Activate now
-            </Link>
-          </p>
-        }
+      <LeadCaptureDialog
+        open={leadPlan !== null}
+        plan={leadPlan}
+        onClose={() => setLeadPlan(null)}
       />
     </div>
   )

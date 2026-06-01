@@ -1,14 +1,14 @@
-# licenses.py
-
 """
-Public license routes — TASK-2.2 + TASK-3.3.
+Public license routes — TASK-2.2 + TASK-3.3 + TASK-3.7.
 
 POST /licenses/activate   — activate a PENDING license (public, no auth required)
 POST /licenses/checkout   — self-serve checkout (authenticated user, non-admin)
+GET  /licenses/me         — caller's entitlement summary (TASK-3.7-b)
 """
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from typing import Any
 
 import structlog
 from fastapi import APIRouter, Depends, status
@@ -16,12 +16,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_active_user, get_redis, get_session, get_settings
 from app.db.models import User
+from app.licensing.entitlements import count_monthly_jobs, resolve_entitlements
 from app.licensing.plans import get_plan_config
 from app.schemas.license import (
     ActivateRequest,
     ActivateResponse,
     CheckoutRequest,
-    CreateLicenseRequest,
+    InternalCreateLicenseRequest,
     LicenseResponse,
 )
 from app.services import license_service
@@ -29,6 +30,66 @@ from app.services import license_service
 log = structlog.get_logger()
 
 router = APIRouter(prefix="/licenses", tags=["licenses"])
+
+
+@router.get(
+    "/me",
+    status_code=status.HTTP_200_OK,
+    summary="Caller's entitlement summary (TASK-3.7-b)",
+)
+async def get_my_entitlements(
+    current_user: User = Depends(get_current_active_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    """Return the authenticated user's entitlement summary.
+
+    Response shape:
+        {
+          has_active: bool,
+          tier: str | null,
+          max_file_bytes: int | null,
+          monthly_quota: int | null,     # null = unlimited
+          quota_used: int,               # jobs created this calendar month (UTC)
+          ocr_allowed: bool | null,
+          glossary_allowed: bool | null,
+        }
+
+    A user with no active license returns has_active=false and null/zero for
+    all limit fields (still 200 — not an error).
+    Superusers return has_active=true with ENTERPRISE entitlements.
+    """
+    entitlement = await resolve_entitlements(user=current_user, session=session)
+    quota_used = await count_monthly_jobs(user_id=str(current_user.id), session=session)
+
+    if entitlement is None:
+        return {
+            "has_active": False,
+            "tier": None,
+            "max_file_bytes": None,
+            "monthly_quota": None,
+            "quota_used": quota_used,
+            "ocr_allowed": None,
+            "glossary_allowed": None,
+        }
+
+    # Determine tier name from entitlement by reverse-looking up ENTITLEMENTS map.
+    from app.licensing.plans import ENTITLEMENTS
+    from app.db.models import LicenseTier
+    tier_name: str | None = None
+    for t, e in ENTITLEMENTS.items():
+        if e is entitlement or e == entitlement:
+            tier_name = t.value
+            break
+
+    return {
+        "has_active": True,
+        "tier": tier_name,
+        "max_file_bytes": entitlement.max_file_bytes,
+        "monthly_quota": entitlement.monthly_quota,
+        "quota_used": quota_used,
+        "ocr_allowed": entitlement.ocr_allowed,
+        "glossary_allowed": entitlement.glossary_allowed,
+    }
 
 
 @router.post(
@@ -57,19 +118,18 @@ async def checkout_license(
     now = datetime.now(timezone.utc)
     expires_at = now + timedelta(days=plan_cfg.validity_days)
 
-    create_req = CreateLicenseRequest(
+    create_req = InternalCreateLicenseRequest(
         tier=plan_cfg.tier,
-        customer_id=current_user.id,
+        customer_id=str(current_user.id),
         max_devices=plan_cfg.max_devices,
         expires_at=expires_at,
     )
 
-    result = await license_service.create_license(
+    result = await license_service.create_license_checkout(
         session=session,
         request=create_req,
-        actor_id=current_user.id,
+        actor_id=str(current_user.id),
         signing_secret=settings.license_signing_secret.get_secret_value(),
-        idempotency_key=None,
     )
 
     log.info(

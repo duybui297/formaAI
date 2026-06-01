@@ -205,10 +205,11 @@ async def test_license_e2e_activate_flow(e2e_app):
     try:
         # ------------------------------------------------------------------
         # Step 1: Admin creates a license for customer_user
+        # FE contract: tier in FE vocab, customer_id is email, nested response
         # ------------------------------------------------------------------
         create_body = {
-            "tier": "PRO",
-            "customer_id": str(customer_user.id),
+            "tier": "professional",  # FE vocab → stored as PRO
+            "customer_id": customer_user.email,  # email, resolved to UUID FK
             "max_devices": 2,
         }
 
@@ -225,10 +226,12 @@ async def test_license_e2e_activate_flow(e2e_app):
             f"Expected 201 from create, got {r_create.status_code}: {r_create.text}"
         )
         create_data = r_create.json()
-        assert "raw_key" in create_data, "raw_key must be present in create response"
+        # Nested response: { license: {...}, raw_key: str }
+        assert "raw_key" in create_data, "raw_key must be at top level of create response"
+        assert "license" in create_data, "license must be nested in create response"
         raw_key = create_data["raw_key"]
         assert raw_key is not None and len(raw_key) > 0, "raw_key must be non-empty"
-        license_id = create_data["id"]
+        license_id = create_data["license"]["id"]
 
         # Verify initial DB state: PENDING
         async with session_factory() as session:

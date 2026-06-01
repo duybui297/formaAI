@@ -25,6 +25,7 @@ const TIER_CLASSES: Record<LicenseTier, string> = {
 }
 
 const STATUS_CLASSES: Record<LicenseStatus, string> = {
+  pending: "bg-blue-100 text-blue-800 border-blue-200",
   active: "bg-emerald-100 text-emerald-800 border-emerald-200",
   suspended: "bg-orange-100 text-orange-800 border-orange-200",
   revoked: "bg-red-100 text-red-800 border-red-200",
