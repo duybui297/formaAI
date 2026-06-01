@@ -8,6 +8,8 @@ os.environ.setdefault("DASHSCOPE_API_KEY", "sk-test-placeholder")
 os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
 os.environ.setdefault("DATA_DIR", "/tmp")
+os.environ.setdefault("SECRET_KEY", "test-secret-key-placeholder-for-unit-tests-only")
+os.environ.setdefault("LICENSE_SIGNING_SECRET", "test-license-signing-secret-placeholder")
 
 import numpy as np
 import pytest

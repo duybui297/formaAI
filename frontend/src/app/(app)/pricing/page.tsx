@@ -1,7 +1,24 @@
 "use client"
-import { CheckCircle2, Zap } from "lucide-react"
+import { useState } from "react"
+import { CheckCircle2, Zap, Loader2, X } from "lucide-react"
+import { submitLead } from "@/lib/api"
+import type { CheckoutPlan } from "@/lib/types"
 
-const plans = [
+/** Tier labels as returned by the backend checkout endpoint */
+type CheckoutTier = "TRIAL" | "PRO" | "ENTERPRISE"
+
+const plans: {
+  name: string
+  price: string
+  interval: string
+  description: string
+  features: string[]
+  buttonText: string
+  buttonVariant: "solid" | "outline"
+  popular: boolean
+  plan: CheckoutPlan
+  tier: CheckoutTier
+}[] = [
   {
     name: "Free",
     price: "$0",
@@ -14,9 +31,11 @@ const plans = [
       "Community support",
       "Preserves basic formatting",
     ],
-    buttonText: "Current Plan",
+    buttonText: "Get Started Free",
     buttonVariant: "outline" as const,
     popular: false,
+    plan: "free",
+    tier: "TRIAL",
   },
   {
     name: "Pro",
@@ -35,6 +54,8 @@ const plans = [
     buttonText: "Upgrade to Pro",
     buttonVariant: "solid" as const,
     popular: true,
+    plan: "pro",
+    tier: "PRO",
   },
   {
     name: "Business",
@@ -53,10 +74,161 @@ const plans = [
     buttonText: "Start 14-day Trial",
     buttonVariant: "outline" as const,
     popular: false,
+    plan: "business",
+    tier: "ENTERPRISE",
   },
 ]
 
+// ---------------------------------------------------------------------------
+// LeadCaptureDialog
+// ---------------------------------------------------------------------------
+
+interface LeadCaptureDialogProps {
+  open: boolean
+  plan: CheckoutPlan | null
+  onClose: () => void
+}
+
+function LeadCaptureDialog({ open, plan, onClose }: LeadCaptureDialogProps) {
+  const [email, setEmail] = useState("")
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [submitted, setSubmitted] = useState(false)
+
+  function handleClose() {
+    setEmail("")
+    setError(null)
+    setSubmitted(false)
+    onClose()
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!plan) return
+    setSubmitting(true)
+    setError(null)
+    try {
+      await submitLead(email, plan)
+      setSubmitted(true)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Submission failed")
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  if (!open) return null
+
+  const planName = plans.find((p) => p.plan === plan)?.name ?? plan
+
+  return (
+    <div
+      data-testid="lead-capture-dialog"
+      role="dialog"
+      aria-modal="true"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+    >
+      {/* Backdrop */}
+      <div
+        className="absolute inset-0 bg-black/40"
+        onClick={handleClose}
+        aria-hidden="true"
+      />
+
+      <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-md p-8 space-y-6">
+        <button
+          type="button"
+          onClick={handleClose}
+          className="absolute top-4 right-4 text-zinc-400 hover:text-zinc-600"
+          aria-label="Close"
+        >
+          <X className="w-5 h-5" />
+        </button>
+
+        {submitted ? (
+          <div data-testid="lead-capture-success" className="text-center space-y-3">
+            <CheckCircle2 className="w-10 h-10 text-green-500 mx-auto" />
+            <h2 className="text-xl font-semibold text-zinc-900">
+              Thanks — we&apos;ll be in touch!
+            </h2>
+            <p className="text-sm text-zinc-500">
+              Cảm ơn! Chúng tôi sẽ liên hệ ưu đãi sớm.
+            </p>
+            <button
+              type="button"
+              onClick={handleClose}
+              className="mt-4 px-5 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 transition"
+            >
+              Close
+            </button>
+          </div>
+        ) : (
+          <>
+            <div className="space-y-1">
+              <h2 className="text-xl font-semibold text-zinc-900">
+                Interested in the <span className="text-indigo-600">{planName}</span> plan?
+              </h2>
+              <p className="text-sm text-zinc-500">
+                Leave your email and we&apos;ll reach out with your offer.
+              </p>
+            </div>
+
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="space-y-1.5">
+                <label
+                  htmlFor="lead-email"
+                  className="text-sm font-medium text-zinc-700"
+                >
+                  Email address
+                </label>
+                <input
+                  id="lead-email"
+                  data-testid="lead-email-input"
+                  type="email"
+                  required
+                  value={email}
+                  onChange={(e) => {
+                    setEmail(e.target.value)
+                    setError(null)
+                  }}
+                  placeholder="you@example.com"
+                  className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              {error && (
+                <p
+                  data-testid="lead-capture-error"
+                  className="text-sm text-red-600"
+                >
+                  {error}
+                </p>
+              )}
+
+              <button
+                type="submit"
+                data-testid="lead-capture-submit"
+                disabled={submitting || !email.trim()}
+                className="w-full py-2.5 rounded-xl bg-indigo-600 text-white font-semibold text-sm hover:bg-indigo-700 transition disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
+                Send my details
+              </button>
+            </form>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// PricingPage
+// ---------------------------------------------------------------------------
+
 export default function PricingPage() {
+  const [leadPlan, setLeadPlan] = useState<CheckoutPlan | null>(null)
+
   return (
     <div className="space-y-12 pb-12 p-6 md:p-8 lg:p-10 overflow-y-auto h-full">
       <div className="text-center max-w-2xl mx-auto space-y-4 pt-8">
@@ -85,6 +257,8 @@ export default function PricingPage() {
         {plans.map((plan, i) => (
           <div
             key={i}
+            data-tier={plan.tier}
+            data-plan={plan.plan}
             className={`relative p-8 bg-white rounded-3xl border shadow-sm flex flex-col ${
               plan.popular
                 ? "border-indigo-600 shadow-indigo-100 shadow-xl ring-1 ring-indigo-600"
@@ -101,6 +275,9 @@ export default function PricingPage() {
 
             <div className="mb-6">
               <h3 className="text-xl font-semibold text-zinc-900">{plan.name}</h3>
+              <p className="text-xs font-medium text-indigo-600 mt-1">
+                License: {plan.tier}
+              </p>
               <p className="text-sm text-zinc-500 mt-2 min-h-[40px]">{plan.description}</p>
             </div>
 
@@ -121,7 +298,9 @@ export default function PricingPage() {
             </ul>
 
             <button
-              className={`w-full py-3 px-4 rounded-xl font-semibold transition-all shadow-sm ${
+              data-testid={`checkout-btn-${plan.plan}`}
+              onClick={() => setLeadPlan(plan.plan)}
+              className={`w-full py-3 px-4 rounded-xl font-semibold transition-all shadow-sm flex items-center justify-center gap-2 ${
                 plan.buttonVariant === "solid"
                   ? "bg-indigo-600 text-white hover:bg-indigo-700 hover:shadow-md"
                   : "bg-white text-zinc-900 border border-zinc-200 hover:bg-zinc-50"
@@ -142,6 +321,12 @@ export default function PricingPage() {
           Contact Sales
         </button>
       </div>
+
+      <LeadCaptureDialog
+        open={leadPlan !== null}
+        plan={leadPlan}
+        onClose={() => setLeadPlan(null)}
+      />
     </div>
   )
 }

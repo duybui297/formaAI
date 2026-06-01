@@ -1,5 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Hide the Next.js dev tools badge (bottom-corner logo) in dev
+  devIndicators: false,
   images: {
     unoptimized: true,
   },

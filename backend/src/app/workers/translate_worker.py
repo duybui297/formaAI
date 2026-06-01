@@ -20,6 +20,7 @@ import json
 import os
 
 import structlog
+from arq import cron
 from arq.connections import RedisSettings
 from docx import Document
 from openai import APIConnectionError, APIStatusError, RateLimitError
@@ -351,6 +352,40 @@ async def _run_translation(ctx: dict, session, job_id: str) -> None:
             case "scanned_pdf":
                 import pymupdf  # noqa: PLC0415
                 from app.pipeline.scanned_pdf.extractor import extract_scanned_pdf_segments  # noqa: PLC0415
+
+                # TASK-3.7-h: Gate auto-detected OCR by tier BEFORE running OCR.
+                # The upload route only gates is_scanned_override=True (explicit flag);
+                # this gate closes the gap for auto-detected scanned PDFs.
+                #
+                # Null user_id: legacy jobs pre-dating auth have no owner — allow OCR
+                # to keep existing behaviour; do not break un-owned jobs.
+                if job.user_id is not None:
+                    from sqlalchemy import select as _select  # noqa: PLC0415
+                    from app.db.models import User as _User  # noqa: PLC0415
+                    from app.licensing.entitlements import resolve_entitlements as _resolve  # noqa: PLC0415
+
+                    _user_row = await session.scalar(_select(_User).where(_User.id == job.user_id))
+                    if _user_row is not None:
+                        _ent = await _resolve(user=_user_row, session=session)
+                        if _ent is not None and not _ent.ocr_allowed:
+                            _ocr_block_msg = "OCR is not available on your current plan."
+                            append_error_log(data_dir, job_id, _ocr_block_msg)
+                            await transition_to_failed(session, job_id, error_msg=_ocr_block_msg)
+                            await _publish_progress(
+                                redis, job_id, "failed", "failed", 0, 0, 0, 0,
+                                _ocr_block_msg,
+                                error={
+                                    "error": "FEATURE_NOT_IN_PLAN",
+                                    "feature": "ocr",
+                                    "message": _ocr_block_msg,
+                                },
+                            )
+                            log.warning(
+                                "worker_ocr_gate_blocked",
+                                job_id=job_id,
+                                user_id=job.user_id,
+                            )
+                            return
 
                 _pdf_doc = pymupdf.open(job.input_path)
                 _pages_dir = os.path.join(settings.data_dir, "jobs", job_id, "pages")
@@ -890,6 +925,34 @@ async def _run_translation(ctx: dict, session, job_id: str) -> None:
         raise  # re-raise so arq marks the job as failed in its own queue
 
 
+# ---------------------------------------------------------------------------
+# TASK-2.4: License expiry reconciliation cron task
+# ---------------------------------------------------------------------------
+
+
+async def reconcile_expirations_task(ctx: dict) -> None:
+    """arq cron task: expire overdue licenses + clean Redis cache.
+
+    Runs daily at 02:00 (server local time as observed by arq scheduler).
+    Delegates to app.licensing.reconciliation.reconcile_expirations which
+    processes in batches of 500 and writes LicenseActivity audit rows.
+    """
+    from app.licensing.reconciliation import reconcile_expirations  # noqa: PLC0415
+
+    session_factory = ctx["session_factory"]
+    redis = ctx["redis"]
+
+    async with session_factory() as session:
+        result = await reconcile_expirations(session, redis)
+
+    log.info(
+        "reconcile_expirations_task_done",
+        expired=result.expired_count,
+        warnings=result.warning_count,
+        batches=result.batches,
+    )
+
+
 class WorkerSettings:
     """
     arq WorkerSettings.
@@ -899,6 +962,9 @@ class WorkerSettings:
     """
 
     functions = [translate_job]  # direct reference — NEVER use string
+    cron_jobs = [
+        cron(reconcile_expirations_task, hour=2, minute=0),
+    ]
     on_startup = startup
     on_shutdown = shutdown
     # max_jobs=1: DashScope intl free tier has a tight QPS cap — running multiple

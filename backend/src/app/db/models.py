@@ -280,6 +280,141 @@ class SegmentFlag(Base):
 
 
 # ---------------------------------------------------------------------------
+# License Management: LicenseTier, LicenseStatus, License, LicenseActivity
+# ---------------------------------------------------------------------------
+
+class LicenseTier(str, enum.Enum):
+    TRIAL = "TRIAL"
+    PRO = "PRO"
+    ENTERPRISE = "ENTERPRISE"
+
+
+class LicenseStatus(str, enum.Enum):
+    PENDING = "PENDING"
+    ACTIVE = "ACTIVE"
+    EXPIRED = "EXPIRED"
+    SUSPENDED = "SUSPENDED"
+    REVOKED = "REVOKED"
+
+
+class LicenseEventType(str, enum.Enum):
+    CREATED = "CREATED"
+    ACTIVATED = "ACTIVATED"
+    EXPIRED = "EXPIRED"
+    SUSPENDED = "SUSPENDED"
+    REVOKED = "REVOKED"
+    EXTENDED = "EXTENDED"
+
+
+class License(Base):
+    """A software license issued to a customer (user)."""
+
+    __tablename__ = "licenses"
+    __table_args__ = (
+        # Composite index for cron expiry scans
+        Index("ix_licenses_status_expired_at", "status", "expired_at"),
+    )
+
+    # String(36) — SQLite compat for unit tests (matches repo convention)
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    # SHA-256 hex of the raw license key — 64 chars
+    key_hash: Mapped[str] = mapped_column(
+        String(64), unique=True, nullable=False, index=True
+    )
+    tier: Mapped[LicenseTier] = mapped_column(
+        SAEnum(LicenseTier), nullable=False
+    )
+    status: Mapped[LicenseStatus] = mapped_column(
+        SAEnum(LicenseStatus), default=LicenseStatus.PENDING, nullable=False
+    )
+    # FK to the user who owns this license
+    customer_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    max_devices: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    issued_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    activated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    expired_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # Caller-supplied Idempotency-Key header; repeat POSTs with the same key
+    # return the existing license row without inserting a duplicate.
+    idempotency_key: Mapped[str | None] = mapped_column(
+        String(255), unique=True, nullable=True, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    activities: Mapped[list["LicenseActivity"]] = relationship(
+        "LicenseActivity", back_populates="license", lazy="selectin", cascade="all, delete-orphan"
+    )
+
+
+class LicenseActivity(Base):
+    """Audit log of events on a license."""
+
+    __tablename__ = "license_activities"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    license_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("licenses.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    event_type: Mapped[LicenseEventType] = mapped_column(
+        SAEnum(LicenseEventType), nullable=False
+    )
+    # actor_id: nullable — system-triggered events have no human actor
+    actor_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    # JSONB in Postgres; JSON in SQLite test env
+    # Named event_metadata: 'metadata' is reserved by SQLAlchemy's DeclarativeBase
+    event_metadata: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    license: Mapped[License] = relationship("License", back_populates="activities")
+
+
+# ---------------------------------------------------------------------------
+# Marketing leads (TASK-3.5)
+# ---------------------------------------------------------------------------
+
+class Lead(Base):
+    """Marketing lead captured from the pricing page."""
+
+    __tablename__ = "leads"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    email: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    plan: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+# ---------------------------------------------------------------------------
 # Auth: User + PasswordResetToken
 # ---------------------------------------------------------------------------
 class User(Base):
@@ -300,6 +435,10 @@ class User(Base):
     email_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    # TASK-3.6: soft-delete timestamp; NULL = not deleted; non-NULL = deleted
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )
 
 

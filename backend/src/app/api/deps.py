@@ -62,10 +62,32 @@ async def get_current_user(
 async def get_current_active_user(
     current_user: User = Depends(get_current_user),
 ) -> User:
+    # Reject soft-deleted users (deleted_at IS NOT NULL) — they can never log in.
+    if getattr(current_user, "deleted_at", None) is not None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account has been deleted",
+        )
     if not current_user.is_active:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Inactive user account",
+        )
+    return current_user
+
+
+async def require_admin(
+    current_user: User = Depends(get_current_active_user),
+) -> User:
+    """Dependency that allows only users with is_superuser=True (admin).
+
+    Returns 403 for authenticated non-admin users.
+    Uses is_superuser (existing column) as the admin flag — no new column needed.
+    """
+    if not current_user.is_superuser:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required",
         )
     return current_user
 

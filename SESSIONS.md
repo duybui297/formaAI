@@ -1,0 +1,66 @@
+# Session Log — read this FIRST every new session
+
+> **Rule:** At the start of every session, read this file top-to-bottom to recover prior context
+> (decisions, infra setup, open gaps). Append a new `## Session N` block at the end when meaningful
+> work is done. Do NOT delete past entries. Newest at the bottom.
+
+---
+
+## Project snapshot (current)
+
+- **Repo:** `ai-translation` (Python/FastAPI backend + Next.js frontend). On top of it we are building a **License Management System** — a Python port of `License_Management_WBS.xlsx` (Java/Spring → FastAPI/SQLAlchemy/redis/arq). Tasks unchanged from the WBS; only the stack changed.
+- **Verification-driven workflow** (custom, in this repo):
+  - `featurelist.json` — behavior-level source of truth: `{id, behavior, verification, state, evidence}`. **Script-owned** — never hand-edit `state`/`evidence`.
+  - `PROGRESS.md` — task board; state is **projected** from featurelist.json (Rule 9: task DONE only when ALL its behaviors PASSING).
+  - `FEATURELIST.md` — human-readable task list (tasks → behaviors → verification commands).
+  - `RULES.md` — the binding rules (single-active task, dependency gate, verification-gated DONE, no hand-editing state, honesty).
+  - `scripts/verify_task.py` — the state machine. Commands: `next | start TASK-x | verify <id|TASK-x|all> | reconcile | block TASK-x "reason" | status`. Running `verify` executes each behavior's shell command; exit 0 → PASSING + evidence; then re-projects PROGRESS.
+  - `scripts/tasks.json` — task manifest (id, name, deps, days).
+  - `scripts/gen_backlog.py` — regenerator (⚠️ STALE: has the original 10 license tasks; TASK-3.3 + TASK-3.4 were added in-place to the live files only. Do NOT run gen_backlog.py — it would reset states. Live files are the truth.)
+- **Agents** (`.claude/agents/`): `ai-translation-backend-dev` (BE/Python), `frontend-feature-builder` (FE), `playwright-feature-verifier` (e2e). Loop per task: `start` → delegate to agent(s) → `verify`.
+
+## Backlog status: 11/12 DONE, 1 BLOCKED  (run `python3 scripts/verify_task.py status` for live)
+
+DONE: 1.1 DB schema · 1.2 keygen · 2.1 admin create+idempotency · 2.2 activate+redis lock · 2.3 validation middleware · 2.4 expiry cron (arq) · 3.1 admin dashboard (FE) · 3.2 activation screen (FE) · 3.3 pricing self-serve checkout · 3.4 user registration · 4.1 concurrency/time-travel tests.
+BLOCKED: **4.2** Integration & Security — 4.2-a/b/c PASS; **4.2-d** (load P99<50ms @1000u) is infra-blocked (single dev box hits ~250ms; needs separate load-gen host + multi-node deploy). Blocked via verify_task, honest.
+
+## Conventions / gotchas learned (IMPORTANT)
+- **Verification commands** use `cd backend && uv run pytest -o addopts="" ...` (bare `pytest`/`alembic` not on PATH; `-o addopts=""` drops the repo's global `--cov-fail-under=80` gate for single-file runs). Frontend: `cd frontend && npx playwright test ...` / `npx vitest run ...`.
+- **Backend routers have NO `/api` prefix.** Next.js `next.config.mjs` rewrites `/api/:path*` → backend `/:path*` (STRIPS `/api`). FE `authFetch`/`apiFetch` prepend `/api`. So a backend route must be e.g. `/licenses/checkout`, and the browser calls `/api/licenses/checkout`. (A bug where license routers had `/api` prefix caused 404s in the browser — fixed.)
+- **Tests vs real app:** Playwright e2e for FE tasks were written **hermetic with `page.route` mocks** (no live backend). This HID a gap: TASK-3.1 admin dashboard FE is mocked, but the backend only implements `POST /admin/licenses` (create). Missing GET list/detail/activities + suspend/revoke/extend → admin dashboard will 404 in a real browser. (See Open Gaps.)
+- Mock-passing ≠ real. When a behavior is verified via a mocked e2e, the backend endpoint may not exist.
+
+## Local run / infra (this machine)
+- `RUN.md` has full instructions. Quick: `make up` (docker, build first — NOT bare `docker compose up`, the worker pulls a non-existent image otherwise).
+- **Docker postgres host port is 5433** (not 5432) — a local **DBngin Postgres 17** holds 5432 and auto-respawns (can't kill via CLI). docker-compose postgres `ports: "5433:5432"`; api reaches it internally as `postgres:5432`.
+- **Root `.env`** (compose `env_file`) needs `SECRET_KEY` + `LICENSE_SIGNING_SECRET` (added) besides `DASHSCOPE_API_KEY` etc. `backend/.env` is for local (non-docker) runs.
+- Redis: `redis-server` available via brew for local runs; docker provides its own redis.
+- After fresh docker DB: `docker compose exec api alembic upgrade head` (migrations through `0012_license_idempotency_key`).
+- Code is **hot-reloaded** in docker: backend `./backend/src` bind-mounted + uvicorn `--reload`; frontend `src`/`public` bind-mounted + `next dev`. No rebuild needed for code changes — only for Dockerfile or new runtime deps.
+
+## Demo accounts
+- Admin: `admin123@gmail.com` / `Admin@123` (seeded, `is_superuser=true`).
+- User (non-admin): `user@demo.com` / `User@12345` (registered).
+- Demo flow: register → login → `/pricing` pick plan (self-serve license, get raw key) → `/activate` enter key. Admin manages at `/admin/licenses`.
+
+## Open gaps / TODO (next sessions)
+1. **Admin License CRUD APIs missing** (backend): `admin_licenses.py` only has `POST` create. Need GET list (+filter/paginate), GET `/{id}`, GET `/{id}/activities`, POST `/suspend`, POST `/revoke`, POST `/{id}/extend`. FE already calls these. Proposed as a new task → run through the loop. **Then** switch e2e 3.1 to hit the real backend instead of `page.route` mocks.
+2. **4.2-d** load test: needs separate load-gen host + multi-replica deploy to genuinely meet P99<50ms. Re-run `verify 4.2-d` on proper infra to unblock.
+3. `scripts/gen_backlog.py` is stale (missing 3.3/3.4) — update it if a full regen is ever needed, or delete to avoid accidental state reset.
+4. **Checkpoint committed** on branch `feat/license-management` (commit `6d23638`). `.env`/`.claude/` are gitignored (secrets + personal tooling excluded). Not pushed; not merged to `main`.
+
+## Auth/UI fixes done this session (so they aren't re-done)
+- `/auth/me` now returns `is_superuser` (UserResponse + register + /me). FE `AuthUser` has `is_superuser?`.
+- `AppSidebar` gates the Admin section on `user?.is_superuser` (fetches `/me` via useQuery).
+- `(app)/admin/layout.tsx` route guard: non-admin → redirect `/dashboard` (defense-in-depth; backend still 403s).
+- Login page register link was commented out → uncommented (`/login` → "Create one" → `/register`).
+
+---
+
+## Session 1 — 2026-05-29 → 2026-05-30
+
+**What was built:** the whole verification workflow scaffolding (RULES.md, featurelist.json, PROGRESS.md, FEATURELIST.md, scripts/verify_task.py + tasks.json), the architecture docs (BACKEND.md, FRONTEND.md, per-module + aggregate ARCHITECTURE.md), and the License Management feature end-to-end through TASK-1.1 → 4.1 + 3.3 (pricing self-serve) + 3.4 (registration). 11/12 tasks DONE, 4.2 BLOCKED (4.2-d infra).
+
+**Notable fixes:** uv-run verify commands; docker postgres 5433; root .env secrets; pull-denied (`make up`); is_superuser exposure + admin gating + admin route guard; login→register link; **license router `/api`-prefix 404 bug** (browser couldn't reach checkout/admin/activate — routers now have no `/api` prefix to match the proxy that strips it).
+
+**Left open:** admin CRUD backend endpoints (gap hidden by mocked e2e), 4.2-d infra, gen_backlog stale, no commits yet.

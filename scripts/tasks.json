@@ -1,0 +1,100 @@
+{
+  "tasks": [
+    {
+      "id": "TASK-1.1",
+      "name": "Design Database Schema for License Tables",
+      "deps": [],
+      "days": 2
+    },
+    {
+      "id": "TASK-1.2",
+      "name": "Implement Secure License Key Generation Algorithm",
+      "deps": [
+        "TASK-1.1"
+      ],
+      "days": 2
+    },
+    {
+      "id": "TASK-2.1",
+      "name": "API Create License (Admin) with Idempotency",
+      "deps": [
+        "TASK-1.1",
+        "TASK-1.2"
+      ],
+      "days": 3
+    },
+    {
+      "id": "TASK-2.2",
+      "name": "API Activate License with Distributed Lock",
+      "deps": [
+        "TASK-2.1"
+      ],
+      "days": 4
+    },
+    {
+      "id": "TASK-2.3",
+      "name": "License Validation Middleware",
+      "deps": [
+        "TASK-2.2"
+      ],
+      "days": 3
+    },
+    {
+      "id": "TASK-2.4",
+      "name": "Background Cron Job \u2014 Expiration Reconciliation",
+      "deps": [
+        "TASK-2.2"
+      ],
+      "days": 2
+    },
+    {
+      "id": "TASK-3.1",
+      "name": "Admin Dashboard \u2014 License Lifecycle Management",
+      "deps": [
+        "TASK-2.1"
+      ],
+      "days": 5
+    },
+    {
+      "id": "TASK-3.2",
+      "name": "Client Activation Screen & Expiry Warning Banner",
+      "deps": [
+        "TASK-2.2"
+      ],
+      "days": 3
+    },
+    {
+      "id": "TASK-3.3",
+      "name": "Pricing \u2192 Self-serve License (user-facing)",
+      "deps": [
+        "TASK-2.1",
+        "TASK-3.2"
+      ],
+      "days": 3
+    },
+    {
+      "id": "TASK-3.4",
+      "name": "User Registration",
+      "deps": [],
+      "days": 2
+    },
+    {
+      "id": "TASK-4.1",
+      "name": "Concurrency & Time-Travel Testing",
+      "deps": [
+        "TASK-2.2",
+        "TASK-2.3",
+        "TASK-2.4"
+      ],
+      "days": 3
+    },
+    {
+      "id": "TASK-4.2",
+      "name": "Integration & Security Testing",
+      "deps": [
+        "TASK-4.1"
+      ],
+      "days": 3
+    }
+  ]
+}

@@ -48,6 +48,12 @@ class Settings(BaseSettings):
         description="JSON map of 'src->tgt' to float expansion ratio threshold. Default 1.5 if pair absent.",
     )
 
+    # License key signing (TASK-1.2: HMAC-SHA256 secret for key generation)
+    license_signing_secret: SecretStr = Field(
+        description="HMAC signing secret for license key generation. "
+        "Generate with: python -c \"import secrets; print(secrets.token_urlsafe(32))\""
+    )
+
     # Auth
     secret_key: SecretStr = Field(
         description="JWT secret key. Generate with: python -c \"import secrets; print(secrets.token_urlsafe(64))\""

@@ -66,3 +66,14 @@ coverage.xml
 .pyright/
 frontend/tsconfig.tsbuildinfo
 .playwright-mcp/
+
+# Claude/agent tooling (personal/local — not project deliverables)
+.claude/
+.agents/
+skills-lock.json
+
+# Playwright + load-test artifacts
+frontend/test-results/
+frontend/playwright-report/
+backend/load/out*
+backend/load/.load_test_key
