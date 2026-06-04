@@ -23,13 +23,30 @@ function LoginForm() {
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [apiError, setApiError] = useState<string | null>(null)
+  const [emailError, setEmailError] = useState<string | null>(null)
+  const [passwordError, setPasswordError] = useState<string | null>(null)
 
   // Redirect param set by middleware when unauthenticated user hits a protected page
   const redirectTo = searchParams.get("redirect") || "/dashboard"
 
+  function validateEmail(value: string): string | null {
+    if (!value) return "Email is required"
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) return "Please enter a valid email address"
+    return null
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setApiError(null)
+    const emailValidation = validateEmail(email)
+    if (emailValidation) {
+      setEmailError(emailValidation)
+      return
+    }
+    if (!password.trim()) {
+      setPasswordError("Password is required")
+      return
+    }
     setLoading(true)
     try {
       const result = await loginApi({ email, password })
@@ -124,19 +141,22 @@ function LoginForm() {
               </Label>
               <Input
                 id="email"
-                type="email"
+                type="text"
                 placeholder="Enter your email"
                 value={email}
-                onChange={(e) => { setEmail(e.target.value); setApiError(null) }}
-                required
+                onChange={(e) => { setEmail(e.target.value); setApiError(null); setEmailError(null) }}
                 autoComplete="email"
-                onInvalid={(e) => e.preventDefault()}
                 className={
-                  apiError
+                  emailError
+                    ? "h-11 rounded-xl border border-red-400 bg-red-50 px-4 text-sm text-[#111827] placeholder:text-[#9CA3AF] focus:border-red-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-red-400/20 transition-colors"
+                    : apiError
                     ? "h-11 rounded-xl border border-red-400 bg-red-50 px-4 text-sm text-[#111827] placeholder:text-[#9CA3AF] focus:border-red-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-red-400/20 transition-colors"
                     : "h-11 rounded-xl border border-[#E5E7EB] bg-[#F9FAFB] px-4 text-sm text-[#111827] placeholder:text-[#9CA3AF] focus:border-[#3772FF] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#3772FF]/20 transition-colors"
                 }
               />
+              {emailError && (
+                <p className="text-xs text-red-500 mt-1.5 pl-1">{emailError}</p>
+              )}
             </div>
 
             {/* Password */}
@@ -150,11 +170,10 @@ function LoginForm() {
                   type={showPassword ? "text" : "password"}
                   placeholder="Enter your password"
                   value={password}
-                  onChange={(e) => { setPassword(e.target.value); setApiError(null) }}
-                  required
+                  onChange={(e) => { setPassword(e.target.value); setApiError(null); setPasswordError(null) }}
                   autoComplete="current-password"
                   className={
-                    apiError
+                    passwordError || apiError
                       ? "h-11 pr-10 rounded-xl border border-red-400 bg-red-50 px-4 text-sm text-[#111827] placeholder:text-[#9CA3AF] focus:border-red-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-red-400/20 transition-colors"
                       : "h-11 pr-10 rounded-xl border border-[#E5E7EB] bg-[#F9FAFB] px-4 text-sm text-[#111827] placeholder:text-[#9CA3AF] focus:border-[#3772FF] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#3772FF]/20 transition-colors"
                   }
@@ -171,8 +190,10 @@ function LoginForm() {
                   )}
                 </button>
               </div>
-              {apiError && (
-                <p className="text-xs text-red-500 mt-1.5 pl-1">{apiError}</p>
+              {(passwordError || apiError) && (
+                <p className="text-xs text-red-500 mt-1.5 pl-1">
+                  {passwordError ?? apiError}
+                </p>
               )}
             </div>
 
