@@ -43,7 +43,8 @@ export function clearToken(): void {
 
 export function setAuthCookie(token: string): void {
   if (typeof window === "undefined") return
-  document.cookie = `${AUTH_COOKIE}=${token}; path=/; max-age=${COOKIE_MAX_AGE}; SameSite=Lax`
+  const secure = window.location.protocol === "https:" ? "; Secure" : ""
+  document.cookie = `${AUTH_COOKIE}=${token}; path=/; max-age=${COOKIE_MAX_AGE}; SameSite=Lax${secure}`
 }
 
 export function clearAuthCookie(): void {
