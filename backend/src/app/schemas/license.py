@@ -36,6 +36,10 @@ class AdminCreateLicenseRequest(BaseModel):
         default=None,
         description="Optional fixed expiry as an ISO date/datetime string",
     )
+    send_email: bool = Field(
+        default=True,
+        description="Send the license delivery email to the customer (default: true)",
+    )
 
     @field_validator("tier")
     @classmethod
@@ -370,3 +374,70 @@ class FECreateLicenseResponse(BaseModel):
 
     license: LicenseAdminResponse
     raw_key: Optional[str] = None
+
+
+# ---------------------------------------------------------------------------
+# User license portal — TASK-2.1-g
+# ---------------------------------------------------------------------------
+
+
+class MyLicenseItem(BaseModel):
+    """A single license owned by the current user — for GET /licenses/my-licenses.
+
+    Unlike LicenseAdminResponse, this is intentionally lean:
+      - id, tier, status, issued_at, activated_at, expired_at, max_devices
+      - NO key_masked (raw key never persisted; no point showing a hash suffix)
+      - NO customer_id (redundant — it's always the current user)
+
+    status values: pending | active | expired | suspended | revoked
+    """
+
+    id: str
+    tier: str          # FE vocab string: starter | professional | enterprise
+    status: str        # FE lowercase: pending | active | expired | suspended | revoked
+    issued_at: datetime
+    activated_at: Optional[datetime]
+    expired_at: Optional[datetime]
+    max_devices: int
+
+    model_config = {"from_attributes": False}
+
+    @classmethod
+    def from_license(cls, lic: object) -> "MyLicenseItem":
+        from app.licensing.vocab import be_tier_to_fe, be_status_to_fe
+
+        be_tier = lic.tier  # type: ignore[attr-defined]
+        be_status = lic.status  # type: ignore[attr-defined]
+
+        if hasattr(be_tier, "value"):
+            be_tier = type(lic.tier)(be_tier.value)  # type: ignore[attr-defined]
+        if hasattr(be_status, "value"):
+            be_status = type(lic.status)(be_status.value)  # type: ignore[attr-defined]
+
+        try:
+            fe_tier = be_tier_to_fe(be_tier)  # type: ignore[arg-type]
+        except KeyError:
+            fe_tier = str(be_tier.value) if hasattr(be_tier, "value") else str(be_tier)
+
+        try:
+            fe_status = be_status_to_fe(be_status)  # type: ignore[arg-type]
+        except KeyError:
+            fe_status = str(be_status.value) if hasattr(be_status, "value") else str(be_status)
+
+        return cls(
+            id=lic.id,  # type: ignore[attr-defined]
+            tier=fe_tier,
+            status=fe_status,
+            issued_at=lic.issued_at,  # type: ignore[attr-defined]
+            activated_at=lic.activated_at,  # type: ignore[attr-defined]
+            expired_at=lic.expired_at,  # type: ignore[attr-defined]
+            max_devices=lic.max_devices,  # type: ignore[attr-defined]
+        )
+
+
+class MyLicensesResponse(BaseModel):
+    """Paginated response for GET /licenses/my-licenses."""
+
+    licenses: list[MyLicenseItem]
+    total: int
+    pending_count: int  # number of PENDING licenses (not yet activated)

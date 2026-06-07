@@ -42,8 +42,12 @@ async def resolve_entitlements(
     if not tiers:
         return None
 
-    # Pick the tier with the highest rank.
-    best_tier = max(tiers, key=lambda t: _TIER_RANK[t])
+    # Pick the tier with the highest rank, skipping any unrecognized tiers.
+    valid_tiers = [t for t in tiers if t in _TIER_RANK]
+    if not valid_tiers:
+        return None
+
+    best_tier = max(valid_tiers, key=lambda t: _TIER_RANK[t])
     return ENTITLEMENTS[best_tier]
 
 

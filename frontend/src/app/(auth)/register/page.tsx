@@ -1,5 +1,5 @@
 "use client"
-import { useState } from "react"
+import { Suspense, useState } from "react"
 import Link from "next/link"
 import Image from "next/image"
 import { useRouter } from "next/navigation"
@@ -7,46 +7,104 @@ import { Eye, EyeOff, Loader2, ArrowRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Alert, AlertDescription } from "@/components/ui/alert"
 import { registerApi, loginApi, setToken, setStoredUser, setAuthCookie } from "@/lib/auth"
 
-export default function RegisterPage() {
-  const router = useRouter()
-  const [form, setForm] = useState({
-    full_name: "",
-    email: "",
-    password: "",
-    confirmPassword: "",
-  })
-  const [showPassword, setShowPassword] = useState(false)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+function validateEmail(value: string): string | null {
+  if (!value) return "Email is required"
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) return "Please enter a valid email address"
+  return null
+}
 
-  function update(field: string, value: string) {
-    setForm((prev) => ({ ...prev, [field]: value }))
+function validatePassword(value: string): string | null {
+  if (!value) return "Password is required"
+  if (value.length < 8) return "Password must be at least 8 characters"
+  return null
+}
+
+function validateConfirmPassword(value: string, password: string): string | null {
+  if (!value) return "Please confirm your password"
+  if (value !== password) return "Passwords do not match"
+  return null
+}
+
+  function validateFullName(value: string): string | null {
+  if (!value.trim()) return "Full name is required"
+  return null
+}
+
+function RegisterForm() {
+  const router = useRouter()
+
+  const [fullName, setFullName] = useState("")
+  const [email, setEmail] = useState("")
+  const [password, setPassword] = useState("")
+  const [confirmPassword, setConfirmPassword] = useState("")
+  const [showPassword, setShowPassword] = useState(false)
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [apiError, setApiError] = useState<string | null>(null)
+  const [fullNameError, setFullNameError] = useState<string | null>(null)
+  const [emailError, setEmailError] = useState<string | null>(null)
+  const [passwordError, setPasswordError] = useState<string | null>(null)
+  const [confirmPasswordError, setConfirmPasswordError] = useState<string | null>(null)
+
+  function clearFullNameError() {
+    setFullNameError(null)
+    setApiError(null)
+  }
+
+  function clearEmailError() {
+    setEmailError(null)
+    setApiError(null)
+  }
+
+  function clearPasswordError() {
+    setPasswordError(null)
+    setApiError(null)
+  }
+
+  function clearConfirmPasswordError() {
+    setConfirmPasswordError(null)
+    setApiError(null)
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    setError(null)
+    setApiError(null)
+    setFullNameError(null)
+    setEmailError(null)
+    setPasswordError(null)
+    setConfirmPasswordError(null)
 
-    if (form.password !== form.confirmPassword) {
-      setError("Passwords do not match")
+    const fullNameValidation = validateFullName(fullName)
+    if (fullNameValidation) {
+      setFullNameError(fullNameValidation)
       return
     }
-    if (form.password.length < 8) {
-      setError("Password must be at least 8 characters")
+    const emailValidation = validateEmail(email)
+    if (emailValidation) {
+      setEmailError(emailValidation)
+      return
+    }
+    const passwordValidation = validatePassword(password)
+    if (passwordValidation) {
+      setPasswordError(passwordValidation)
+      return
+    }
+    const confirmValidation = validateConfirmPassword(confirmPassword, password)
+    if (confirmValidation) {
+      setConfirmPasswordError(confirmValidation)
       return
     }
 
     setLoading(true)
     try {
       await registerApi({
-        email: form.email,
-        password: form.password,
-        full_name: form.full_name || undefined,
+        email,
+        password,
+        full_name: fullName || undefined,
       })
-      const result = await loginApi({ email: form.email, password: form.password })
+      const result = await loginApi({ email, password })
       setToken(result.access_token)
       setAuthCookie(result.access_token)
       const meRes = await fetch("/api/auth/me", {
@@ -58,7 +116,7 @@ export default function RegisterPage() {
       router.push("/translator")
       router.refresh()
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Registration failed")
+      setApiError(err instanceof Error ? err.message : "Registration failed. Please try again.")
     } finally {
       setLoading(false)
     }
@@ -68,17 +126,49 @@ export default function RegisterPage() {
     <div className="min-h-screen flex items-center justify-center bg-white px-6">
       <div className="w-full max-w-[360px]">
 
-        {/* Mobile logo */}
-        <div className="flex lg:hidden items-center gap-2 mb-10">
-          <div className="relative w-9 h-9 shrink-0">
-            <Image src="/assets/brand/logo.png" alt="Forma" fill className="object-contain" />
+        {/* Logo decoration */}
+        <div className="flex justify-center mb-6 relative">
+          <div
+            aria-hidden="true"
+            className="absolute select-none"
+            style={{
+              pointerEvents: "none",
+              top: "50%",
+              left: "50%",
+              transform: "translate(-50%, -50%)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            {[0, 1, 2, 3, 4].map((i) => {
+              const size = 90 + i * 52
+              const opacity = 0.32 - i * 0.055
+              return (
+                <div
+                  key={i}
+                  style={{
+                    position: "absolute",
+                    width: size,
+                    height: size,
+                    borderRadius: "50%",
+                    border: "1.5px solid rgb(202 210 227)",
+                    opacity: Math.max(opacity, 0.01),
+                  }}
+                />
+              )
+            })}
           </div>
-          <span className="font-bold text-xl text-[#0C1B33]">Forma</span>
+          <img
+            src="/assets/brand/logo.png"
+            alt="Forma"
+            style={{ width: 52, height: 52, objectFit: "contain" }}
+          />
         </div>
 
         {/* Heading */}
-        <div className="space-y-1 mb-8">
-          <h2 className="text-[28px] font-bold leading-tight text-[#0C1B33]">
+        <div className="text-center mb-6">
+          <h2 className="text-[28px] font-bold leading-tight text-[#0C1B33] mb-1">
             Create your account
           </h2>
           <p className="text-sm text-[#6B7280]">
@@ -86,10 +176,8 @@ export default function RegisterPage() {
           </p>
         </div>
 
-        {error && (
-          <Alert variant="destructive" className="mb-5">
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
+        {apiError && (
+          <p className="text-xs text-red-500 mb-4 pl-1">{apiError}</p>
         )}
 
         <form onSubmit={handleSubmit} className="space-y-6">
@@ -101,15 +189,19 @@ export default function RegisterPage() {
             <Input
               id="full_name"
               type="text"
-              placeholder="Nguyen Van A"
-              value={form.full_name}
-              onChange={(e) => update("full_name", e.target.value)}
+              placeholder="Enter your full name"
+              value={fullName}
+              onChange={(e) => { setFullName(e.target.value); clearFullNameError() }}
               autoComplete="name"
-              className="h-11 rounded-xl border-[#E5E7EB] bg-[#F9FAFB] px-4 text-sm text-[#111827]
-                placeholder:text-[#9CA3AF]
-                focus:border-[#3772FF] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#3772FF]/20
-                transition-colors"
+              className={
+                fullNameError
+                  ? "h-11 rounded-xl border border-red-400 bg-red-50 px-4 text-sm text-[#111827] placeholder:text-[#9CA3AF] focus:border-red-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-red-400/20 transition-colors"
+                  : "h-11 rounded-xl border border-[#E5E7EB] bg-[#F9FAFB] px-4 text-sm text-[#111827] placeholder:text-[#9CA3AF] focus:border-[#3772FF] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#3772FF]/20 transition-colors"
+              }
             />
+            {fullNameError && (
+              <p className="text-xs text-red-500 mt-1.5 pl-1">{fullNameError}</p>
+            )}
           </div>
 
           {/* Email */}
@@ -119,17 +211,20 @@ export default function RegisterPage() {
             </Label>
             <Input
               id="email"
-              type="email"
-              placeholder="you@example.com"
-              value={form.email}
-              onChange={(e) => update("email", e.target.value)}
-              required
+              type="text"
+              placeholder="Enter your email"
+              value={email}
+              onChange={(e) => { setEmail(e.target.value); clearEmailError() }}
               autoComplete="email"
-              className="h-11 rounded-xl border-[#E5E7EB] bg-[#F9FAFB] px-4 text-sm text-[#111827]
-                placeholder:text-[#9CA3AF]
-                focus:border-[#3772FF] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#3772FF]/20
-                transition-colors"
+              className={
+                emailError || apiError
+                  ? "h-11 rounded-xl border border-red-400 bg-red-50 px-4 text-sm text-[#111827] placeholder:text-[#9CA3AF] focus:border-red-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-red-400/20 transition-colors"
+                  : "h-11 rounded-xl border border-[#E5E7EB] bg-[#F9FAFB] px-4 text-sm text-[#111827] placeholder:text-[#9CA3AF] focus:border-[#3772FF] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#3772FF]/20 transition-colors"
+              }
             />
+            {emailError && (
+              <p className="text-xs text-red-500 mt-1.5 pl-1">{emailError}</p>
+            )}
           </div>
 
           {/* Password */}
@@ -141,16 +236,15 @@ export default function RegisterPage() {
               <Input
                 id="password"
                 type={showPassword ? "text" : "password"}
-                placeholder="Min. 8 characters"
-                value={form.password}
-                onChange={(e) => update("password", e.target.value)}
-                required
-                minLength={8}
+                placeholder="Enter your password"
+                value={password}
+                onChange={(e) => { setPassword(e.target.value); clearPasswordError() }}
                 autoComplete="new-password"
-                className="h-11 pr-10 rounded-xl border-[#E5E7EB] bg-[#F9FAFB] px-4 text-sm text-[#111827]
-                  placeholder:text-[#9CA3AF]
-                  focus:border-[#3772FF] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#3772FF]/20
-                  transition-colors"
+                className={
+                  passwordError || apiError
+                    ? "h-11 pr-10 rounded-xl border border-red-400 bg-red-50 px-4 text-sm text-[#111827] placeholder:text-[#9CA3AF] focus:border-red-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-red-400/20 transition-colors"
+                    : "h-11 pr-10 rounded-xl border border-[#E5E7EB] bg-[#F9FAFB] px-4 text-sm text-[#111827] placeholder:text-[#9CA3AF] focus:border-[#3772FF] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#3772FF]/20 transition-colors"
+                }
               />
               <button
                 type="button"
@@ -164,6 +258,11 @@ export default function RegisterPage() {
                 )}
               </button>
             </div>
+            {(passwordError || apiError) && (
+              <p className="text-xs text-red-500 mt-1.5 pl-1">
+                {passwordError ?? apiError}
+              </p>
+            )}
           </div>
 
           {/* Confirm password */}
@@ -171,20 +270,37 @@ export default function RegisterPage() {
             <Label htmlFor="confirmPassword" className="text-sm font-medium text-[#374151]">
               Confirm password
             </Label>
-            <Input
-              id="confirmPassword"
-              type={showPassword ? "text" : "password"}
-              placeholder="Repeat password"
-              value={form.confirmPassword}
-              onChange={(e) => update("confirmPassword", e.target.value)}
-              required
-              minLength={8}
-              autoComplete="new-password"
-              className="h-11 rounded-xl border-[#E5E7EB] bg-[#F9FAFB] px-4 text-sm text-[#111827]
-                placeholder:text-[#9CA3AF]
-                focus:border-[#3772FF] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#3772FF]/20
-                transition-colors"
-            />
+            <div className="relative">
+              <Input
+                id="confirmPassword"
+                type={showConfirmPassword ? "text" : "password"}
+                placeholder="Confirm your password"
+                value={confirmPassword}
+                onChange={(e) => { setConfirmPassword(e.target.value); clearConfirmPasswordError() }}
+                autoComplete="new-password"
+                className={
+                  confirmPasswordError || apiError
+                    ? "h-11 pr-10 rounded-xl border border-red-400 bg-red-50 px-4 text-sm text-[#111827] placeholder:text-[#9CA3AF] focus:border-red-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-red-400/20 transition-colors"
+                    : "h-11 pr-10 rounded-xl border border-[#E5E7EB] bg-[#F9FAFB] px-4 text-sm text-[#111827] placeholder:text-[#9CA3AF] focus:border-[#3772FF] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#3772FF]/20 transition-colors"
+                }
+              />
+              <button
+                type="button"
+                onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[#9CA3AF] hover:text-[#6B7280] transition-colors"
+              >
+                {showConfirmPassword ? (
+                  <EyeOff className="w-4 h-4" />
+                ) : (
+                  <Eye className="w-4 h-4" />
+                )}
+              </button>
+            </div>
+            {(confirmPasswordError || apiError) && (
+              <p className="text-xs text-red-500 mt-1.5 pl-1">
+                {confirmPasswordError ?? apiError}
+              </p>
+            )}
           </div>
 
           {/* Submit */}
@@ -220,5 +336,19 @@ export default function RegisterPage() {
         </p>
       </div>
     </div>
+  )
+}
+
+export default function RegisterPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center bg-white">
+          <Loader2 className="w-6 h-6 animate-spin text-[#3772FF]" />
+        </div>
+      }
+    >
+      <RegisterForm />
+    </Suspense>
   )
 }

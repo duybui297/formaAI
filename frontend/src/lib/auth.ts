@@ -10,6 +10,7 @@ export interface AuthUser {
   full_name: string | null
   is_active: boolean
   is_superuser?: boolean
+  avatar_url?: string | null
 }
 
 export interface AuthState {
@@ -33,6 +34,7 @@ export function getToken(): string | null {
 export function setToken(token: string): void {
   if (typeof window === "undefined") return
   sessionStorage.setItem(TOKEN_KEY, token)
+  setAuthCookie(token)
 }
 
 export function clearToken(): void {
@@ -80,18 +82,37 @@ export async function authFetch(
   path: string,
   init?: RequestInit & { throwOnError?: boolean }
 ): Promise<Response> {
-  const token = getToken()
   const isFormData = init?.body instanceof FormData
-  const headers: Record<string, string> = {
-    ...((init?.headers as Record<string, string>) || {}),
+
+  async function doFetch(token: string | null): Promise<Response> {
+    const headers: Record<string, string> = {
+      ...((init?.headers as Record<string, string>) || {}),
+    }
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`
+    }
+    if (isFormData) {
+      delete headers["Content-Type"]
+    }
+    const res = await fetch(`/api${path}`, { ...init, headers })
+
+    // Auto-refresh on 401 if we have a refresh cookie and haven't retried yet
+    if (
+      res.status === 401 &&
+      token !== null &&
+      document.cookie.includes("refresh_token=")
+    ) {
+      const newToken = await refreshAccessToken()
+      if (newToken) {
+        return doFetch(newToken)
+      }
+    }
+
+    return res
   }
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`
-  }
-  if (isFormData) {
-    delete headers["Content-Type"]
-  }
-  const res = await fetch(`/api${path}`, { ...init, headers })
+
+  const token = getToken()
+  const res = await doFetch(token)
   if (init?.throwOnError !== false && !res.ok) {
     const text = await res.text().catch(() => "")
     throw new Error(`API ${res.status}: ${text}`)

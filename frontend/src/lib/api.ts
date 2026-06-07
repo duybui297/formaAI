@@ -3,6 +3,7 @@ import type {
   JobProgress,
   JobSummary,
   License,
+  Glossary,
   LicenseActivity,
   LicensesListParams,
   LicensesListResponse,
@@ -41,6 +42,12 @@ export async function getLanguages(): Promise<Language[]> {
   const res = await apiFetch("/languages")
   const data = await res.json()
   return data.languages as Language[]
+}
+
+export async function getGlossaries(): Promise<Glossary[]> {
+  const res = await apiFetch("/glossaries")
+  const data = await res.json()
+  return data.glossaries as Glossary[]
 }
 
 export async function getJob(jobId: string): Promise<JobProgress> {
@@ -299,6 +306,16 @@ export async function getMyEntitlements(): Promise<Entitlement> {
   return res.json()
 }
 
+/**
+ * GET /licenses/my-licenses — returns all licenses owned by the authenticated user.
+ * Includes PENDING (not yet activated) and ACTIVE/EXPIRED/SUSPENDED/REVOKED licenses.
+ * Never returns raw_key — it is only shown once at creation time.
+ */
+export async function getMyLicenses(): Promise<MyLicensesResponse> {
+  const res = await authFetch("/licenses/my-licenses")
+  return res.json()
+}
+
 // ---------------------------------------------------------------------------
 // Lead Capture API (TASK-3.5)
 // ---------------------------------------------------------------------------
@@ -324,4 +341,266 @@ export async function submitLead(
     throw new Error(detail)
   }
   return res.json()
+}
+
+export interface UpdateMeRequest {
+  full_name?: string
+}
+
+export interface ChangePasswordRequest {
+  current_password: string
+  new_password: string
+}
+
+// ---------------------------------------------------------------------------
+// Notifications API
+// ---------------------------------------------------------------------------
+
+export async function getNotifications(): Promise<import("@/lib/types").NotificationsResponse> {
+  const res = await apiFetch("/notifications")
+  return res.json()
+}
+
+/**
+ * PATCH /auth/me — update the current user's full_name.
+ */
+export async function updateMe(body: UpdateMeRequest): Promise<import("@/lib/types").AdminUser> {
+  const res = await authFetch("/auth/me", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    throwOnError: false,
+  })
+  if (!res.ok) {
+    const json = await res.json().catch(() => null)
+    const detail = json?.detail ?? json?.message ?? `Request failed ${res.status}`
+    throw new Error(detail)
+  }
+  return res.json()
+}
+
+/**
+ * POST /auth/me/avatar — upload a new avatar image (multipart/form-data).
+ */
+export async function uploadAvatar(file: File): Promise<{ avatar_url: string }> {
+  const form = new FormData()
+  form.append("file", file)
+  const res = await authFetch("/auth/me/avatar", {
+    method: "POST",
+    body: form,
+    throwOnError: false,
+  })
+  if (!res.ok) {
+    const json = await res.json().catch(() => null)
+    const detail = json?.detail ?? json?.message ?? `Upload failed ${res.status}`
+    throw new Error(detail)
+  }
+  return res.json()
+}
+
+/**
+ * PATCH /auth/me/password — change the current user's password.
+ */
+export async function changePassword(body: ChangePasswordRequest): Promise<void> {
+  const res = await authFetch("/auth/me/password", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    throwOnError: false,
+  })
+  if (!res.ok) {
+    const json = await res.json().catch(() => null)
+    const detail = json?.detail ?? json?.message ?? `Request failed ${res.status}`
+    throw new Error(detail)
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Notification Preferences API
+// ---------------------------------------------------------------------------
+
+export interface NotificationPreferences {
+  email_job_complete: boolean
+  email_job_failed: boolean
+  email_license_expiry: boolean
+  email_license_revoked: boolean
+  email_marketing: boolean
+}
+
+export async function getNotificationPreferences(): Promise<NotificationPreferences> {
+  const res = await authFetch("/auth/me/notifications")
+  return res.json()
+}
+
+export async function updateNotificationPreferences(
+  patch: Partial<NotificationPreferences>
+): Promise<NotificationPreferences> {
+  const res = await authFetch("/auth/me/notifications", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+    throwOnError: false,
+  })
+  if (!res.ok) {
+    const json = await res.json().catch(() => null)
+    const detail = json?.detail ?? json?.message ?? `Request failed ${res.status}`
+    throw new Error(detail)
+  }
+  return res.json()
+}
+
+// ---------------------------------------------------------------------------
+// Translation Defaults API
+// ---------------------------------------------------------------------------
+
+export interface TranslationDefaults {
+  preferred_source_lang: string | null
+  preferred_target_lang: string | null
+  default_glossary_id: string | null
+  auto_detect: boolean
+}
+
+export async function getTranslationDefaults(): Promise<TranslationDefaults> {
+  const res = await authFetch("/auth/me/translation-defaults")
+  return res.json()
+}
+
+export async function updateTranslationDefaults(
+  patch: Partial<TranslationDefaults>
+): Promise<TranslationDefaults> {
+  const res = await authFetch("/auth/me/translation-defaults", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+    throwOnError: false,
+  })
+  if (!res.ok) {
+    const json = await res.json().catch(() => null)
+    const detail = json?.detail ?? json?.message ?? `Request failed ${res.status}`
+    throw new Error(detail)
+  }
+  return res.json()
+}
+
+// ---------------------------------------------------------------------------
+// API Keys
+// ---------------------------------------------------------------------------
+
+export interface ApiKeyInfo {
+  id: string
+  name: string
+  key_prefix: string
+  created_at: string
+  last_used_at: string | null
+  revoked_at: string | null
+}
+
+export interface ApiKeyCreated {
+  id: string
+  name: string
+  key_prefix: string
+  created_at: string
+  raw_key: string
+}
+
+export async function listApiKeys(): Promise<ApiKeyInfo[]> {
+  const res = await authFetch("/auth/me/api-keys")
+  return res.json()
+}
+
+export async function createApiKey(name: string): Promise<ApiKeyCreated> {
+  const res = await authFetch("/auth/me/api-keys", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+    throwOnError: false,
+  })
+  if (!res.ok) {
+    const json = await res.json().catch(() => null)
+    const detail = json?.detail ?? json?.message ?? `Request failed ${res.status}`
+    throw new Error(detail)
+  }
+  return res.json()
+}
+
+export async function revokeApiKey(keyId: string): Promise<void> {
+  const res = await authFetch(`/auth/me/api-keys/${keyId}`, {
+    method: "DELETE",
+    throwOnError: false,
+  })
+  if (!res.ok && res.status !== 204) {
+    const json = await res.json().catch(() => null)
+    const detail = json?.detail ?? json?.message ?? `Request failed ${res.status}`
+    throw new Error(detail)
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Team Workspace
+// ---------------------------------------------------------------------------
+
+export interface WorkspaceMember {
+  id: string
+  email: string
+  full_name: string | null
+  role: "owner" | "member"
+  joined_at: string
+}
+
+export interface WorkspaceInvite {
+  id: string
+  email: string
+  role: string
+  status: string
+  created_at: string
+  expires_at: string
+}
+
+export interface WorkspaceInfo {
+  members: WorkspaceMember[]
+  pending_invites: WorkspaceInvite[]
+}
+
+export async function getWorkspace(): Promise<WorkspaceInfo> {
+  const res = await authFetch("/auth/me/workspace")
+  return res.json()
+}
+
+export async function inviteMember(email: string, role: string): Promise<WorkspaceInvite> {
+  const res = await authFetch("/auth/me/workspace/invite", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, role }),
+    throwOnError: false,
+  })
+  if (!res.ok) {
+    const json = await res.json().catch(() => null)
+    const detail = json?.detail ?? json?.message ?? `Request failed ${res.status}`
+    throw new Error(detail)
+  }
+  return res.json()
+}
+
+export async function revokeInvite(inviteId: string): Promise<void> {
+  const res = await authFetch(`/auth/me/workspace/invite/${inviteId}`, {
+    method: "DELETE",
+    throwOnError: false,
+  })
+  if (!res.ok && res.status !== 204) {
+    const json = await res.json().catch(() => null)
+    const detail = json?.detail ?? json?.message ?? `Request failed ${res.status}`
+    throw new Error(detail)
+  }
+}
+
+export async function removeMember(memberId: string): Promise<void> {
+  const res = await authFetch(`/auth/me/workspace/member/${memberId}`, {
+    method: "DELETE",
+    throwOnError: false,
+  })
+  if (!res.ok && res.status !== 204) {
+    const json = await res.json().catch(() => null)
+    const detail = json?.detail ?? json?.message ?? `Request failed ${res.status}`
+    throw new Error(detail)
+  }
 }

@@ -1,6 +1,6 @@
 "use client"
 import Link from "next/link"
-import { usePathname, useRouter } from "next/navigation"
+import { useRouter, usePathname } from "next/navigation"
 import { useQuery } from "@tanstack/react-query"
 import {
   LayoutDashboard,
@@ -14,16 +14,19 @@ import {
   User as UserIcon,
   ShieldCheck,
   Users,
+  Key,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { getMeApi, logoutApi } from "@/lib/auth"
 import type { AuthUser } from "@/lib/auth"
+import { getMyLicenses } from "@/lib/api"
 
 const navItems = [
   { name: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
   { name: "Translator", path: "/translator", icon: FileText },
   { name: "History", path: "/history", icon: History },
   { name: "Glossaries", path: "/glossaries", icon: BookA },
+  { name: "My Licenses", path: "/licenses", icon: Key },
   { name: "Subscription", path: "/pricing", icon: CreditCard },
   { name: "Settings", path: "/settings", icon: Settings },
 ]
@@ -133,6 +136,15 @@ export function AppSidebar({ children }: { children: React.ReactNode }) {
     retry: 1,
   })
 
+  const { data: myLicenses } = useQuery({
+    queryKey: ["my-licenses"],
+    queryFn: getMyLicenses,
+    enabled: !!user,
+    staleTime: 30_000,
+  })
+
+  const pendingCount = myLicenses?.pending_count ?? 0
+
   return (
     <div className="flex h-screen bg-zinc-50 overflow-hidden font-sans">
       {/* Desktop Sidebar */}
@@ -153,6 +165,7 @@ export function AppSidebar({ children }: { children: React.ReactNode }) {
             const isActive =
               pathname === item.path ||
               (item.path !== "/" && pathname?.startsWith(item.path))
+            const showBadge = item.path === "/licenses" && pendingCount > 0
             return (
               <Link
                 key={item.path}
@@ -171,6 +184,11 @@ export function AppSidebar({ children }: { children: React.ReactNode }) {
                   )}
                 />
                 {item.name}
+                {showBadge && (
+                  <span className="ml-auto bg-amber-500 text-white text-xs font-bold rounded-full min-w-[20px] h-5 flex items-center justify-center px-1.5">
+                    {pendingCount}
+                  </span>
+                )}
               </Link>
             )
           })}

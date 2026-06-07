@@ -90,3 +90,25 @@ BLOCKED: **4.2** Integration & Security — 4.2-a/b/c PASS; **4.2-d** (load P99<
 - Pre-existing FE TS errors in non-license files (jobs/review, forgot-password, UploadForm.test, useJobProgress).
 - 4.2-d load test still BLOCKED (needs separate load-gen host).
 - No commits yet this session.
+
+---
+
+## Session 3 — 2026-06-06
+
+**What was changed:** Lead capture now sends an SMTP notification email to a configured inbox after storing the lead row. `backend/src/app/api/routes/leads.py` gained `_send_lead_notification_email(email, plan)` and calls it after `lead_captured`. Added `lead_notification_to` config in `backend/src/app/core/config.py`, plus `LEAD_NOTIFICATION_TO` docs in `.env.example`.
+
+**Behavior:** `POST /leads` still succeeds even when email is not configured or SMTP send fails. In those cases the lead is still stored and the backend logs either `lead_email_not_configured_skipping_notification` or `lead_notification_send_failed`. When configured, the email is sent to the sales/admin inbox with the submitter email set as `Reply-To`.
+
+**Verification:** `ReadLints` clean for edited backend files; `python3 -m compileall backend/src/app/api/routes/leads.py backend/src/app/core/config.py` passed.
+
+**Follow-up enhancement:** Lead notification emails now include an HTML version for better readability and support multiple recipients via comma-separated `LEAD_NOTIFICATION_TO` values.
+
+**Additional enhancement:** Lead emails now show a friendly plan label (`Free`, `Pro`, `Business`) plus capture metadata (`Captured at (UTC)` and `Source page: /pricing`).
+
+**Email template redesign (Session 3 end):** Redesigned both auth email templates with AI Translation context — dark header (`#1a1a2e`), indigo CTA button (`#6366f1`), mobile-safe inline CSS table layout. **ForgotPassword** (`_send_reset_email`): clean HTML template with branded header, CTA button, fallback link, security notice, and a one-liner about Forma preserving document format. **Welcome** (`_send_welcome_email`): new function called after `user_registered` in the `register` endpoint; 2x2 feature grid (DOCX/PDF/PPTX support, 88+ languages, custom glossaries, side-by-side review) + "Start translating" CTA + "Activate license" secondary link. Both include plain-text fallbacks. **E2E verified:** `welcome_email_sent` logged for `test-welcome-june6@example.com` after `POST /auth/register 201`; `reset_email_sent` logged for same address after `POST /auth/forgot-password 200`.
+
+**Plan subscription email templates (Session 3 end, part 2):**
+- **Lead confirmation email** (`_send_lead_confirmation_email` in `leads.py`): sent automatically to the visitor after they submit `POST /leads`. Subject: "Forma — we received your {plan} plan inquiry". Content: acknowledgment, feature highlights (DOCX/PDF/PPTX, 88+ languages, glossaries, side-by-side review), CTA "Learn more about Forma", note about 1 business day response time. `send_email` flag default true. **E2E verified:** `lead_confirmation_sent` logged after lead submission.
+- **License delivery email** (`_send_license_delivery_email` in `admin_licenses.py`): sent automatically to the customer when admin creates a license via `POST /admin/licenses` with `send_email: true`. Shows raw license key (monospaced), tier badge, max devices, expiry date, and "Activate your license" CTA. Schema updated: `AdminCreateLicenseRequest.send_email` (bool, default true). **E2E verified:** `license_delivery_email_sent` logged after `POST /admin/licenses` returned raw key `2PBL-SC5G-CXEC-J5KK`.
+- **Bug fixed:** `AttributeError: 'str' object has no attribute 'value'` in `create_license` — `result.license.tier` is already an FE string (`"professional"`), not a BE enum. Fixed by using `str()` + `.title()` instead of `TIER_BE_TO_FE` lookup.
+- **Bug fixed:** `NameError: name 'get_settings' is not defined` in `admin_licenses.py` — `get_settings` imported from `app.api.deps` (FastAPI dependency) was removed but still used in endpoint signature and `_send_license_delivery_email`. Restored import and used inline `from app.core.config import get_settings as core_get_settings` inside the helper function (standalone call outside request context).

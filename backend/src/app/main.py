@@ -10,18 +10,20 @@ D-19: configure_logging() is called before any logger is acquired.
 """
 from __future__ import annotations
 
+import os
 from contextlib import asynccontextmanager
 
 import arq
 import structlog
 from arq.connections import RedisSettings
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.api.middleware.cors import add_cors_middleware
 from app.api.middleware.license import LicenseValidationMiddleware
-from app.api.routes import admin_licenses, admin_users, auth, export, glossaries, health, jobs, languages, leads, licenses, ping, segments, sse, upload
+from app.api.routes import admin_licenses, admin_users, auth, export, glossaries, health, jobs, languages, leads, licenses, notifications, ping, segments, sse, upload
 from app.core.config import get_settings
 from app.core.logging import configure_logging
 from app.llm.client import make_llm_client
@@ -29,6 +31,10 @@ from app.llm.client import make_llm_client
 log = structlog.get_logger()
 
 settings = get_settings()
+
+# Avatar storage path
+_AVATAR_DIR = os.path.join(settings.data_dir, "avatars")
+os.makedirs(_AVATAR_DIR, exist_ok=True)
 
 
 @asynccontextmanager
@@ -57,6 +63,12 @@ async def lifespan(app: FastAPI):
     )
     # Phase 2: shared LLM client for synchronous regenerate endpoint (REV-04)
     app.state.llm_client = make_llm_client(settings)
+
+    # Avatar storage
+    app.state.avatar_dir = _AVATAR_DIR
+    os.makedirs(_AVATAR_DIR, exist_ok=True)
+    app.mount("/static/avatars", StaticFiles(directory=_AVATAR_DIR), name="avatars")
+
     log.info("app_started")
 
     yield
@@ -91,4 +103,5 @@ app.include_router(admin_licenses.router)
 app.include_router(admin_users.router)
 app.include_router(licenses.router)
 app.include_router(leads.router)
+app.include_router(notifications.router)
 app.include_router(ping.router)

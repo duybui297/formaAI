@@ -440,6 +440,52 @@ class User(Base):
     deleted_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # TASK-session-2026-06-07: per-user notification preferences
+    notification_preferences: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # TASK-session-2026-06-07: per-user translation defaults
+    translation_defaults: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # TASK-session-2026-06-07: team workspace — NULL means personal workspace (solo)
+    workspace_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    # TASK-session-2026-06-07: avatar URL (uploaded to /static/avatars/)
+    avatar_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+
+    api_keys: Mapped[list["ApiKey"]] = relationship(
+        "ApiKey", back_populates="user", lazy="selectin"
+    )
+    team_invites: Mapped[list["TeamInvite"]] = relationship(
+        "TeamInvite", back_populates="owner", lazy="selectin"
+    )
+
+
+class ApiKey(Base):
+    __tablename__ = "api_keys"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    key_prefix: Mapped[str] = mapped_column(String(16), nullable=False)
+    key_hash: Mapped[str] = mapped_column(String(128), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    user: Mapped[User] = relationship("User", back_populates="api_keys")
+
+
+class TeamInvite(Base):
+    __tablename__ = "team_invites"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    workspace_owner_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False)
+    email: Mapped[str] = mapped_column(String(255), nullable=False)
+    role: Mapped[str] = mapped_column(String(32), nullable=False, default="member")
+    token: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    owner: Mapped[User] = relationship("User", back_populates="team_invites")
 
 
 class PasswordResetToken(Base):

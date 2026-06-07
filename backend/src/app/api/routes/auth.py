@@ -3,21 +3,40 @@ Auth routes: register, login, logout, refresh, forgot-password, reset-password.
 
 POST /auth/register        — create account
 POST /auth/login           — email+password → 15-min access token + 30-d httpOnly refresh cookie
-POST /auth/refresh         — rotate refresh cookie, issue new 15-min access token (CSRF required)
+POST /auth/refresh        — rotate refresh cookie, issue new 15-min access token (CSRF required)
 POST /auth/logout          — clear cookie, revoke refresh
 GET  /auth/me              — return current user info (protected)
+PATCH /auth/me             — update full_name
+PATCH /auth/me/password    — change password
+POST /auth/me/avatar        — upload avatar image
+GET  /auth/me/notifications — get notification preferences
+PATCH /auth/me/notifications — update notification preferences
+GET  /auth/me/translation-defaults — get translation defaults
+PATCH /auth/me/translation-defaults — update translation defaults
+GET  /auth/me/api-keys     — list API keys
+POST /auth/me/api-keys     — create API key
+DELETE /auth/me/api-keys/{key_id} — revoke API key
+GET  /auth/me/workspace    — get workspace members + pending invites
+POST /auth/me/workspace/invite — invite member
+DELETE /auth/me/workspace/invite/{invite_id} — revoke invite
+DELETE /auth/me/workspace/member/{member_id} — remove member
 POST /auth/forgot-password — send reset email (or silent success for security)
 POST /auth/reset-password  — validate token + update password
 """
 from __future__ import annotations
 
+import html
+import hashlib
+import os
 import secrets
+import secrets as _secrets
+import uuid as _uuid
 from datetime import datetime, timedelta, timezone
 
 import structlog
 from aiosmtplib import SMTP
 from email.message import EmailMessage
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Response, UploadFile, status
 from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -31,17 +50,31 @@ from app.core.security import (
     hash_password,
     verify_password,
 )
-from app.db.models import PasswordResetToken, User
+from app.db.models import ApiKey, PasswordResetToken, TeamInvite, User
 from app.db.session import get_session
 from app.schemas.auth import (
+    ApiKeyCreatedResponse,
+    ApiKeyResponse,
+    AvatarResponse,
+    ChangePasswordRequest,
+    CreateApiKeyRequest,
     ForgotPasswordRequest,
+    InviteMemberRequest,
+    InviteResponse,
     LoginRequest,
     MessageResponse,
+    MemberResponse,
+    NotificationPreferencesResponse,
     RefreshTokenResponse,
     RegisterRequest,
     ResetPasswordRequest,
     TokenResponse,
+    TranslationDefaultsResponse,
+    UpdateMeRequest,
+    UpdateNotificationPreferencesRequest,
+    UpdateTranslationDefaultsRequest,
     UserResponse,
+    WorkspaceResponse,
 )
 from app.api.deps import get_current_active_user, get_redis
 
@@ -50,6 +83,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 CSRF_COOKIE = "csrf_token"
 REFRESH_COOKIE = "refresh_token"
+ACCESS_COOKIE = "forma_access_token"
 
 # Helpers
 async def _get_user_by_email(session: AsyncSession, email: str) -> User | None:
@@ -125,25 +159,99 @@ def _client_ip(request: Request) -> str:
 async def _send_reset_email(
     to_email: str, token: str, base_url: str
 ) -> None:
+    """Send a password-reset email with a clean HTML template.
+
+    Falls back to plain-text if SMTP is not configured.
+    """
     settings = get_settings()
     if not settings.smtp_user or not settings.smtp_password.get_secret_value():
         log.warning("smtp_not_configured_skipping_email", to=to_email)
         return
 
     reset_url = f"{base_url}/reset-password?token={token}"
-    body = (
-        f"Hello,\n\n"
-        f"You requested a password reset for your Forma account.\n\n"
-        f"Click the link below to set a new password (expires in 1 hour):\n"
+    safe_url = html.escape(reset_url)
+
+    text_body = (
+        "Forma — Password Reset\n"
+        "==================\n\n"
+        "We received a request to reset your password.\n\n"
+        f"Click the link below to set a new password (this link expires in 1 hour):\n"
         f"{reset_url}\n\n"
-        f"If you didn't request this, you can safely ignore this email.\n"
+        "If you didn't request a password reset, you can safely ignore this email — "
+        "your password has not been changed.\n"
+        f"\n— The Forma team\n"
     )
+
+    html_body = f"""
+    <html>
+      <body style="margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;color:#18181b;background-color:#f4f4f5;">
+        <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f4f5;padding:40px 16px;">
+          <tr>
+            <td align="center">
+              <table width="560" cellpadding="0" cellspacing="0" style="background-color:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.08);">
+                <!-- Header -->
+                <tr>
+                  <td style="background-color:#1a1a2e;padding:32px 40px;text-align:center;">
+                    <p style="margin:0;font-size:11px;letter-spacing:3px;color:#818cf8;text-transform:uppercase;font-weight:700;">Forma</p>
+                    <h1 style="margin:12px 0 0;font-size:24px;font-weight:700;color:#ffffff;letter-spacing:-0.5px;">Password Reset</h1>
+                  </td>
+                </tr>
+                <!-- Body -->
+                <tr>
+                  <td style="padding:40px;">
+                    <p style="margin:0 0 20px;font-size:16px;line-height:1.6;color:#3f3f46;">
+                      We received a request to reset your password for your Forma account.
+                    </p>
+                    <p style="margin:0 0 28px;font-size:16px;line-height:1.6;color:#3f3f46;">
+                      Click the button below to set a new password. This link will expire in <strong>1 hour</strong>.
+                    </p>
+                    <!-- CTA Button -->
+                    <table cellpadding="0" cellspacing="0" style="margin:0 auto 28px;">
+                      <tr>
+                        <td style="background-color:#6366f1;border-radius:8px;text-align:center;">
+                          <a href="{safe_url}" style="display:inline-block;padding:14px 32px;font-size:15px;font-weight:600;color:#ffffff;text-decoration:none;letter-spacing:-0.2px;">Reset Password</a>
+                        </td>
+                      </tr>
+                    </table>
+                    <!-- Fallback link -->
+                    <p style="margin:0 0 24px;font-size:14px;line-height:1.5;color:#71717a;text-align:center;">
+                      If the button doesn't work, copy and paste this link into your browser:<br>
+                      <a href="{safe_url}" style="color:#6366f1;word-break:break-all;text-decoration:none;">{safe_url}</a>
+                    </p>
+                    <!-- Security note -->
+                    <div style="background-color:#fafafa;border-left:3px solid #e4e4e7;padding:16px 20px;border-radius:0 8px 8px 0;margin-bottom:24px;">
+                      <p style="margin:0;font-size:14px;color:#71717a;line-height:1.5;">
+                        <strong style="color:#3f3f46;">Security notice:</strong> If you didn't request a password reset, please ignore this email. Your password has not been changed — no action is needed.
+                      </p>
+                    </div>
+                    <!-- AI Translation context -->
+                    <p style="margin:0;font-size:14px;line-height:1.5;color:#71717a;">
+                      Forma uses AI to translate DOCX, PDF, and PPTX documents with format fidelity — so your translated files are ready to use, not just readable.
+                    </p>
+                  </td>
+                </tr>
+                <!-- Footer -->
+                <tr>
+                  <td style="background-color:#fafafa;padding:24px 40px;border-top:1px solid #f4f4f5;">
+                    <p style="margin:0;font-size:12px;color:#a1a1aa;text-align:center;">
+                      — The Forma team
+                    </p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+      </body>
+    </html>
+    """.strip()
 
     msg = EmailMessage()
     msg["From"] = settings.smtp_from
     msg["To"] = to_email
     msg["Subject"] = "Reset your Forma password"
-    msg.set_content(body)
+    msg.set_content(text_body)
+    msg.add_alternative(html_body, subtype="html")
 
     try:
         smtp = SMTP(
@@ -158,6 +266,230 @@ async def _send_reset_email(
         log.info("reset_email_sent", to=to_email)
     except Exception as exc:
         log.error("smtp_send_failed", to=to_email, error=str(exc))
+
+
+async def _send_welcome_email(to_email: str, full_name: str) -> None:
+    """Send a welcome email after account registration with a clean HTML template."""
+    settings = get_settings()
+    if not settings.smtp_user or not settings.smtp_password.get_secret_value():
+        log.warning("smtp_not_configured_skipping_welcome_email", to=to_email)
+        return
+
+    first_name = full_name.split()[0] if full_name else None
+    greeting = f"Hi {html.escape(first_name)}" if first_name else "Welcome"
+    safe_name = html.escape(full_name) if full_name else ""
+    app_url = settings.app_url.rstrip("/")
+
+    text_body = (
+        f"Forma — Welcome!\n"
+        f"==================\n\n"
+        f"{greeting},\n\n"
+        f"Your Forma account is ready. Here's what you can do next:\n\n"
+        f"  1. Upload a document (DOCX, PDF, PPTX)\n"
+        f"  2. Choose your source and target language\n"
+        f"  3. Translate with Qwen — format stays intact\n"
+        f"  4. Review in the side-by-side editor and export\n\n"
+        f"Get started: {app_url}\n\n"
+        f"Key features:\n"
+        f"  - Translate DOCX, PDF, and PPTX files\n"
+        f"  - Supports Vietnamese, English, Japanese, Chinese, and 88 more languages\n"
+        f"  - Custom glossary / terminology injection for consistent translations\n"
+        f"  - Side-by-side review with inline correction before export\n\n"
+        f"— The Forma team\n"
+    )
+
+    html_body = f"""
+    <html>
+      <body style="margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;color:#18181b;background-color:#f4f4f5;">
+        <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f4f5;padding:40px 16px;">
+          <tr>
+            <td align="center">
+              <table width="560" cellpadding="0" cellspacing="0" style="background-color:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.08);">
+                <!-- Header -->
+                <tr>
+                  <td style="background-color:#1a1a2e;padding:32px 40px;text-align:center;">
+                    <p style="margin:0;font-size:11px;letter-spacing:3px;color:#818cf8;text-transform:uppercase;font-weight:700;">Forma</p>
+                    <h1 style="margin:12px 0 0;font-size:24px;font-weight:700;color:#ffffff;letter-spacing:-0.5px;">Welcome aboard</h1>
+                  </td>
+                </tr>
+                <!-- Body -->
+                <tr>
+                  <td style="padding:40px;">
+                    <p style="margin:0 0 12px;font-size:16px;line-height:1.6;color:#3f3f46;">
+                      {greeting}{',' if first_name else ''} your account is ready.
+                    </p>
+                    <p style="margin:0 0 32px;font-size:16px;line-height:1.6;color:#3f3f46;">
+                      Here's what you can do with Forma:
+                    </p>
+                    <!-- Feature list -->
+                    <table cellpadding="0" cellspacing="0" width="100%" style="margin-bottom:32px;">
+                      <tr>
+                        <td style="padding:16px;background-color:#fafafa;border-radius:8px;border:1px solid #f4f4f5;vertical-align:top;width:50%;">
+                          <p style="margin:0 0 4px;font-size:14px;font-weight:600;color:#18181b;">Translate DOCX, PDF, PPTX</p>
+                          <p style="margin:0;font-size:13px;color:#71717a;line-height:1.5;">Upload your documents — the original format is preserved in the translated output.</p>
+                        </td>
+                        <td width="16"></td>
+                        <td style="padding:16px;background-color:#fafafa;border-radius:8px;border:1px solid #f4f4f5;vertical-align:top;width:50%;">
+                          <p style="margin:0 0 4px;font-size:14px;font-weight:600;color:#18181b;">88+ languages</p>
+                          <p style="margin:0;font-size:13px;color:#71717a;line-height:1.5;">Vietnamese, English, Japanese, Chinese, and many more language pairs supported.</p>
+                        </td>
+                      </tr>
+                      <tr height="12"></tr>
+                      <tr>
+                        <td style="padding:16px;background-color:#fafafa;border-radius:8px;border:1px solid #f4f4f5;vertical-align:top;width:50%;">
+                          <p style="margin:0 0 4px;font-size:14px;font-weight:600;color:#18181b;">Custom glossaries</p>
+                          <p style="margin:0;font-size:13px;color:#71717a;line-height:1.5;">Inject terminology to ensure consistent, domain-accurate translations.</p>
+                        </td>
+                        <td width="16"></td>
+                        <td style="padding:16px;background-color:#fafafa;border-radius:8px;border:1px solid #f4f4f5;vertical-align:top;width:50%;">
+                          <p style="margin:0 0 4px;font-size:14px;font-weight:600;color:#18181b;">Side-by-side review</p>
+                          <p style="margin:0;font-size:13px;color:#71717a;line-height:1.5;">Edit translations inline before exporting — no layout rework needed.</p>
+                        </td>
+                      </tr>
+                    </table>
+                    <!-- CTA Button -->
+                    <table cellpadding="0" cellspacing="0" style="margin:0 auto 20px;">
+                      <tr>
+                        <td style="background-color:#6366f1;border-radius:8px;text-align:center;">
+                          <a href="{app_url}" style="display:inline-block;padding:14px 32px;font-size:15px;font-weight:600;color:#ffffff;text-decoration:none;letter-spacing:-0.2px;">Start translating</a>
+                        </td>
+                      </tr>
+                    </table>
+                    <p style="margin:0;font-size:14px;color:#71717a;text-align:center;">
+                      Already have a license key? <a href="{app_url}/activate" style="color:#6366f1;text-decoration:none;">Activate it here</a>
+                    </p>
+                  </td>
+                </tr>
+                <!-- Footer -->
+                <tr>
+                  <td style="background-color:#fafafa;padding:24px 40px;border-top:1px solid #f4f4f5;">
+                    <p style="margin:0;font-size:12px;color:#a1a1aa;text-align:center;">
+                      — The Forma team
+                    </p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+      </body>
+    </html>
+    """.strip()
+
+    msg = EmailMessage()
+    msg["From"] = settings.smtp_from
+    msg["To"] = to_email
+    msg["Subject"] = "Welcome to Forma — start translating"
+    msg.set_content(text_body)
+    msg.add_alternative(html_body, subtype="html")
+
+    try:
+        smtp = SMTP(
+            hostname=settings.smtp_host,
+            port=settings.smtp_port,
+            start_tls=settings.smtp_tls,
+        )
+        await smtp.connect()
+        await smtp.login(settings.smtp_user, settings.smtp_password.get_secret_value())
+        await smtp.send_message(msg)
+        await smtp.quit()
+        log.info("welcome_email_sent", to=to_email)
+    except Exception as exc:
+        log.error("smtp_welcome_send_failed", to=to_email, error=str(exc))
+
+
+async def _send_workspace_invite_email(
+    to_email: str,
+    inviter_name: str,
+    workspace_name: str,
+    invite_token: str,
+    invite_url: str,
+    expires_days: int,
+) -> None:
+    """Send a workspace invitation email with an accept-link."""
+    settings = get_settings()
+    if not settings.smtp_user or not settings.smtp_password.get_secret_value():
+        log.warning("smtp_not_configured_skipping_invite_email", to=to_email)
+        return
+
+    safe_url = html.escape(invite_url)
+    days_str = f"{expires_days} days" if expires_days != 1 else "1 day"
+
+    text_body = (
+        f"Forma — Workspace Invitation\n"
+        f"=========================\n\n"
+        f"{inviter_name} invited you to join their workspace \"{workspace_name}\" on Forma.\n"
+        f"Click the link below to accept the invitation (expires in {days_str}):\n"
+        f"{invite_url}\n\n"
+        f"If you don't have a Forma account, you'll be prompted to create one.\n"
+        f"\n— The Forma team\n"
+    )
+
+    html_body = f"""
+    <html>
+      <body style="margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;color:#18181b;background-color:#f4f4f5;">
+        <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f4f5;padding:40px 16px;">
+          <tr>
+            <td align="center">
+              <table width="560" cellpadding="0" cellspacing="0" style="background-color:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.08);">
+                <tr>
+                  <td style="background-color:#1a1a2e;padding:32px 40px;text-align:center;">
+                    <p style="margin:0;font-size:11px;letter-spacing:3px;color:#818cf8;text-transform:uppercase;font-weight:700;">Forma</p>
+                    <h1 style="margin:12px 0 0;font-size:24px;font-weight:700;color:#ffffff;letter-spacing:-0.5px;">You're invited!</h1>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:40px;">
+                    <p style="margin:0 0 20px;font-size:16px;line-height:1.6;color:#3f3f46;">
+                      <strong>{inviter_name}</strong> has invited you to join the workspace <strong>"{workspace_name}"</strong> on Forma.
+                    </p>
+                    <p style="margin:0 0 28px;font-size:16px;line-height:1.6;color:#3f3f46;">
+                      Click the button below to accept your invitation. This invite expires in <strong>{days_str}</strong>.
+                    </p>
+                    <table cellpadding="0" cellspacing="0" style="margin:0 auto 28px;">
+                      <tr>
+                        <td style="background-color:#6366f1;border-radius:8px;text-align:center;">
+                          <a href="{safe_url}" style="display:inline-block;padding:14px 32px;font-size:15px;font-weight:600;color:#ffffff;text-decoration:none;letter-spacing:-0.2px;">Accept Invitation</a>
+                        </td>
+                      </tr>
+                    </table>
+                    <p style="margin:0 0 24px;font-size:14px;line-height:1.5;color:#71717a;text-align:center;">
+                      If the button doesn't work, copy and paste this link into your browser:<br>
+                      <a href="{safe_url}" style="color:#6366f1;word-break:break-all;">{invite_url}</a>
+                    </p>
+                  </td>
+                </tr>
+              </table>
+              <p style="margin:24px 0 0;font-size:12px;color:#a1a1aa;text-align:center;">
+                If you didn't expect this invitation, you can safely ignore this email.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </body>
+    </html>
+    """
+
+    msg = EmailMessage()
+    msg["Subject"] = f"Join {inviter_name}'s Forma workspace"
+    msg["From"] = settings.smtp_from
+    msg["To"] = to_email
+    msg.set_content(text_body)
+    msg.add_alternative(html_body, subtype="html")
+
+    try:
+        smtp = SMTP(
+            hostname=settings.smtp_host,
+            port=settings.smtp_port,
+            start_tls=settings.smtp_tls,
+        )
+        await smtp.connect()
+        await smtp.login(settings.smtp_user, settings.smtp_password.get_secret_value())
+        await smtp.send_message(msg)
+        await smtp.quit()
+        log.info("smtp_invite_sent", to=to_email)
+    except Exception as exc:
+        log.error("smtp_invite_send_failed", to=to_email, error=str(exc))
 
 
 # Routes
@@ -184,6 +516,7 @@ async def register(
     await session.refresh(user)
 
     log.info("user_registered", user_id=user.id, email=user.email)
+    await _send_welcome_email(user.email, user.full_name or "")
 
     return UserResponse(
         id=user.id,
@@ -191,6 +524,7 @@ async def register(
         full_name=user.full_name,
         is_active=user.is_active,
         is_superuser=user.is_superuser,
+        avatar_url=user.avatar_url,
     )
 
 
@@ -252,6 +586,16 @@ async def login(
         samesite="strict",
         secure=False,
         max_age=settings.refresh_token_expire_days * 24 * 3600,
+        path="/",
+    )
+    # Set access token as a readable cookie so AppLayout's isAuthenticated() check works
+    response.set_cookie(
+        key=ACCESS_COOKIE,
+        value="1",  # presence of cookie = authenticated; token is in Authorization header
+        httponly=False,
+        samesite="lax",
+        secure=False,
+        max_age=settings.access_token_expire_minutes * 60,
         path="/",
     )
 
@@ -360,7 +704,118 @@ async def get_me(
         full_name=user.full_name,
         is_active=user.is_active,
         is_superuser=user.is_superuser,
+        avatar_url=user.avatar_url,
     )
+
+
+@router.patch("/me", response_model=UserResponse)
+async def update_me(
+    body: UpdateMeRequest,
+    user: User = Depends(get_current_active_user),
+    session: AsyncSession = Depends(get_session),
+) -> UserResponse:
+    """Update the current user's profile (full_name only; email is immutable)."""
+    if body.full_name is not None:
+        user.full_name = body.full_name
+        await session.commit()
+        await session.refresh(user)
+
+    log.info("user_profile_updated", user_id=user.id)
+    return UserResponse(
+        id=user.id,
+        email=user.email,
+        full_name=user.full_name,
+        is_active=user.is_active,
+        is_superuser=user.is_superuser,
+        avatar_url=user.avatar_url,
+    )
+
+
+# 2 MB max avatar size
+_MAX_AVATAR_BYTES = 2 * 1024 * 1024
+_ALLOWED_AVATAR_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
+
+
+@router.post("/me/avatar", response_model=AvatarResponse)
+async def upload_avatar(
+    file: UploadFile = File(...),
+    user: User = Depends(get_current_active_user),
+    session: AsyncSession = Depends(get_session),
+) -> AvatarResponse:
+    """Upload a new avatar image for the current user."""
+    if file.size is not None and file.size > _MAX_AVATAR_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="File too large. Maximum size is 2 MB.",
+        )
+
+    content_type = file.content_type or "application/octet-stream"
+    if content_type not in _ALLOWED_AVATAR_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail=f"Unsupported file type: {content_type}. Use JPEG, PNG, GIF, or WebP.",
+        )
+
+    # Determine extension
+    ext_map = {
+        "image/jpeg": ".jpg",
+        "image/png": ".png",
+        "image/gif": ".gif",
+        "image/webp": ".webp",
+    }
+    ext = ext_map.get(content_type, ".jpg")
+    filename = f"{user.id}{ext}"
+    avatar_dir = "/data/avatars"
+    os.makedirs(avatar_dir, exist_ok=True)
+    avatar_path = os.path.join(avatar_dir, filename)
+
+    # Read async file into memory, then write synchronously
+    contents = await file.read()
+    with open(avatar_path, "wb") as f:
+        f.write(contents)
+
+    # Use API proxy path so browser can load the avatar
+    avatar_url = f"/api/auth/me/avatar/{user.id}{ext}"
+    user.avatar_url = avatar_url
+    await session.commit()
+
+    return AvatarResponse(avatar_url=avatar_url)
+
+
+@router.get("/me/avatar/{filename}", include_in_schema=False)
+async def get_avatar(filename: str) -> Response:
+    """Serve avatar image files (no auth required for performance)."""
+    avatar_dir = "/data/avatars"
+    avatar_path = os.path.join(avatar_dir, filename)
+    if not os.path.isfile(avatar_path):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Avatar not found")
+    with open(avatar_path, "rb") as f:
+        contents = f.read()
+    ext = os.path.splitext(filename)[1].lower()
+    media_types = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".gif": "image/gif", ".webp": "image/webp"}
+    media_type = media_types.get(ext, "application/octet-stream")
+    return Response(content=contents, media_type=media_type)
+
+
+@router.patch("/me/password", response_model=MessageResponse)
+async def change_password(
+    body: ChangePasswordRequest,
+    user: User = Depends(get_current_active_user),
+    session: AsyncSession = Depends(get_session),
+) -> MessageResponse:
+    """Change the current user's password. Requires the current password."""
+    if not verify_password(body.current_password, user.hashed_password):
+        log.info("password_change_failed_wrong_current", user_id=user.id)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Current password is incorrect",
+        )
+
+    user.hashed_password = hash_password(body.new_password)
+    await session.commit()
+
+    log.info("password_changed", user_id=user.id)
+    return MessageResponse(message="Password changed successfully.")
 
 
 @router.post("/forgot-password", status_code=200)
@@ -419,7 +874,7 @@ async def forgot_password(
     await session.commit()
 
     if not check_only:
-        await _send_reset_email(user.email, raw_token, "http://localhost:8080")
+        await _send_reset_email(user.email, raw_token, settings.app_url)
 
     return MessageResponse(
         message="If an account with that email exists, a reset link has been sent."
@@ -470,3 +925,309 @@ async def reset_password(
     log.info("password_reset_complete", user_id=user.id, email=user.email)
 
     return MessageResponse(message="Password has been reset successfully. Please log in.")
+
+
+# ---------------------------------------------------------------------------
+# Notification preferences
+# ---------------------------------------------------------------------------
+
+_DEFAULT_PREFS = {
+    "email_job_complete": True,
+    "email_job_failed": True,
+    "email_license_expiry": True,
+    "email_license_revoked": False,
+    "email_marketing": False,
+}
+
+
+@router.get("/me/notifications", response_model=NotificationPreferencesResponse)
+async def get_notification_preferences(
+    user: User = Depends(get_current_active_user),
+) -> NotificationPreferencesResponse:
+    prefs = user.notification_preferences or {}
+    return NotificationPreferencesResponse(
+        **{k: prefs.get(k, v) for k, v in _DEFAULT_PREFS.items()}
+    )
+
+
+@router.patch("/me/notifications", response_model=NotificationPreferencesResponse)
+async def update_notification_preferences(
+    body: UpdateNotificationPreferencesRequest,
+    user: User = Depends(get_current_active_user),
+    session: AsyncSession = Depends(get_session),
+) -> NotificationPreferencesResponse:
+    current = user.notification_preferences or {}
+    patch = body.model_dump(exclude_unset=True)
+    current.update(patch)
+    user.notification_preferences = current
+    await session.commit()
+    return NotificationPreferencesResponse(
+        **{k: current.get(k, v) for k, v in _DEFAULT_PREFS.items()}
+    )
+
+
+# ---------------------------------------------------------------------------
+# Translation defaults
+# ---------------------------------------------------------------------------
+
+_DEFAULT_TRANS_DEFAULTS = {
+    "preferred_source_lang": None,
+    "preferred_target_lang": None,
+    "default_glossary_id": None,
+    "auto_detect": False,
+}
+
+
+@router.get("/me/translation-defaults", response_model=TranslationDefaultsResponse)
+async def get_translation_defaults(
+    user: User = Depends(get_current_active_user),
+) -> TranslationDefaultsResponse:
+    td = user.translation_defaults or {}
+    return TranslationDefaultsResponse(
+        **{k: td.get(k, v) for k, v in _DEFAULT_TRANS_DEFAULTS.items()}
+    )
+
+
+@router.patch("/me/translation-defaults", response_model=TranslationDefaultsResponse)
+async def update_translation_defaults(
+    body: UpdateTranslationDefaultsRequest,
+    user: User = Depends(get_current_active_user),
+    session: AsyncSession = Depends(get_session),
+) -> TranslationDefaultsResponse:
+    current = user.translation_defaults or {}
+    patch = body.model_dump(exclude_unset=True)
+    current.update(patch)
+    user.translation_defaults = current
+    await session.commit()
+    return TranslationDefaultsResponse(
+        **{k: current.get(k, v) for k, v in _DEFAULT_TRANS_DEFAULTS.items()}
+    )
+
+
+# ---------------------------------------------------------------------------
+# API Keys
+# ---------------------------------------------------------------------------
+
+def _generate_key() -> tuple[str, str, str]:
+    """Generate a raw API key, its prefix, and SHA-256 hash.
+
+    Returns (raw_key, prefix, hash).
+    """
+    raw = f"ftn_{_secrets.token_urlsafe(32)}"
+    prefix = raw[:12]
+    h = hashlib.sha256(raw.encode()).hexdigest()
+    return raw, prefix, h
+
+
+@router.get("/me/api-keys", response_model=list[ApiKeyResponse])
+async def list_api_keys(
+    user: User = Depends(get_current_active_user),
+    session: AsyncSession = Depends(get_session),
+) -> list[ApiKeyResponse]:
+    keys = await session.execute(
+        select(ApiKey)
+        .where(ApiKey.user_id == user.id)
+        .where(ApiKey.revoked_at.is_(None))
+        .order_by(ApiKey.created_at.desc())
+    )
+    return [
+        ApiKeyResponse(
+            id=k.id,
+            name=k.name,
+            key_prefix=k.key_prefix,
+            created_at=k.created_at,
+            last_used_at=k.last_used_at,
+            revoked_at=k.revoked_at,
+        )
+        for k in keys.scalars().all()
+    ]
+
+
+@router.post("/me/api-keys", status_code=201, response_model=ApiKeyCreatedResponse)
+async def create_api_key(
+    body: CreateApiKeyRequest,
+    user: User = Depends(get_current_active_user),
+    session: AsyncSession = Depends(get_session),
+) -> ApiKeyCreatedResponse:
+    raw_key, prefix, key_hash = _generate_key()
+    now = datetime.now(timezone.utc)
+    key = ApiKey(
+        id=str(_uuid.uuid4()),
+        user_id=user.id,
+        name=body.name,
+        key_prefix=prefix,
+        key_hash=key_hash,
+        created_at=now,
+    )
+    session.add(key)
+    await session.commit()
+    return ApiKeyCreatedResponse(
+        id=key.id,
+        name=key.name,
+        key_prefix=key.key_prefix,
+        created_at=key.created_at,
+        raw_key=raw_key,
+    )
+
+
+@router.delete("/me/api-keys/{key_id}", status_code=204, response_model=None)
+async def revoke_api_key(
+    key_id: str,
+    user: User = Depends(get_current_active_user),
+    session: AsyncSession = Depends(get_session),
+) -> None:
+    result = await session.execute(
+        select(ApiKey).where(ApiKey.id == key_id, ApiKey.user_id == user.id)
+    )
+    key = result.scalar_one_or_none()
+    if key is None or key.revoked_at is not None:
+        raise HTTPException(status_code=404, detail="API key not found")
+    key.revoked_at = datetime.now(timezone.utc)
+    await session.commit()
+
+
+# ---------------------------------------------------------------------------
+# Team Workspace
+# ---------------------------------------------------------------------------
+
+
+@router.get("/me/workspace", response_model=WorkspaceResponse)
+async def get_workspace(
+    user: User = Depends(get_current_active_user),
+    session: AsyncSession = Depends(get_session),
+) -> WorkspaceResponse:
+    # Members: owner + any user with the same workspace_id
+    workspace_id = user.workspace_id or user.id
+    members_result = await session.execute(
+        select(User)
+        .where(
+            (User.id == workspace_id) | (User.workspace_id == workspace_id)
+        )
+        .where(User.deleted_at.is_(None))
+    )
+    members = [
+        MemberResponse(
+            id=u.id,
+            email=u.email,
+            full_name=u.full_name,
+            role="owner" if u.id == workspace_id else "member",
+            joined_at=u.created_at,
+        )
+        for u in members_result.scalars().all()
+    ]
+
+    # Pending invites (only workspace owner can see these)
+    invites_result = await session.execute(
+        select(TeamInvite)
+        .where(
+            TeamInvite.workspace_owner_id == workspace_id,
+            TeamInvite.status == "pending",
+            TeamInvite.expires_at > datetime.now(timezone.utc),
+        )
+        .order_by(TeamInvite.created_at.desc())
+    )
+    pending = [
+        InviteResponse(
+            id=i.id,
+            email=i.email,
+            role=i.role,
+            status=i.status,
+            created_at=i.created_at,
+            expires_at=i.expires_at,
+        )
+        for i in invites_result.scalars().all()
+    ]
+
+    return WorkspaceResponse(members=members, pending_invites=pending)
+
+
+@router.post("/me/workspace/invite", status_code=201, response_model=InviteResponse)
+async def invite_member(
+    body: InviteMemberRequest,
+    user: User = Depends(get_current_active_user),
+    session: AsyncSession = Depends(get_session),
+) -> InviteResponse:
+    workspace_id = user.workspace_id or user.id
+    token = _secrets.token_urlsafe(32)
+    expires = datetime.now(timezone.utc) + timedelta(days=7)
+    invite = TeamInvite(
+        id=str(_uuid.uuid4()),
+        workspace_owner_id=workspace_id,
+        email=body.email.lower(),
+        role=body.role,
+        token=token,
+        status="pending",
+        created_at=datetime.now(timezone.utc),
+        expires_at=expires,
+    )
+    session.add(invite)
+    await session.commit()
+    await session.refresh(invite)
+
+    # Send invite email
+    settings = get_settings()
+    inviter_name = user.full_name or user.email
+    workspace_name = "Forma Workspace"
+    invite_url = f"{settings.app_url}/invite?token={token}"
+    await _send_workspace_invite_email(
+        to_email=invite.email,
+        inviter_name=inviter_name,
+        workspace_name=workspace_name,
+        invite_token=token,
+        invite_url=invite_url,
+        expires_days=7,
+    )
+    log.info("team_invite_sent", invite_id=invite.id, email=invite.email)
+
+    return InviteResponse(
+        id=invite.id,
+        email=invite.email,
+        role=invite.role,
+        status=invite.status,
+        created_at=invite.created_at,
+        expires_at=invite.expires_at,
+    )
+
+
+@router.delete("/me/workspace/invite/{invite_id}", status_code=204, response_model=None)
+async def revoke_invite(
+    invite_id: str,
+    user: User = Depends(get_current_active_user),
+    session: AsyncSession = Depends(get_session),
+) -> None:
+    workspace_id = user.workspace_id or user.id
+    result = await session.execute(
+        select(TeamInvite)
+        .where(
+            TeamInvite.id == invite_id,
+            TeamInvite.workspace_owner_id == workspace_id,
+        )
+    )
+    invite = result.scalar_one_or_none()
+    if invite is None:
+        raise HTTPException(status_code=404, detail="Invite not found")
+    await session.delete(invite)
+    await session.commit()
+
+
+@router.delete("/me/workspace/member/{member_id}", status_code=204, response_model=None)
+async def remove_member(
+    member_id: str,
+    user: User = Depends(get_current_active_user),
+    session: AsyncSession = Depends(get_session),
+) -> None:
+    workspace_id = user.workspace_id or user.id
+    if member_id == workspace_id:
+        raise HTTPException(status_code=400, detail="Cannot remove the workspace owner")
+    result = await session.execute(
+        select(User).where(
+            User.id == member_id,
+            User.workspace_id == workspace_id,
+            User.deleted_at.is_(None),
+        )
+    )
+    member = result.scalar_one_or_none()
+    if member is None:
+        raise HTTPException(status_code=404, detail="Member not found")
+    member.workspace_id = None
+    await session.commit()
