@@ -74,6 +74,10 @@ class Settings(BaseSettings):
     smtp_password: SecretStr = SecretStr("")
     smtp_from: str = "noreply@forma.app"
     smtp_tls: bool = True
+    lead_notification_to: str = ""
+
+    # Application base URL — used in email links.
+    app_url: str = "http://localhost:8080"
 
     @field_validator("token_budget")
     @classmethod

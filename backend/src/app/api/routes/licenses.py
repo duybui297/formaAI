@@ -24,6 +24,8 @@ from app.schemas.license import (
     CheckoutRequest,
     InternalCreateLicenseRequest,
     LicenseResponse,
+    MyLicensesResponse,
+    MyLicenseItem,
 )
 from app.services import license_service
 
@@ -90,6 +92,52 @@ async def get_my_entitlements(
         "ocr_allowed": entitlement.ocr_allowed,
         "glossary_allowed": entitlement.glossary_allowed,
     }
+
+
+@router.get(
+    "/my-licenses",
+    response_model=MyLicensesResponse,
+    status_code=status.HTTP_200_OK,
+    summary="List all licenses owned by the authenticated user",
+)
+async def get_my_licenses(
+    current_user: User = Depends(get_current_active_user),
+    session: AsyncSession = Depends(get_session),
+) -> MyLicensesResponse:
+    """Return all licenses belonging to the current user.
+
+    Includes both PENDING (not yet activated) and ACTIVE/EXPIRED/SUSPENDED/REVOKED
+    licenses so the user can see:
+      - Which licenses are waiting to be activated
+      - Status of previously activated licenses
+
+    The raw key is never returned — it is only shown once at creation time.
+    A PENDING license that has not been activated cannot be "recovered" by the
+    user; they must contact the admin for a new key.
+
+    The `pending_count` field lets the UI show a badge like "1 license pending
+    activation" on the sidebar nav item.
+    """
+    from sqlalchemy import func, select
+    from app.db.models import License
+
+    result = await session.execute(
+        select(License)
+        .where(License.customer_id == str(current_user.id))
+        .order_by(License.issued_at.desc())
+    )
+    licenses = result.scalars().all()
+
+    items = [MyLicenseItem.from_license(lic) for lic in licenses]
+    pending_count = sum(
+        1 for lic in items if lic.status == "pending"
+    )
+
+    return MyLicensesResponse(
+        licenses=items,
+        total=len(items),
+        pending_count=pending_count,
+    )
 
 
 @router.post(

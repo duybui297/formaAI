@@ -153,6 +153,23 @@ export interface LicenseActivity {
   created_at: string
 }
 
+// --- User license portal types (TASK-2.1-g) ---
+export interface MyLicenseItem {
+  id: string
+  tier: LicenseTier
+  status: LicenseStatus
+  issued_at: string
+  activated_at: string | null
+  expired_at: string | null
+  max_devices: number
+}
+
+export interface MyLicensesResponse {
+  licenses: MyLicenseItem[]
+  total: number
+  pending_count: number
+}
+
 export interface LicensesListParams {
   tier?: LicenseTier
   status?: LicenseStatus
@@ -290,4 +307,21 @@ export interface LeadResponse {
   email: string
   plan: string
   created_at: string
+}
+
+// --- User notifications (derived from jobs + licenses data) ---
+
+export interface Notification {
+  id: string
+  type: "job_complete" | "job_failed" | "license_expiry" | "no_license"
+  title: string
+  description: string
+  time: string
+  job_id?: string
+  filename?: string
+  license_id?: string
+}
+
+export interface NotificationsResponse {
+  notifications: Notification[]
 }

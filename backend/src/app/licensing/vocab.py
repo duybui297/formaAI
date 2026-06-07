@@ -56,8 +56,8 @@ def fe_tier_to_be(fe_tier: str) -> LicenseTier:
 
 
 def be_tier_to_fe(be_tier: LicenseTier) -> str:
-    """Convert BE LicenseTier enum to FE tier string."""
-    return TIER_BE_TO_FE[be_tier]
+    """Convert BE LicenseTier enum to FE tier string. Returns 'unknown' for invalid values."""
+    return TIER_BE_TO_FE.get(be_tier, "unknown")
 
 
 def fe_status_to_be(fe_status: str) -> LicenseStatus:
@@ -70,5 +70,5 @@ def fe_status_to_be(fe_status: str) -> LicenseStatus:
 
 
 def be_status_to_fe(be_status: LicenseStatus) -> str:
-    """Convert BE LicenseStatus enum to FE status string."""
-    return STATUS_BE_TO_FE[be_status]
+    """Convert BE LicenseStatus enum to FE status string. Returns 'unknown' for invalid values."""
+    return STATUS_BE_TO_FE.get(be_status, "unknown")
