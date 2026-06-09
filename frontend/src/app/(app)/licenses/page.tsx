@@ -14,7 +14,7 @@ import {
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { getMyLicenses } from "@/lib/api"
-import type { MyLicenseItem, LicenseTier, LicenseStatus } from "@/lib/types"
+import type { MyLicenseItem, MyLicensesResponse, LicenseTier, LicenseStatus } from "@/lib/types"
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -147,7 +147,7 @@ function LicenseCard({ license }: { license: MyLicenseItem }) {
 export default function MyLicensesPage() {
   const router = useRouter()
 
-  const { data, isLoading, isError, refetch, isFetching } = useQuery({
+  const { data, isLoading, isError, refetch, isFetching } = useQuery<MyLicensesResponse>({
     queryKey: ["my-licenses"],
     queryFn: getMyLicenses,
     refetchOnWindowFocus: true,
