@@ -647,7 +647,6 @@ function NotificationsTab() {
         <div className="divide-y divide-zinc-100">
           {NOTIFICATION_ITEMS.map(({ key, title, description }) => {
             const enabled = prefs?.[key] ?? false
-            const pending = mutation.variables !== undefined && mutation.isLoading
             return (
               <div
                 key={key}
@@ -1178,9 +1177,6 @@ function TeamWorkspaceTab() {
                     {member.role === "owner" && (
                       <span className="shrink-0 text-xs font-medium px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">Owner</span>
                     )}
-                    {member.role === "admin" && (
-                      <span className="shrink-0 text-xs font-medium px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">Admin</span>
-                    )}
                   </div>
                   <p className="text-xs text-zinc-400 truncate">{member.email}</p>
                 </div>
@@ -1207,10 +1203,12 @@ function TeamWorkspaceTab() {
 // ---------------------------------------------------------------------------
 
 const PLACEHOLDER_MESSAGES: Record<NavId, string> = {
+  profile: "Your profile information and account settings.",
   workspace: "Team Workspace allows you to collaborate with your colleagues on translation projects. Invite team members and manage their access levels.",
   api: "API Keys allow programmatic access to the Forma translation API. Generate and manage your API keys here.",
   translation: "Translation Defaults let you set your preferred source language, target language, and glossary for new translation jobs.",
   notifications: "Notification preferences control which emails and in-app alerts you receive for job completions and license updates.",
+  security: "Security settings for your account. Manage your password and two-factor authentication.",
   billing: "Billing information and your current plan details are managed here. View invoices and upgrade or downgrade your subscription.",
 }
 
