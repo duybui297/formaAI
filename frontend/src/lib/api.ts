@@ -7,6 +7,7 @@ import type {
   LicenseActivity,
   LicensesListParams,
   LicensesListResponse,
+  MyLicensesResponse,
   CreateLicenseRequest,
   CreateLicenseResponse,
   ActivateLicenseRequest,
