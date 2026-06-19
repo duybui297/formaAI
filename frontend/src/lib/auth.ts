@@ -124,21 +124,22 @@ export async function authFetch(
 // Auth API calls
 // ---------------------------------------------------------------------------
 
-export async function registerApi(data: {
+export async function signupApi(data: {
   email: string
   password: string
   full_name?: string
-}): Promise<void> {
-  const res = await authFetch("/auth/register", {
+}): Promise<{ message: string; [key: string]: unknown }> {
+  const res = await authFetch("/v1/auth/signup", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
-    throwOnError: true,
+    throwOnError: false,
   })
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: "Registration failed" }))
-    throw new Error(err.detail || "Registration failed")
+    const err = await res.json().catch(() => ({ detail: "Sign up failed" }))
+    throw new Error(err.detail || "Sign up failed")
   }
+  return await res.json()
 }
 
 // ---------------------------------------------------------------------------
@@ -148,7 +149,7 @@ export async function loginApi(data: {
   email: string
   password: string
 }): Promise<{ access_token: string }> {
-  const res = await authFetch("/auth/login", {
+  const res = await authFetch("/v1/auth/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
@@ -167,7 +168,7 @@ export async function loginApi(data: {
 }
 
 export async function logoutApi(): Promise<void> {
-  await authFetch("/auth/logout", {
+  await authFetch("/v1/auth/logout", {
     method: "POST",
     throwOnError: false,
   })
@@ -176,7 +177,7 @@ export async function logoutApi(): Promise<void> {
 }
 
 export async function getMeApi(): Promise<AuthUser> {
-  const res = await authFetch("/auth/me", { throwOnError: false })
+  const res = await authFetch("/v1/auth/me", { throwOnError: false })
   if (!res.ok) {
     clearToken()
     throw new Error("Not authenticated")
@@ -192,7 +193,7 @@ export async function refreshAccessToken(): Promise<string | null> {
       return match ? decodeURIComponent(match[1]) : ""
     })()
 
-    const res = await fetch("/api/auth/refresh", {
+    const res = await fetch("/api/v1/auth/refresh", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -218,7 +219,7 @@ export async function refreshAccessToken(): Promise<string | null> {
 }
 
 export async function forgotPasswordApi(email: string): Promise<{ message: string }> {
-  const res = await authFetch("/auth/forgot-password", {
+  const res = await authFetch("/v1/auth/forgot-password", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email }),
@@ -229,7 +230,7 @@ export async function forgotPasswordApi(email: string): Promise<{ message: strin
 }
 
 export async function checkEmailExists(email: string): Promise<void> {
-  const res = await authFetch("/auth/forgot-password?check_only=true", {
+  const res = await authFetch("/v1/auth/forgot-password?check_only=true", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email }),
@@ -245,7 +246,7 @@ export async function resetPasswordApi(
   token: string,
   new_password: string
 ): Promise<{ message: string }> {
-  const res = await authFetch("/auth/reset-password", {
+  const res = await authFetch("/v1/auth/reset-password", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ token, new_password }),

@@ -94,7 +94,7 @@ function UserSection() {
           <Link href="/login" className="text-xs text-indigo-600 hover:underline">
             Sign in
           </Link>
-          <Link href="/register" className="text-xs text-zinc-400 hover:text-zinc-600">
+          <Link href="/signup" className="text-xs text-zinc-400 hover:text-zinc-600">
             Register
           </Link>
         </div>

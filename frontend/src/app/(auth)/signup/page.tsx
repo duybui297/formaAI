@@ -1,13 +1,12 @@
 "use client"
 import { Suspense, useState } from "react"
 import Link from "next/link"
-import Image from "next/image"
 import { useRouter } from "next/navigation"
-import { Eye, EyeOff, Loader2, ArrowRight } from "lucide-react"
+import { Eye, EyeOff, Loader2, ArrowRight, CheckCircle2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { registerApi, loginApi, setToken, setStoredUser, setAuthCookie } from "@/lib/auth"
+import { signupApi } from "@/lib/auth"
 
 function validateEmail(value: string): string | null {
   if (!value) return "Email is required"
@@ -18,6 +17,8 @@ function validateEmail(value: string): string | null {
 function validatePassword(value: string): string | null {
   if (!value) return "Password is required"
   if (value.length < 8) return "Password must be at least 8 characters"
+  if (!/[A-Z]/.test(value)) return "Password must contain at least one uppercase letter"
+  if (!/\d/.test(value)) return "Password must contain at least one number"
   return null
 }
 
@@ -27,12 +28,12 @@ function validateConfirmPassword(value: string, password: string): string | null
   return null
 }
 
-  function validateFullName(value: string): string | null {
+function validateFullName(value: string): string | null {
   if (!value.trim()) return "Full name is required"
   return null
 }
 
-function RegisterForm() {
+function SignupForm() {
   const router = useRouter()
 
   const [fullName, setFullName] = useState("")
@@ -47,6 +48,7 @@ function RegisterForm() {
   const [emailError, setEmailError] = useState<string | null>(null)
   const [passwordError, setPasswordError] = useState<string | null>(null)
   const [confirmPasswordError, setConfirmPasswordError] = useState<string | null>(null)
+  const [success, setSuccess] = useState(false)
 
   function clearFullNameError() {
     setFullNameError(null)
@@ -99,27 +101,51 @@ function RegisterForm() {
 
     setLoading(true)
     try {
-      await registerApi({
+      await signupApi({
         email,
         password,
         full_name: fullName || undefined,
       })
-      const result = await loginApi({ email, password })
-      setToken(result.access_token)
-      setAuthCookie(result.access_token)
-      const meRes = await fetch("/api/auth/me", {
-        headers: { Authorization: `Bearer ${result.access_token}` },
-      })
-      if (meRes.ok) {
-        setStoredUser(await meRes.json())
-      }
-      router.push("/translator")
-      router.refresh()
+      // US-1.1: do NOT auto-login — user must verify email first.
+      setSuccess(true)
     } catch (err) {
-      setApiError(err instanceof Error ? err.message : "Registration failed. Please try again.")
+      setApiError(err instanceof Error ? err.message : "Sign up failed. Please try again.")
     } finally {
       setLoading(false)
     }
+  }
+
+  if (success) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-white px-6">
+        <div className="w-full max-w-[420px] text-center">
+          <div className="flex justify-center mb-6">
+            <CheckCircle2 className="w-16 h-16 text-[#3772FF]" />
+          </div>
+          <h2 className="text-[28px] font-bold leading-tight text-[#0C1B33] mb-3">
+            Check your email
+          </h2>
+          <p className="text-sm text-[#6B7280] mb-2">
+            We&apos;ve sent a verification link to
+          </p>
+          <p className="text-sm font-semibold text-[#0C1B33] mb-6">
+            {email}
+          </p>
+          <p className="text-sm text-[#6B7280] mb-8 leading-relaxed">
+            Click the link in the email to activate your account.
+            The link expires in <strong>24 hours</strong>.
+          </p>
+          <Button
+            type="button"
+            onClick={() => router.push("/login")}
+            className="w-full h-11 rounded-xl text-sm font-semibold text-white
+              bg-[#3772FF] hover:bg-[#2a5dcc] transition-colors shadow-sm"
+          >
+            Back to sign in
+          </Button>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -236,7 +262,7 @@ function RegisterForm() {
               <Input
                 id="password"
                 type={showPassword ? "text" : "password"}
-                placeholder="Enter your password"
+                placeholder="Min 8 chars, 1 uppercase, 1 number"
                 value={password}
                 onChange={(e) => { setPassword(e.target.value); clearPasswordError() }}
                 autoComplete="new-password"
@@ -339,7 +365,7 @@ function RegisterForm() {
   )
 }
 
-export default function RegisterPage() {
+export default function SignupPage() {
   return (
     <Suspense
       fallback={
@@ -348,7 +374,7 @@ export default function RegisterPage() {
         </div>
       }
     >
-      <RegisterForm />
+      <SignupForm />
     </Suspense>
   )
 }

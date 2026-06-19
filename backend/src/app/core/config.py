@@ -48,7 +48,6 @@ class Settings(BaseSettings):
         description="JSON map of 'src->tgt' to float expansion ratio threshold. Default 1.5 if pair absent.",
     )
 
-    # License key signing (TASK-1.2: HMAC-SHA256 secret for key generation)
     license_signing_secret: SecretStr = Field(
         description="HMAC signing secret for license key generation. "
         "Generate with: python -c \"import secrets; print(secrets.token_urlsafe(32))\""
@@ -65,6 +64,8 @@ class Settings(BaseSettings):
     login_attempt_window_minutes: int = 10
     login_lockout_minutes: int = 15
     password_reset_token_expire_minutes: int = 60  # 1 hour
+    email_verification_token_expire_minutes: int = 1440
+    signup_rate_limit_per_minute: int = 5
     forgot_password_cooldown_seconds: int = 60  # prevent spam — minimum time between reset emails
 
     # Email SMTP
@@ -76,14 +77,39 @@ class Settings(BaseSettings):
     smtp_tls: bool = True
     lead_notification_to: str = ""
 
-    # Application base URL — used in email links.
-    app_url: str = "http://localhost:8080"
+    app_url: str = Field(
+        description="Public base URL of the frontend. Used to build links inside "
+        "emails (activate, reset, welcome, verify). Example: https://app.forma.app",
+    )
 
     @field_validator("token_budget")
     @classmethod
     def validate_token_budget(cls, v: int) -> int:
         if not (500 <= v <= 7000):
             raise ValueError(f"token_budget must be 500-7000, got {v}")
+        return v
+
+    @field_validator("app_url")
+    @classmethod
+    def validate_app_url(cls, v: str) -> str:
+        """Fail fast on misconfigured APP_URL — broken email links are silent failures.
+
+        A missing or wrong APP_URL only surfaces when a customer receives an
+        email, so we validate at startup and reject obviously bad values.
+        """
+        from urllib.parse import urlparse
+
+        v = v.strip().rstrip("/")
+        if not v:
+            raise ValueError("APP_URL must not be empty")
+        parsed = urlparse(v)
+        if parsed.scheme not in ("http", "https"):
+            raise ValueError(
+                f"APP_URL must start with http:// or https://, got '{parsed.scheme}://' "
+                f"(check APP_URL in .env)"
+            )
+        if not parsed.netloc:
+            raise ValueError(f"APP_URL is missing a host, got '{v}' (check APP_URL in .env)")
         return v
 
     @field_validator("expansion_ratio_thresholds")

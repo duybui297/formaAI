@@ -17,7 +17,7 @@ export default function HomePage() {
       const token = getAccessToken()
       if (token) {
         try {
-          const res = await fetch("/api/auth/me", {
+          const res = await fetch("/api/v1/auth/me", {
             headers: { Authorization: `Bearer ${token}` },
           })
           if (res.ok) {

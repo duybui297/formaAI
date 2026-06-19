@@ -53,7 +53,7 @@ function LoginForm() {
       setToken(result.access_token)
       // Set httpOnly-accessible cookie so middleware can read it (Edge Runtime)
       setAuthCookie(result.access_token)
-      const meRes = await fetch("/api/auth/me", {
+      const meRes = await fetch("/api/v1/auth/me", {
         headers: { Authorization: `Bearer ${result.access_token}` },
       })
       if (meRes.ok) {
@@ -236,7 +236,7 @@ function LoginForm() {
           <p className="mt-6 text-center text-sm text-[#6B7280]">
             Don&apos;t have an account?{" "}
             <Link
-              href="/register"
+              href="/signup"
               className="text-[#3772FF] hover:text-[#2a5dcc] font-semibold transition-colors"
             >
               Create one

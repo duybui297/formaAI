@@ -1,14 +1,15 @@
 /**
- * TASK-3.4: User Registration — behaviors 3.4-d and 3.4-e
+ * US-1.1: Email + Password Signup — e2e behaviors
  *
  * All /api/* routes are mocked with page.route() — no running backend required.
  *
- * /register is a PUBLIC AUTH_ROUTE (middleware.ts).
- * On success, the page calls registerApi → loginApi → /api/auth/me, then
- * router.push("/translator").
+ * /signup is a PUBLIC AUTH_ROUTE (middleware.ts).
+ * On success, the page calls signupApi → /api/v1/auth/signup, then shows
+ * a "Check your email" success state (no auto-login — user must verify email first).
  *
- * 3.4-d: register success — valid form → account created → lands in app
- * 3.4-e: register validation — password mismatch → inline error, no navigation
+ * US-1.1-d: signup success — valid form → 201 → "Check your email" page visible
+ * US-1.1-e: signup validation — password mismatch / weak password → inline error, no API call
+ * US-1.1-f: duplicate email → 409 with "Email already registered. Sign in?"
  */
 
 import { test, expect, type Page } from "@playwright/test";
@@ -17,104 +18,68 @@ import { test, expect, type Page } from "@playwright/test";
 // Constants
 // ---------------------------------------------------------------------------
 
-const FAKE_TOKEN = "test-jwt-token-3.4";
-
-const FAKE_USER = {
-  id: "user-3.4",
-  email: "newuser@example.com",
-  full_name: "New User",
-  is_active: true,
-  is_superuser: false,
-};
+const VALID_PASSWORD = "SecurePass123"; // 8+ chars, 1 uppercase, 1 digit
+const NEW_EMAIL = "newuser@example.com";
 
 // ---------------------------------------------------------------------------
 // Stub helpers
 // ---------------------------------------------------------------------------
 
-/** Stub all routes needed after a successful register+login flow */
-async function stubPostRegisterRoutes(page: Page) {
-  // The page calls /api/auth/register (via authFetch which prepends /api)
-  await page.route("**/api/auth/register", (route) =>
+/** Stub all routes needed for a successful signup flow */
+async function stubPostSignupRoutes(page: Page) {
+  // The page calls /api/v1/auth/signup (via authFetch which prepends /api)
+  await page.route("**/api/v1/auth/signup", (route) =>
     route.fulfill({
       status: 201,
       contentType: "application/json",
-      body: JSON.stringify({ message: "User created successfully" }),
-    })
-  );
-
-  // The page calls /api/auth/login after registration
-  await page.route("**/api/auth/login", (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({ access_token: FAKE_TOKEN }),
-    })
-  );
-
-  // The page fetches /api/auth/me after getting the token
-  await page.route("**/api/auth/me", (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify(FAKE_USER),
-    })
-  );
-
-  // App shell may call these
-  await page.route("**/api/health", (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({ status: "ok" }),
-    })
-  );
-
-  await page.route("**/api/auth/refresh", (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({ access_token: FAKE_TOKEN }),
+      body: JSON.stringify({
+        id: "user-new",
+        email: NEW_EMAIL,
+        full_name: "New User",
+        is_active: true,
+        is_superuser: false,
+        message:
+          "Account created. Please check your email to verify your address.",
+      }),
     })
   );
 }
 
 // ---------------------------------------------------------------------------
-// 3.4-d: register success
+// US-1.1-d: signup success → "Check your email" page
 // ---------------------------------------------------------------------------
 
-test("register success", async ({ page }) => {
-  await stubPostRegisterRoutes(page);
+test("signup success shows check your email state", async ({ page }) => {
+  await stubPostSignupRoutes(page);
 
-  await page.goto("/register");
+  await page.goto("/signup");
 
-  // Confirm the page renders
-  await expect(page.getByRole("heading", { name: /Create your account/i })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: /Create your account/i })
+  ).toBeVisible();
 
-  // Fill the form
   await page.fill("#full_name", "New User");
-  await page.fill("#email", "newuser@example.com");
-  await page.fill("#password", "SecurePass123");
-  await page.fill("#confirmPassword", "SecurePass123");
+  await page.fill("#email", NEW_EMAIL);
+  await page.fill("#password", VALID_PASSWORD);
+  await page.fill("#confirmPassword", VALID_PASSWORD);
 
-  // Submit
   await page.click('button[type="submit"]');
 
-  // After register + login + me, router.push("/translator") fires
-  // Middleware will allow access since the cookie/token is set
-  await page.waitForURL("**/translator", { timeout: 15000 });
-  expect(page.url()).toContain("/translator");
+  // After successful signup, show the "Check your email" success state
+  await expect(
+    page.getByRole("heading", { name: /Check your email/i })
+  ).toBeVisible({ timeout: 10000 });
+  await expect(page.getByText(NEW_EMAIL)).toBeVisible();
 });
 
 // ---------------------------------------------------------------------------
-// 3.4-e: register validation
+// US-1.1-e: signup validation — password mismatch
 // ---------------------------------------------------------------------------
 
-test("register validation", async ({ page }) => {
-  // Track whether register endpoint was called — it must NOT be
-  let registerCalled = false;
-  await page.route("**/api/auth/register", (route) => {
-    registerCalled = true;
-    // Fulfill anyway to avoid hanging, but the test asserts it was never reached
+test("signup validation — password mismatch", async ({ page }) => {
+  let signupCalled = false;
+  await page.route("**/api/v1/auth/signup", (route) => {
+    signupCalled = true;
     route.fulfill({
       status: 201,
       contentType: "application/json",
@@ -122,25 +87,68 @@ test("register validation", async ({ page }) => {
     });
   });
 
-  await page.goto("/register");
+  await page.goto("/signup");
 
-  await expect(page.getByRole("heading", { name: /Create your account/i })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: /Create your account/i })
+  ).toBeVisible();
 
-  // Fill with mismatched passwords
   await page.fill("#full_name", "Some User");
   await page.fill("#email", "someuser@example.com");
-  await page.fill("#password", "Password123");
+  await page.fill("#password", VALID_PASSWORD);
   await page.fill("#confirmPassword", "DifferentPass456");
 
-  // Submit
   await page.click('button[type="submit"]');
 
-  // Inline error must be visible
   await expect(page.getByText("Passwords do not match")).toBeVisible();
 
-  // URL must stay on /register — no navigation happened
-  expect(page.url()).toContain("/register");
+  expect(page.url()).toContain("/signup");
+  expect(signupCalled).toBe(false);
+});
 
-  // Register API must NOT have been called
-  expect(registerCalled).toBe(false);
+test("signup validation — weak password", async ({ page }) => {
+  let signupCalled = false;
+  await page.route("**/api/v1/auth/signup", (route) => {
+    signupCalled = true;
+    route.fulfill({ status: 201, body: "{}" });
+  });
+
+  await page.goto("/signup");
+
+  await page.fill("#full_name", "Some User");
+  await page.fill("#email", "weakpw@example.com");
+  await page.fill("#password", "weakpassword"); // no uppercase, no digit
+  await page.fill("#confirmPassword", "weakpassword");
+
+  await page.click('button[type="submit"]');
+
+  await expect(
+    page.getByText(/at least one uppercase letter/i)
+  ).toBeVisible();
+
+  expect(signupCalled).toBe(false);
+});
+
+test("signup duplicate email — server 409 message", async ({ page }) => {
+  await page.route("**/api/v1/auth/signup", (route) =>
+    route.fulfill({
+      status: 409,
+      contentType: "application/json",
+      body: JSON.stringify({
+        detail: "Email already registered. Sign in?",
+      }),
+    })
+  );
+
+  await page.goto("/signup");
+  await page.fill("#full_name", "Dup User");
+  await page.fill("#email", "existing@example.com");
+  await page.fill("#password", VALID_PASSWORD);
+  await page.fill("#confirmPassword", VALID_PASSWORD);
+
+  await page.click('button[type="submit"]');
+
+  await expect(
+    page.getByText(/Email already registered\. Sign in\?/i)
+  ).toBeVisible();
 });
