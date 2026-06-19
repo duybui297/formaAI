@@ -1,30 +1,32 @@
 """
-Auth routes: register, login, logout, refresh, forgot-password, reset-password.
+Auth routes: signup, login, logout, refresh, forgot-password, reset-password, verify-email.
 
-POST /auth/register        — create account
-POST /auth/login           — email+password → 15-min access token + 30-d httpOnly refresh cookie
-POST /auth/refresh        — rotate refresh cookie, issue new 15-min access token (CSRF required)
-POST /auth/logout          — clear cookie, revoke refresh
-GET  /auth/me              — return current user info (protected)
-PATCH /auth/me             — update full_name
-PATCH /auth/me/password    — change password
-POST /auth/me/avatar        — upload avatar image
-GET  /auth/me/notifications — get notification preferences
-PATCH /auth/me/notifications — update notification preferences
-GET  /auth/me/translation-defaults — get translation defaults
-PATCH /auth/me/translation-defaults — update translation defaults
-GET  /auth/me/api-keys     — list API keys
-POST /auth/me/api-keys     — create API key
-DELETE /auth/me/api-keys/{key_id} — revoke API key
-GET  /auth/me/workspace    — get workspace members + pending invites
-POST /auth/me/workspace/invite — invite member
-DELETE /auth/me/workspace/invite/{invite_id} — revoke invite
-DELETE /auth/me/workspace/member/{member_id} — remove member
-POST /auth/forgot-password — send reset email (or silent success for security)
-POST /auth/reset-password  — validate token + update password
+POST   /v1/auth/signup            — create account + default Free license + send verify email
+POST   /v1/auth/verify-email      — validate verify token, set user.email_verified=True
+POST   /v1/auth/login             — email+password → 15-min access token + 30-d httpOnly refresh cookie
+POST   /v1/auth/refresh           — rotate refresh cookie, issue new 15-min access token (CSRF required)
+POST   /v1/auth/logout            — clear cookie, revoke refresh
+GET    /v1/auth/me                — return current user info (protected)
+PATCH  /v1/auth/me                — update full_name
+PATCH  /v1/auth/me/password       — change password
+POST   /v1/auth/me/avatar         — upload avatar image
+GET    /v1/auth/me/notifications  — get notification preferences
+PATCH  /v1/auth/me/notifications  — update notification preferences
+GET    /v1/auth/me/translation-defaults   — get translation defaults
+PATCH  /v1/auth/me/translation-defaults   — update translation defaults
+GET    /v1/auth/me/api-keys       — list API keys
+POST   /v1/auth/me/api-keys       — create API key
+DELETE /v1/auth/me/api-keys/{key_id}      — revoke API key
+GET    /v1/auth/me/workspace      — get workspace members + pending invites
+POST   /v1/auth/me/workspace/invite       — invite member
+DELETE /v1/auth/me/workspace/invite/{invite_id}  — revoke invite
+DELETE /v1/auth/me/workspace/member/{member_id}   — remove member
+POST   /v1/auth/forgot-password   — send reset email (or silent success for security)
+POST   /v1/auth/reset-password    — validate token + update password
 """
 from __future__ import annotations
 
+import asyncio
 import html
 import hashlib
 import os
@@ -50,7 +52,8 @@ from app.core.security import (
     hash_password,
     verify_password,
 )
-from app.db.models import ApiKey, PasswordResetToken, TeamInvite, User
+from app.db.models import ApiKey, EmailVerificationToken, License, LicenseStatus, LicenseTier, PasswordResetToken, TeamInvite, User
+from app.licensing.keygen import generate_license_key, hash_key
 from app.db.session import get_session
 from app.schemas.auth import (
     ApiKeyCreatedResponse,
@@ -74,12 +77,13 @@ from app.schemas.auth import (
     UpdateNotificationPreferencesRequest,
     UpdateTranslationDefaultsRequest,
     UserResponse,
+    VerifyEmailRequest,
     WorkspaceResponse,
 )
 from app.api.deps import get_current_active_user, get_redis
 
 log = structlog.get_logger()
-router = APIRouter(prefix="/auth", tags=["auth"])
+router = APIRouter(prefix="/v1/auth", tags=["auth"])
 
 CSRF_COOKIE = "csrf_token"
 REFRESH_COOKIE = "refresh_token"
@@ -492,19 +496,147 @@ async def _send_workspace_invite_email(
         log.error("smtp_invite_send_failed", to=to_email, error=str(exc))
 
 
+async def _send_verification_email(
+    to_email: str, token: str, base_url: str
+) -> None:
+    """US-1.1: send the email-verification link (TTL 24h)."""
+    settings = get_settings()
+    if not settings.smtp_user or not settings.smtp_password.get_secret_value():
+        log.warning("smtp_not_configured_skipping_verification_email", to=to_email)
+        return
+
+    verify_url = f"{base_url}/verify-email?token={token}"
+    safe_url = html.escape(verify_url)
+
+    text_body = (
+        "Welcome to Forma!\n"
+        "==================\n\n"
+        "Thanks for signing up. Please verify your email address by clicking "
+        "the link below. This link expires in 24 hours.\n\n"
+        f"{verify_url}\n\n"
+        "If you didn't create this account, you can safely ignore this email.\n"
+        "\n— The Forma team\n"
+    )
+
+    html_body = f"""
+    <html>
+      <body style="margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;color:#18181b;background-color:#f4f4f5;">
+        <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f4f5;padding:40px 16px;">
+          <tr>
+            <td align="center">
+              <table width="560" cellpadding="0" cellspacing="0" style="background-color:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.08);">
+                <tr>
+                  <td style="background-color:#1a1a2e;padding:32px 40px;text-align:center;">
+                    <p style="margin:0;font-size:11px;letter-spacing:3px;color:#818cf8;text-transform:uppercase;font-weight:700;">Forma</p>
+                    <h1 style="margin:12px 0 0;font-size:24px;font-weight:700;color:#ffffff;letter-spacing:-0.5px;">Verify your email</h1>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:40px;">
+                    <p style="margin:0 0 20px;font-size:16px;line-height:1.6;color:#3f3f46;">
+                      Thanks for signing up for Forma. Click the button below to verify your email and activate your account.
+                    </p>
+                    <p style="margin:0 0 28px;font-size:16px;line-height:1.6;color:#3f3f46;">
+                      This link will expire in <strong>24 hours</strong>.
+                    </p>
+                    <table cellpadding="0" cellspacing="0" style="margin:0 auto 28px;">
+                      <tr>
+                        <td style="background-color:#6366f1;border-radius:8px;text-align:center;">
+                          <a href="{safe_url}" style="display:inline-block;padding:14px 32px;font-size:15px;font-weight:600;color:#ffffff;text-decoration:none;letter-spacing:-0.2px;">Verify Email</a>
+                        </td>
+                      </tr>
+                    </table>
+                    <p style="margin:0 0 24px;font-size:14px;line-height:1.5;color:#71717a;text-align:center;">
+                      If the button doesn't work, copy and paste this link into your browser:<br>
+                      <a href="{safe_url}" style="color:#6366f1;word-break:break-all;text-decoration:none;">{safe_url}</a>
+                    </p>
+                    <div style="background-color:#fafafa;border-left:3px solid #e4e4e7;padding:16px 20px;border-radius:0 8px 8px 0;">
+                      <p style="margin:0;font-size:14px;color:#71717a;line-height:1.5;">
+                        <strong style="color:#3f3f46;">Didn't sign up?</strong> You can safely ignore this email — no account will be created.
+                      </p>
+                    </div>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="background-color:#fafafa;padding:24px 40px;border-top:1px solid #f4f4f5;">
+                    <p style="margin:0;font-size:12px;color:#a1a1aa;text-align:center;">
+                      — The Forma team
+                    </p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+      </body>
+    </html>
+    """.strip()
+
+    msg = EmailMessage()
+    msg["From"] = settings.smtp_from
+    msg["To"] = to_email
+    msg["Subject"] = "Verify your Forma email"
+    msg.set_content(text_body)
+    msg.add_alternative(html_body, subtype="html")
+
+    try:
+        smtp = SMTP(
+            hostname=settings.smtp_host,
+            port=settings.smtp_port,
+            start_tls=settings.smtp_tls,
+        )
+        await smtp.connect()
+        await smtp.login(settings.smtp_user, settings.smtp_password.get_secret_value())
+        await smtp.send_message(msg)
+        await smtp.quit()
+        log.info("verification_email_sent", to=to_email)
+    except Exception as exc:
+        log.error("smtp_verification_send_failed", to=to_email, error=str(exc))
+
+
 # Routes
-@router.post("/register", status_code=201)
-async def register(
+@router.post("/signup", status_code=201)
+async def signup(
     body: RegisterRequest,
+    request: Request,
     session: AsyncSession = Depends(get_session),
-) -> UserResponse:
+    redis: Redis = Depends(get_redis),
+) -> dict:
+    """US-1.1 Email + password signup.
+
+    1. IP rate-limit (5/min)
+    2. Reject duplicate email with 409 + "Email already registered. Sign in?"
+    3. In a single transaction: create User, default Free License (TRIAL/14d),
+       and EmailVerificationToken (TTL 24h)
+    4. Send verification email (fire-and-forget so response is not blocked)
+    5. Login is blocked until user clicks the verification link
+    """
+    settings = get_settings()
+    ip = _client_ip(request)
+
+    # --- IP rate-limit 5/min -------------------------------------------------
+    rl_key = f"signup_rate:{ip}"
+    pipe = redis.pipeline()
+    pipe.incr(rl_key)
+    pipe.expire(rl_key, 60)
+    results = await pipe.execute()
+    count = results[0]
+    if count > settings.signup_rate_limit_per_minute:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many signup attempts from this IP. Please try again in a minute.",
+        )
+
+    # --- Duplicate email guard ----------------------------------------------
     existing = await _get_user_by_email(session, body.email)
     if existing is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="An account with this email already exists",
+            detail="Email already registered. Sign in?",
         )
 
+    # --- User + License (Free=TRIAL) + EmailVerificationToken in 1 tx --------
+    now = datetime.now(timezone.utc)
     user = User(
         email=body.email.lower(),
         hashed_password=hash_password(body.password),
@@ -512,19 +644,110 @@ async def register(
         email_verified=False,
     )
     session.add(user)
+    await session.flush()  # populate user.id without committing
+
+    raw_key = generate_license_key(
+        settings.license_signing_secret.get_secret_value(),
+        user.id,
+    )
+    free_license = License(
+        key_hash=hash_key(raw_key),
+        tier=LicenseTier.TRIAL,             # Free plan maps to TRIAL (plans.py)
+        status=LicenseStatus.ACTIVE,
+        customer_id=user.id,
+        max_devices=1,
+        issued_at=now,
+        activated_at=now,
+        expired_at=now + timedelta(days=14),
+    )
+    session.add(free_license)
+
+    verify_token = secrets.token_urlsafe(48)
+    evt = EmailVerificationToken(
+        user_id=user.id,
+        token=verify_token,
+        expires_at=now + timedelta(
+            minutes=settings.email_verification_token_expire_minutes
+        ),
+    )
+    session.add(evt)
+
     await session.commit()
     await session.refresh(user)
 
-    log.info("user_registered", user_id=user.id, email=user.email)
-    await _send_welcome_email(user.email, user.full_name or "")
-
-    return UserResponse(
-        id=user.id,
+    log.info(
+        "user_signed_up",
+        user_id=user.id,
         email=user.email,
-        full_name=user.full_name,
-        is_active=user.is_active,
-        is_superuser=user.is_superuser,
-        avatar_url=user.avatar_url,
+        license_id=free_license.id,
+    )
+
+    # Fire-and-forget verification email — do not block the 201 response.
+    asyncio.create_task(
+        _send_verification_email(user.email, verify_token, settings.app_url)
+    )
+
+    return {
+        "id": user.id,
+        "email": user.email,
+        "full_name": user.full_name,
+        "is_active": user.is_active,
+        "is_superuser": user.is_superuser,
+        "avatar_url": user.avatar_url,
+        "message": (
+            "Account created. Please check your email to verify your address "
+            "before signing in. The link expires in 24 hours."
+        ),
+    }
+
+
+@router.post("/verify-email", status_code=200)
+async def verify_email(
+    body: VerifyEmailRequest,
+    session: AsyncSession = Depends(get_session),
+) -> MessageResponse:
+    """US-1.1: validate the email-verification token and mark user.email_verified=True.
+
+    Used when the user clicks the link in the verification email.
+    After success, the user can sign in via /v1/auth/login.
+    """
+    result = await session.execute(
+        select(EmailVerificationToken)
+        .where(EmailVerificationToken.token == body.token)
+        .where(EmailVerificationToken.used_at.is_(None))
+    )
+    evt = result.scalar_one_or_none()
+
+    if evt is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or already used verification token",
+        )
+
+    # Normalise naive datetime (SQLite) to UTC-aware before comparing
+    expires_at = evt.expires_at
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    if expires_at < datetime.now(timezone.utc):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Verification token has expired. Please sign up again to receive a new link.",
+        )
+
+    user = await session.get(User, evt.user_id)
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User not found",
+        )
+
+    user.email_verified = True
+    evt.used_at = datetime.now(timezone.utc)
+    await session.commit()
+
+    log.info("email_verified", user_id=user.id)
+    return MessageResponse(
+        message="Email verified successfully. You can now sign in."
     )
 
 
@@ -561,6 +784,15 @@ async def login(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Account is deactivated",
+        )
+
+    if not user.email_verified:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "Please verify your email before signing in. "
+                "Check your inbox for the verification link (expires in 24 hours)."
+            ),
         )
 
     await _clear_failed_attempts(redis, user.id, ip)

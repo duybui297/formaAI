@@ -51,6 +51,13 @@ _EXCLUDED_PREFIXES = (
     "/docs",              # Swagger UI
     "/redoc",             # ReDoc UI
     "/openapi.json",      # OpenAPI schema
+    "/v1/auth/signup",
+    "/v1/auth/login",
+    "/v1/auth/verify-email",
+    "/v1/auth/refresh",
+    "/v1/auth/forgot-password",
+    "/v1/auth/reset-password",
+    "/v1/auth/logout",
 )
 
 # Only enforce on paths that start with this prefix.

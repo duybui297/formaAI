@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 
 const AUTH_COOKIE = "forma_access_token"
-const AUTH_ROUTES = ["/login", "/register", "/forgot-password", "/reset-password", "/activate"]
+const AUTH_ROUTES = ["/login", "/signup", "/verify-email", "/forgot-password", "/reset-password", "/activate"]
 
 function isAuthRoute(pathname: string): boolean {
   return AUTH_ROUTES.some((route) => pathname.startsWith(route))
