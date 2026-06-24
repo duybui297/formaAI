@@ -42,7 +42,7 @@ describe("Phase 4 type extensions", () => {
 
   it("JobProgress has stage_progress optional field", () => {
     const progress: JobProgress = {
-      status: "running",
+      status: "processing",
       stage: "translate",
       segments_done: 3,
       segments_total: 10,

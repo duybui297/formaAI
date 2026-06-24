@@ -38,7 +38,7 @@ _AFTER = _T + timedelta(seconds=1)    # expired_at + 1s  → expired
 
 
 # ---------------------------------------------------------------------------
-# Minimal ASGI app with a /v1/ping route for middleware testing
+# Minimal ASGI app with a /api/v1/ping route for middleware testing
 # ---------------------------------------------------------------------------
 
 def _make_test_app(engine, fake_redis):
@@ -51,7 +51,7 @@ def _make_test_app(engine, fake_redis):
 
     test_app = FastAPI()
 
-    @test_app.get("/v1/ping")
+    @test_app.get("/api/v1/ping")
     async def ping():
         return JSONResponse({"ok": True})
 
@@ -166,7 +166,7 @@ class TestBoundaryBeforeAfter:
                     transport=ASGITransport(app=app), base_url="http://test"
                 ) as c:
                     r = await c.get(
-                        "/v1/ping",
+                        "/api/v1/ping",
                         headers={"X-License-Key": raw_key},
                     )
 
@@ -205,7 +205,7 @@ class TestBoundaryBeforeAfter:
                     transport=ASGITransport(app=app), base_url="http://test"
                 ) as c:
                     r = await c.get(
-                        "/v1/ping",
+                        "/api/v1/ping",
                         headers={"X-License-Key": raw_key},
                     )
 

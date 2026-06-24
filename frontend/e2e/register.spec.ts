@@ -1,7 +1,7 @@
 /**
  * US-1.1: Email + Password Signup — e2e behaviors
  *
- * All /api/* routes are mocked with page.route() — no running backend required.
+ * All /api/v1/* routes are mocked with page.route() — no running backend required.
  *
  * /signup is a PUBLIC AUTH_ROUTE (middleware.ts).
  * On success, the page calls signupApi → /api/v1/auth/signup, then shows

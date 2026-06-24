@@ -136,7 +136,7 @@ async def test_get_job_status_returns_detail():
         factory2 = async_sessionmaker(engine2, expire_on_commit=False)
 
         async with factory2() as sess:
-            job = await _create_test_job(sess, status=JobStatus.running)
+            job = await _create_test_job(sess, status=JobStatus.processing)
             job_id = job.id
 
         async def override_session():
@@ -156,7 +156,7 @@ async def test_get_job_status_returns_detail():
     assert response.status_code == 200
     data = response.json()
     assert data["id"] == job_id
-    assert data["status"] == "running"
+    assert data["status"] == "processing"
     assert "segments_done" in data
     assert "segments_total" in data
     assert "error_msg" in data
@@ -308,7 +308,7 @@ async def test_download_returns_409_when_not_done():
         factory2 = async_sessionmaker(engine2, expire_on_commit=False)
 
         async with factory2() as sess:
-            job = await _create_test_job(sess, status=JobStatus.running)
+            job = await _create_test_job(sess, status=JobStatus.processing)
             job_id = job.id
 
         async def override_session():

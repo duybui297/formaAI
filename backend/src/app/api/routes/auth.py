@@ -1,28 +1,29 @@
 """
 Auth routes: signup, login, logout, refresh, forgot-password, reset-password, verify-email.
 
-POST   /v1/auth/signup            — create account + default Free license + send verify email
-POST   /v1/auth/verify-email      — validate verify token, set user.email_verified=True
-POST   /v1/auth/login             — email+password → 15-min access token + 30-d httpOnly refresh cookie
-POST   /v1/auth/refresh           — rotate refresh cookie, issue new 15-min access token (CSRF required)
-POST   /v1/auth/logout            — clear cookie, revoke refresh
-GET    /v1/auth/me                — return current user info (protected)
-PATCH  /v1/auth/me                — update full_name
-PATCH  /v1/auth/me/password       — change password
-POST   /v1/auth/me/avatar         — upload avatar image
-GET    /v1/auth/me/notifications  — get notification preferences
-PATCH  /v1/auth/me/notifications  — update notification preferences
-GET    /v1/auth/me/translation-defaults   — get translation defaults
-PATCH  /v1/auth/me/translation-defaults   — update translation defaults
-GET    /v1/auth/me/api-keys       — list API keys
-POST   /v1/auth/me/api-keys       — create API key
-DELETE /v1/auth/me/api-keys/{key_id}      — revoke API key
-GET    /v1/auth/me/workspace      — get workspace members + pending invites
-POST   /v1/auth/me/workspace/invite       — invite member
-DELETE /v1/auth/me/workspace/invite/{invite_id}  — revoke invite
-DELETE /v1/auth/me/workspace/member/{member_id}   — remove member
-POST   /v1/auth/forgot-password   — send reset email (or silent success for security)
-POST   /v1/auth/reset-password    — validate token + update password
+All routes are prefixed with /api/v1/auth (applied at app level).
+POST   /api/v1/auth/signup            — create account + default Free license + send verify email
+POST   /api/v1/auth/verify-email      — validate verify token, set user.email_verified=True
+POST   /api/v1/auth/login             — email+password → 15-min access token + 30-d httpOnly refresh cookie
+POST   /api/v1/auth/refresh           — rotate refresh cookie, issue new 15-min access token (CSRF required)
+POST   /api/v1/auth/logout            — clear cookie, revoke refresh
+GET    /api/v1/auth/me                — return current user info (protected)
+PATCH  /api/v1/auth/me                — update full_name
+PATCH  /api/v1/auth/me/password       — change password
+POST   /api/v1/auth/me/avatar         — upload avatar image
+GET    /api/v1/auth/me/notifications  — get notification preferences
+PATCH  /api/v1/auth/me/notifications  — update notification preferences
+GET    /api/v1/auth/me/translation-defaults   — get translation defaults
+PATCH  /api/v1/auth/me/translation-defaults    — update translation defaults
+GET    /api/v1/auth/me/api-keys       — list API keys
+POST   /api/v1/auth/me/api-keys       — create API key
+DELETE /api/v1/auth/me/api-keys/{key_id}      — revoke API key
+GET    /api/v1/auth/me/workspace      — get workspace members + pending invites
+POST   /api/v1/auth/me/workspace/invite       — invite member
+DELETE /api/v1/auth/me/workspace/invite/{invite_id}  — revoke invite
+DELETE /api/v1/auth/me/workspace/member/{member_id}   — remove member
+POST   /api/v1/auth/forgot-password   — send reset email (or silent success for security)
+POST   /api/v1/auth/reset-password    — validate token + update password
 """
 from __future__ import annotations
 
@@ -83,7 +84,7 @@ from app.schemas.auth import (
 from app.api.deps import get_current_active_user, get_redis
 
 log = structlog.get_logger()
-router = APIRouter(prefix="/v1/auth", tags=["auth"])
+router = APIRouter(prefix="/auth", tags=["auth"])
 
 CSRF_COOKIE = "csrf_token"
 REFRESH_COOKIE = "refresh_token"
@@ -797,8 +798,14 @@ async def login(
 
     await _clear_failed_attempts(redis, user.id, ip)
 
-    access_token = create_access_token(data={"sub": user.id})
-    refresh_token = create_refresh_token(data={"sub": user.id})
+    access_token = create_access_token(data={
+        "sub": user.id,
+        "superuser": user.is_superuser,
+    })
+    refresh_token = create_refresh_token(data={
+        "sub": user.id,
+        "superuser": user.is_superuser,
+    })
 
     # Set rotating refresh token cookie
     response.set_cookie(
@@ -887,9 +894,15 @@ async def refresh_token(
                 detail="User not found or deactivated",
             )
 
-    # Rotate: issue new access + refresh tokens
-    new_access = create_access_token(data={"sub": user_id})
-    new_refresh = create_refresh_token(data={"sub": user_id})
+    # Rotate: issue new access + refresh tokens (preserve superuser flag)
+    new_access = create_access_token(data={
+        "sub": user_id,
+        "superuser": user.is_superuser,
+    })
+    new_refresh = create_refresh_token(data={
+        "sub": user_id,
+        "superuser": user.is_superuser,
+    })
     new_csrf = secrets.token_urlsafe(32)
 
     # Set new cookies (path=/api so it doesn't conflict with static assets if any)

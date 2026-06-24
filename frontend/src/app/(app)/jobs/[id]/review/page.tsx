@@ -42,7 +42,7 @@ export default function ReviewPage({
   const { data: job } = useQuery<JobSummary>({
     queryKey: ["job", jobId],
     queryFn: () =>
-      authFetch(`/jobs/${jobId}`).then((r) => {
+      authFetch(`/v1/jobs/${jobId}`).then((r) => {
         if (!r.ok) throw new Error("Job not found");
         return r.json();
       }),
@@ -95,7 +95,7 @@ export default function ReviewPage({
     if (!job) return;
     setDownloading(true);
     try {
-      const res = await authFetch(`/jobs/${jobId}/artifacts?artifact=${artifact}`, {
+      const res = await authFetch(`/v1/jobs/${jobId}/artifacts?artifact=${artifact}`, {
         method: "GET",
       });
       if (!res.ok) {

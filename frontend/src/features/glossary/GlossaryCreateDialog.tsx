@@ -37,7 +37,7 @@ export function GlossaryCreateDialog({
     if (!canSubmit) return
     setSubmitting(true)
     try {
-      const res = await authFetch("/glossaries", {
+      const res = await authFetch("/v1/glossaries", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: name.trim(), source_lang: sourceLang, target_lang: targetLang }),

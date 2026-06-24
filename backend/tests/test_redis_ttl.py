@@ -36,7 +36,7 @@ def _make_test_app(engine, fake_redis):
 
     test_app = FastAPI()
 
-    @test_app.get("/v1/ping")
+    @test_app.get("/api/v1/ping")
     async def ping():
         return JSONResponse({"ok": True})
 
@@ -229,7 +229,7 @@ async def test_ttl_within_two_seconds_cache_miss_repopulates(ttl_app):
     Flow:
     1. Activate license (populates cache).
     2. DEL the cache key (simulate eviction / expiry of the cache entry itself).
-    3. Hit /v1/ping with the license key header.
+    3. Hit /api/v1/ping with the license key header.
     4. Assert: middleware repopulated the key (TTL > 0) and returned 200.
     """
     from app.licensing.keygen import hash_key
@@ -260,7 +260,7 @@ async def test_ttl_within_two_seconds_cache_miss_repopulates(ttl_app):
     async with AsyncClient(
         transport=ASGITransport(app=middleware_app), base_url="http://test"
     ) as c:
-        r = await c.get("/v1/ping", headers={"X-License-Key": raw_key})
+        r = await c.get("/api/v1/ping", headers={"X-License-Key": raw_key})
 
     # Step 4: verify
     assert r.status_code == 200, (

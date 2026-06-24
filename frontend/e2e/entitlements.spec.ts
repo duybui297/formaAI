@@ -1,7 +1,7 @@
 /**
  * TASK-3.7: Translation Entitlement Enforcement
  *
- * All /api/* routes are mocked with page.route() — no running backend needed.
+ * All /api/v1/* routes are mocked with page.route() — no running backend needed.
  *
  * Tests:
  *  Case A: has_active=false → blocked state, links to /pricing and /activate, no upload form.
@@ -63,7 +63,7 @@ async function setupAuth(context: BrowserContext) {
 }
 
 async function stubBaseRoutes(page: Page) {
-  await page.route("**/api/auth/me", (route) =>
+  await page.route("**/api/v1/auth/me", (route) =>
     route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -76,7 +76,7 @@ async function stubBaseRoutes(page: Page) {
     })
   );
 
-  await page.route("**/api/health", (route) =>
+  await page.route("**/api/v1/health", (route) =>
     route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -84,7 +84,7 @@ async function stubBaseRoutes(page: Page) {
     })
   );
 
-  await page.route("**/api/auth/refresh", (route) =>
+  await page.route("**/api/v1/auth/refresh", (route) =>
     route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -92,7 +92,7 @@ async function stubBaseRoutes(page: Page) {
     })
   );
 
-  await page.route("**/api/jobs**", (route) =>
+  await page.route("**/api/v1/jobs**", (route) =>
     route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -100,7 +100,7 @@ async function stubBaseRoutes(page: Page) {
     })
   );
 
-  await page.route("**/api/languages**", (route) =>
+  await page.route("**/api/v1/languages**", (route) =>
     route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -114,7 +114,7 @@ async function stubBaseRoutes(page: Page) {
     })
   );
 
-  await page.route("**/api/glossaries**", (route) =>
+  await page.route("**/api/v1/glossaries**", (route) =>
     route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -135,7 +135,7 @@ test("translate gated by license and tier", async ({ page, context }) => {
   // Case A: unlicensed user — blocked state
   // =========================================================================
 
-  await page.route("**/api/licenses/me", (route) =>
+  await page.route("**/api/v1/licenses/me", (route) =>
     route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -164,8 +164,8 @@ test("translate gated by license and tier", async ({ page, context }) => {
   // Case B: TRIAL — upload form usable, limits shown, OCR/glossary disabled
   // =========================================================================
 
-  await page.unroute("**/api/licenses/me");
-  await page.route("**/api/licenses/me", (route) =>
+  await page.unroute("**/api/v1/licenses/me");
+  await page.route("**/api/v1/licenses/me", (route) =>
     route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -203,8 +203,8 @@ test("translate gated by license and tier", async ({ page, context }) => {
   // Case C (optional): PRO — OCR + glossary enabled, unlimited
   // =========================================================================
 
-  await page.unroute("**/api/licenses/me");
-  await page.route("**/api/licenses/me", (route) =>
+  await page.unroute("**/api/v1/licenses/me");
+  await page.route("**/api/v1/licenses/me", (route) =>
     route.fulfill({
       status: 200,
       contentType: "application/json",

@@ -1,31 +1,29 @@
 """
-GET /languages — return qwen-mt-turbo supported languages.
+GET /api/v1/languages — return qwen-mt-turbo supported languages from DB.
 
-LANG-01: B5 fix — returns list[dict[str, str]] not list[str].
-Each entry has: code (form value), name (display label), qwen_code (API value).
-
-Client caches for 24h (staleTime: 24h in TanStack Query per UI-SPEC).
+US-3.2 AC-3: Falls back to hardcoded list if DB table is empty.
+_VALID_CODES / _VALID_TARGET_CODES are computed per-request via Depends() so
+they always reflect the current DB state without needing cache invalidation.
 """
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.db.models import Language
+from app.db.session import get_session
 
 router = APIRouter()
 
-# qwen-mt-turbo supported languages.
-# code: used as form value in frontend and for upload validation
-# name: display label in LanguageSelect dropdown
-# qwen_code: value sent to qwen-mt-turbo source_lang/target_lang params
-SUPPORTED_LANGUAGES: list[dict[str, str]] = [
-    # "auto" is source-only — not valid as target_lang
+# Fallback — used if DB table is empty (e.g. fresh install before seed)
+_FALLBACK_LANGUAGES: list[dict[str, str]] = [
     {"code": "auto", "name": "Auto-detect", "qwen_code": "auto"},
-    # Priority languages (UI-SPEC Recommended group)
     {"code": "vi", "name": "Vietnamese", "qwen_code": "Vietnamese"},
     {"code": "en", "name": "English", "qwen_code": "English"},
     {"code": "ja", "name": "Japanese", "qwen_code": "Japanese"},
     {"code": "zh", "name": "Chinese (Simplified)", "qwen_code": "Chinese (Simplified)"},
     {"code": "zh-tw", "name": "Chinese (Traditional)", "qwen_code": "Chinese (Traditional)"},
-    # Full alphabetical list
     {"code": "af", "name": "Afrikaans", "qwen_code": "Afrikaans"},
     {"code": "sq", "name": "Albanian", "qwen_code": "Albanian"},
     {"code": "am", "name": "Amharic", "qwen_code": "Amharic"},
@@ -98,22 +96,67 @@ SUPPORTED_LANGUAGES: list[dict[str, str]] = [
     {"code": "zu", "name": "Zulu", "qwen_code": "Zulu"},
 ]
 
-# Valid codes for upload validation
-_VALID_CODES: frozenset[str] = frozenset(lang["code"] for lang in SUPPORTED_LANGUAGES)
-# "auto" is source-only — not valid as target_lang
-_VALID_TARGET_CODES: frozenset[str] = _VALID_CODES - {"auto"}
+
+async def _load_from_db(session: AsyncSession) -> list[dict[str, str]]:
+    result = await session.execute(
+        select(Language)
+        .where(Language.is_active.is_(True))
+        .order_by(Language.popularity_rank, Language.code)
+    )
+    rows: list[Language] = list(result.scalars().all())
+    if not rows:
+        return _FALLBACK_LANGUAGES
+    return [
+        {
+            "code": row.code,
+            "name": row.name,
+            "qwen_code": row.qwen_code,
+        }
+        for row in rows
+    ]
+
+
+# Fallback valid codes computed once from the hardcoded list
+_FALLBACK_VALID_CODES: frozenset[str] = frozenset(l["code"] for l in _FALLBACK_LANGUAGES)
 
 
 @router.get("/languages")
-async def get_languages() -> dict:
+async def get_languages(
+    session: AsyncSession = Depends(get_session),
+) -> dict:
     """
-    LANG-01: Return qwen-mt-turbo supported languages as code+name+qwen_code dicts.
-
-    Response shape: {languages: [{code, name, qwen_code}], auto_detect_option: "auto"}
-    Client caches for 24h (TanStack Query staleTime).
-    # TODO(phase-2): add JWT auth
+    Return active languages sorted by popularity_rank from the DB.
+    Falls back to hardcoded list if DB is empty.
     """
+    languages = await _load_from_db(session)
     return {
-        "languages": SUPPORTED_LANGUAGES,
+        "languages": languages,
         "auto_detect_option": "auto",
     }
+
+
+# Sync helpers for callers that already have a session via Depends().
+# These are only safe to call from within FastAPI route handlers (which provide
+# a valid session via dependency injection). They fall back to the hardcoded
+# list if the DB query fails.
+
+
+async def get_valid_codes_async(session: AsyncSession) -> frozenset[str]:
+    """Return valid language codes from DB, falling back to hardcoded list."""
+    try:
+        result = await session.execute(
+            select(Language.code)
+            .where(Language.is_active.is_(True))
+            .order_by(Language.popularity_rank)
+        )
+        rows = list(result.scalars().all())
+        if rows:
+            return frozenset(rows)
+    except Exception:
+        pass
+    return _FALLBACK_VALID_CODES
+
+
+async def get_valid_target_codes_async(session: AsyncSession) -> frozenset[str]:
+    """Return valid target language codes (all - 'auto') from DB."""
+    return await get_valid_codes_async(session) - {"auto"}

@@ -216,7 +216,7 @@ describe("UploadForm submit disabled state", () => {
     })
 
     // fetch should NOT have been called (no submit happened yet)
-    expect(global.fetch).not.toHaveBeenCalledWith("/api/upload", expect.anything())
+    expect(global.fetch).not.toHaveBeenCalledWith("/api/v1/upload", expect.anything())
   })
 })
 
@@ -475,7 +475,7 @@ describe("UploadForm error display (G3 gap closure)", () => {
     // fetch directly to test the error rendering branch.
     // Use act to simulate what submitWithAction does: call fetch and handle the error.
     await act(async () => {
-      const res = (await (global.fetch as ReturnType<typeof vi.fn>)("/api/upload", {
+      const res = (await (global.fetch as ReturnType<typeof vi.fn>)("/api/v1/upload", {
         method: "POST",
         body: new FormData(),
       })) as Response

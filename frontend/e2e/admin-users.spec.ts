@@ -1,11 +1,11 @@
 /**
  * TASK-3.6: Admin User Management
  *
- * All /api/* routes are mocked with page.route() so the test suite is
+ * All /api/v1/* routes are mocked with page.route() so the test suite is
  * fully hermetic — no running backend or database required.
  *
  * Auth: the middleware checks for the "forma_access_token" cookie.
- * We inject it via browserContext.addCookies() and stub /api/auth/me.
+ * We inject it via browserContext.addCookies() and stub /api/v1/auth/me.
  */
 
 import { test, expect, type Page, type BrowserContext } from "@playwright/test";
@@ -77,7 +77,7 @@ async function setupAuth(context: BrowserContext) {
 }
 
 async function stubBaseRoutes(page: Page, meOverride = ME_ADMIN) {
-  await page.route("**/api/auth/me", (route) =>
+  await page.route("**/api/v1/auth/me", (route) =>
     route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -85,7 +85,7 @@ async function stubBaseRoutes(page: Page, meOverride = ME_ADMIN) {
     })
   );
 
-  await page.route("**/api/health", (route) =>
+  await page.route("**/api/v1/health", (route) =>
     route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -93,7 +93,7 @@ async function stubBaseRoutes(page: Page, meOverride = ME_ADMIN) {
     })
   );
 
-  await page.route("**/api/auth/refresh", (route) =>
+  await page.route("**/api/v1/auth/refresh", (route) =>
     route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -105,8 +105,8 @@ async function stubBaseRoutes(page: Page, meOverride = ME_ADMIN) {
 async function stubUserList(page: Page, users = USERS) {
   await page.route(
     (url) =>
-      url.pathname === "/api/admin/users" ||
-      url.pathname.startsWith("/api/admin/users"),
+      url.pathname === "/api/v1/admin/users" ||
+      url.pathname.startsWith("/api/v1/admin/users"),
     (route) => {
       // Only intercept GET requests here (not PATCH/DELETE)
       if (route.request().method() !== "GET") {
@@ -155,21 +155,21 @@ test("users tab visible admin only", async ({ page, context }) => {
   // Create a fresh page for the non-admin test
   const page2 = await context.newPage();
 
-  await page2.route("**/api/auth/me", (route) =>
+  await page2.route("**/api/v1/auth/me", (route) =>
     route.fulfill({
       status: 200,
       contentType: "application/json",
       body: JSON.stringify(ME_USER),
     })
   );
-  await page2.route("**/api/health", (route) =>
+  await page2.route("**/api/v1/health", (route) =>
     route.fulfill({
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({ status: "ok" }),
     })
   );
-  await page2.route("**/api/auth/refresh", (route) =>
+  await page2.route("**/api/v1/auth/refresh", (route) =>
     route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -219,7 +219,7 @@ test("list create and row actions", async ({ page, context }) => {
   // Track GET calls separately from mutations
   let listCallCount = 0;
   await page.route(
-    (url) => url.pathname === "/api/admin/users",
+    (url) => url.pathname === "/api/v1/admin/users",
     (route) => {
       if (route.request().method() === "GET") {
         listCallCount++;
@@ -278,7 +278,7 @@ test("list create and row actions", async ({ page, context }) => {
 
   // ---- Create user dialog ----
   let postedBody: unknown = null;
-  await page.route("**/api/admin/users", async (route) => {
+  await page.route("**/api/v1/admin/users", async (route) => {
     if (route.request().method() === "POST") {
       postedBody = JSON.parse(route.request().postData() ?? "{}");
       await route.fulfill({
@@ -326,7 +326,7 @@ test("list create and row actions", async ({ page, context }) => {
   // ---- Deactivate action (user-2) ----
   let patchedId: string | null = null;
   let patchBody: unknown = null;
-  await page.route("**/api/admin/users/user-2", async (route) => {
+  await page.route("**/api/v1/admin/users/user-2", async (route) => {
     if (route.request().method() === "PATCH") {
       patchedId = "user-2";
       patchBody = JSON.parse(route.request().postData() ?? "{}");
@@ -341,14 +341,14 @@ test("list create and row actions", async ({ page, context }) => {
   });
 
   await page.getByTestId("deactivate-user-2").click();
-  await page.waitForResponse("**/api/admin/users/user-2");
+  await page.waitForResponse("**/api/v1/admin/users/user-2");
   expect(patchedId).toBe("user-2");
   expect(patchBody).toMatchObject({ is_active: false });
 
   // ---- Promote action (user-2) ----
   patchedId = null;
   patchBody = null;
-  await page.route("**/api/admin/users/user-2", async (route) => {
+  await page.route("**/api/v1/admin/users/user-2", async (route) => {
     if (route.request().method() === "PATCH") {
       patchedId = "user-2";
       patchBody = JSON.parse(route.request().postData() ?? "{}");
@@ -363,13 +363,13 @@ test("list create and row actions", async ({ page, context }) => {
   });
 
   await page.getByTestId("promote-user-2").click();
-  await page.waitForResponse("**/api/admin/users/user-2");
+  await page.waitForResponse("**/api/v1/admin/users/user-2");
   expect(patchedId).toBe("user-2");
   expect(patchBody).toMatchObject({ is_superuser: true });
 
   // ---- Delete action (user-3) ----
   let deletedId: string | null = null;
-  await page.route("**/api/admin/users/user-3", async (route) => {
+  await page.route("**/api/v1/admin/users/user-3", async (route) => {
     if (route.request().method() === "DELETE") {
       deletedId = "user-3";
       await route.fulfill({ status: 204 });
@@ -385,6 +385,6 @@ test("list create and row actions", async ({ page, context }) => {
   await expect(confirmDialog).toBeVisible();
 
   await page.getByTestId("confirm-delete-submit").click();
-  await page.waitForResponse("**/api/admin/users/user-3");
+  await page.waitForResponse("**/api/v1/admin/users/user-3");
   expect(deletedId).toBe("user-3");
 });

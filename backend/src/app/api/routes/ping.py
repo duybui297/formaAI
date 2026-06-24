@@ -1,5 +1,5 @@
 """
-GET /v1/ping — trivial protected endpoint for load-testing the license validation
+GET /api/v1/ping — trivial protected endpoint for load-testing the license validation
 middleware hot path.
 
 This endpoint does no DB work and no business logic — its only purpose is to be
@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-router = APIRouter(prefix="/v1", tags=["internal"])
+router = APIRouter(prefix="", tags=["internal"])
 
 
 @router.get("/ping", summary="License middleware smoke check (load test target)")

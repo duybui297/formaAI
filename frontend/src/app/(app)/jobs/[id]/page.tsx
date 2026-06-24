@@ -104,7 +104,7 @@ export default function JobStatusPage({
                 </p>
               )}
               {/* Retry chip — D-12: slate-500, no red, no background */}
-              {job.retry_count > 0 && job.status === "running" && (
+              {job.retry_count > 0 && job.status === "processing" && (
                 <p className="text-xs text-slate-500 transition-opacity duration-150">
                   Retrying batch {job.current_batch} ({job.retry_count}/3)
                 </p>
@@ -130,7 +130,7 @@ export default function JobStatusPage({
             <Button
               className="w-full bg-indigo-600 hover:bg-indigo-700 text-white"
               onClick={() => {
-                window.location.href = `/api/jobs/${jobId}/download`
+                window.location.href = `/api/v1/jobs/${jobId}/download`
               }}
             >
               Download Translation
@@ -164,7 +164,7 @@ export default function JobStatusPage({
                 variant="outline"
                 className="border-indigo-600 text-indigo-600 hover:bg-indigo-50 w-full"
                 onClick={() => {
-                  window.location.href = `/api/jobs/${jobId}/download`
+                  window.location.href = `/api/v1/jobs/${jobId}/download`
                 }}
               >
                 Download Current Output

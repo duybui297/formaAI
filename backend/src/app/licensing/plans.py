@@ -29,6 +29,7 @@ class TierEntitlement:
     monthly_quota: int | None   # None = unlimited
     ocr_allowed: bool
     glossary_allowed: bool
+    queue_priority: int
 
 
 # Single source of truth — referenced by resolver, upload route, and tests.
@@ -38,23 +39,27 @@ ENTITLEMENTS: dict[LicenseTier, TierEntitlement] = {
         monthly_quota=10,
         ocr_allowed=False,
         glossary_allowed=False,
+        queue_priority=10,
     ),
     LicenseTier.PRO: TierEntitlement(
         max_file_bytes=50 * 1024 * 1024,  # 50 MB
         monthly_quota=None,               # unlimited
         ocr_allowed=True,
         glossary_allowed=True,
+        queue_priority=5,
     ),
     LicenseTier.ENTERPRISE: TierEntitlement(
         max_file_bytes=100 * 1024 * 1024, # 100 MB
         monthly_quota=None,               # unlimited
         ocr_allowed=True,
         glossary_allowed=True,
+        queue_priority=1,
     ),
 }
 
 # Tier precedence for "highest tier wins" resolver — higher index = higher tier.
-_TIER_RANK: dict[LicenseTier, int] = {
+# Exported so license.py can use it to pick the best license for a user.
+TIER_RANK: dict[LicenseTier, int] = {
     LicenseTier.TRIAL: 0,
     LicenseTier.PRO: 1,
     LicenseTier.ENTERPRISE: 2,

@@ -30,3 +30,13 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
     """FastAPI dependency: yields an AsyncSession, auto-closes after response."""
     async with SessionFactory() as session:
         yield session
+
+
+async def db_dependency() -> AsyncGenerator[AsyncSession, None]:
+    """FastAPI dependency wrapper with no parameters.
+
+    Using this as Depends(db_dependency) avoids FastAPI confusing
+    AsyncSession from the return annotation with a request parameter.
+    """
+    async with SessionFactory() as session:
+        yield session

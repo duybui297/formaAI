@@ -1,5 +1,5 @@
 """
-Tests for POST /v1/auth/signup — US-1.1.
+Tests for POST /api/v1/auth/signup — US-1.1.
 
 Covers:
 - creates_active_non_admin: 201; User is_active=True, is_superuser=False; password hashed, not leaked;
@@ -156,7 +156,7 @@ def _unique_email() -> str:
 @pytest.mark.asyncio
 async def test_creates_active_non_admin(register_app):
     """
-    POST /v1/auth/signup with valid payload:
+    POST /api/v1/auth/signup with valid payload:
     - returns 201
     - DB row has is_active=True, is_superuser=False, email_verified=False
     - hashed_password != plaintext
@@ -173,7 +173,7 @@ async def test_creates_active_non_admin(register_app):
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         r = await c.post(
-            "/v1/auth/signup",
+            "/api/v1/auth/signup",
             json={"email": email, "password": plaintext, "full_name": "Test User"},
         )
 
@@ -228,10 +228,10 @@ async def test_duplicate_email_conflict(register_app):
     body = {"email": email, "password": "ValidPass1!", "full_name": "Dup User"}
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
-        r1 = await c.post("/v1/auth/signup", json=body)
+        r1 = await c.post("/api/v1/auth/signup", json=body)
         assert r1.status_code == 201, r1.text
 
-        r2 = await c.post("/v1/auth/signup", json=body)
+        r2 = await c.post("/api/v1/auth/signup", json=body)
         assert r2.status_code == 409, r2.text
         assert "Sign in?" in r2.json()["detail"]
 
@@ -261,25 +261,25 @@ async def test_invalid_input_rejected(register_app):
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         r_short_pw = await c.post(
-            "/v1/auth/signup",
+            "/api/v1/auth/signup",
             json={"email": _unique_email(), "password": "short12"},
         )
         assert r_short_pw.status_code == 422, r_short_pw.text
 
         r_bad_email = await c.post(
-            "/v1/auth/signup",
+            "/api/v1/auth/signup",
             json={"email": "not-an-email", "password": "ValidPass1!"},
         )
         assert r_bad_email.status_code == 422, r_bad_email.text
 
         r_no_upper = await c.post(
-            "/v1/auth/signup",
+            "/api/v1/auth/signup",
             json={"email": _unique_email(), "password": "weakpass1"},
         )
         assert r_no_upper.status_code == 422, r_no_upper.text
 
         r_no_digit = await c.post(
-            "/v1/auth/signup",
+            "/api/v1/auth/signup",
             json={"email": _unique_email(), "password": "WeakPassword"},
         )
         assert r_no_digit.status_code == 422, r_no_digit.text
@@ -306,11 +306,11 @@ async def test_signup_rate_limit(register_app):
                 "password": "ValidPass1!",
                 "full_name": f"Rate Test {i}",
             }
-            r = await c.post("/v1/auth/signup", json=body)
+            r = await c.post("/api/v1/auth/signup", json=body)
             assert r.status_code == 201, f"Attempt {i + 1}: {r.text}"
         # 6th attempt should be rate-limited — use a fresh email
         r6 = await c.post(
-            "/v1/auth/signup",
+            "/api/v1/auth/signup",
             json={
                 "email": _unique_email(),
                 "password": "ValidPass1!",
@@ -337,13 +337,13 @@ async def test_login_blocked_when_unverified(register_app):
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         r = await c.post(
-            "/v1/auth/signup",
+            "/api/v1/auth/signup",
             json={"email": email, "password": password, "full_name": "Unverified User"},
         )
         assert r.status_code == 201
 
         r_login = await c.post(
-            "/v1/auth/login",
+            "/api/v1/auth/login",
             json={"email": email, "password": password},
         )
         assert r_login.status_code == 403, r_login.text
@@ -356,7 +356,7 @@ async def test_login_blocked_when_unverified(register_app):
 
 @pytest.mark.asyncio
 async def test_verify_email_success(register_app):
-    """POST /v1/auth/verify-email with a valid token marks user.email_verified=True
+    """POST /api/v1/auth/verify-email with a valid token marks user.email_verified=True
     AND then login succeeds (200)."""
     from datetime import datetime, timedelta, timezone
     from app.db.models import EmailVerificationToken
@@ -368,7 +368,7 @@ async def test_verify_email_success(register_app):
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         r = await c.post(
-            "/v1/auth/signup",
+            "/api/v1/auth/signup",
             json={"email": email, "password": password, "full_name": "Verify User"},
         )
         assert r.status_code == 201
@@ -389,14 +389,14 @@ async def test_verify_email_success(register_app):
             token = evt.token
 
         r_verify = await c.post(
-            "/v1/auth/verify-email",
+            "/api/v1/auth/verify-email",
             json={"token": token},
         )
         assert r_verify.status_code == 200, r_verify.text
 
         # Now login should succeed
         r_login = await c.post(
-            "/v1/auth/login",
+            "/api/v1/auth/login",
             json={"email": email, "password": password},
         )
         assert r_login.status_code == 200, r_login.text
@@ -410,7 +410,7 @@ async def test_verify_email_invalid_token(register_app):
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         r = await c.post(
-            "/v1/auth/verify-email",
+            "/api/v1/auth/verify-email",
             json={"token": "this-token-does-not-exist-anywhere"},
         )
         assert r.status_code == 400, r.text
@@ -429,7 +429,7 @@ async def test_verify_email_expired(register_app):
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         r = await c.post(
-            "/v1/auth/signup",
+            "/api/v1/auth/signup",
             json={"email": email, "password": "ValidPass1!", "full_name": "Expire Test"},
         )
         assert r.status_code == 201
@@ -452,7 +452,7 @@ async def test_verify_email_expired(register_app):
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         r = await c.post(
-            "/v1/auth/verify-email",
+            "/api/v1/auth/verify-email",
             json={"token": token},
         )
         assert r.status_code == 400, r.text
@@ -471,7 +471,7 @@ async def test_verify_email_already_used(register_app):
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         r = await c.post(
-            "/v1/auth/signup",
+            "/api/v1/auth/signup",
             json={"email": email, "password": "ValidPass1!", "full_name": "Reuse Test"},
         )
         assert r.status_code == 201
@@ -493,7 +493,7 @@ async def test_verify_email_already_used(register_app):
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         r = await c.post(
-            "/v1/auth/verify-email",
+            "/api/v1/auth/verify-email",
             json={"token": token},
         )
         assert r.status_code == 400, r.text

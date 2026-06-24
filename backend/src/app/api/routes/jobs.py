@@ -1,7 +1,7 @@
 """
-GET /jobs          — list last 50 jobs, newest first (JOB-01)
-GET /jobs/{id}     — job status detail with D-10 fields (JOB-01/04)
-GET /jobs/{id}/download — stream translated output file (JOB-04)
+GET /api/v1/jobs          — paginated list of user's jobs, newest first (US-4.1)
+GET /api/v1/jobs/{id}     — job status detail with D-10 fields (JOB-01/04)
+GET /api/v1/jobs/{id}/download — stream translated output file (JOB-04)
 
 T-06b-01: output_path is server-stored in DB, never user-supplied.
           os.path.exists check before FileResponse prevents stale path 404.
@@ -11,9 +11,10 @@ from __future__ import annotations
 import os
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
-from sqlalchemy import desc, select
+from pydantic import BaseModel
+from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_active_user
@@ -27,6 +28,19 @@ router = APIRouter()
 
 # Terminal statuses that permit file download
 _DOWNLOADABLE_STATUSES = frozenset({"done", "needs_review"})
+
+# US-4.1: pagination defaults and limits
+_PAGE_SIZES = frozenset({5, 10, 25})
+_DEFAULT_PAGE_SIZE = 10
+_MAX_PAGE_SIZE = 100
+
+
+class PaginatedJobsResponse(BaseModel):
+    jobs: list[dict]
+    total: int
+    page: int
+    page_size: int
+    total_pages: int
 
 
 def _job_to_dict(job: Job) -> dict:
@@ -55,24 +69,63 @@ def _job_to_dict(job: Job) -> dict:
     }
 
 
-@router.get("/jobs")
+@router.get("/jobs", response_model=PaginatedJobsResponse)
 async def list_jobs(
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_active_user),
-) -> dict:
-    """JOB-01: Return last 50 jobs for the current user, newest first (Jobs List Page).
+    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
+    page_size: int = Query(_DEFAULT_PAGE_SIZE, ge=1, le=_MAX_PAGE_SIZE, description="Items per page"),
+    sort: str = Query("newest", description='Sort order: "newest" or "oldest"'),
+) -> PaginatedJobsResponse:
+    """US-4.1: Paginated list of jobs for the current user.
+
+    Columns: filename, lang pair, status, date+time, actions.
+    Statuses: done / running / queued / needs_review / failed.
+    Pagination: 5 / 10 / 25 per page.
+    Default sort: newest first.
 
     Auth: requires valid JWT (get_current_active_user).
     Per-user filtering via job.user_id FK.
     """
-    result = await session.execute(
+    if page_size not in _PAGE_SIZES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Invalid page_size={page_size}. Must be one of: {sorted(_PAGE_SIZES)}.",
+        )
+    if sort not in {"newest", "oldest"}:
+        sort = "newest"
+    if sort == "oldest":
+        order_col = Job.created_at
+    else:
+        # Default: newest first
+        order_col = desc(Job.created_at)
+
+    # Count total matching rows
+    count_q = select(func.count(Job.id)).where(Job.user_id == current_user.id)
+    total_result = await session.execute(count_q)
+    total = total_result.scalar_one()
+
+    # Paginated data query
+    offset = (page - 1) * page_size
+    data_q = (
         select(Job)
         .where(Job.user_id == current_user.id)
-        .order_by(desc(Job.created_at))
-        .limit(50)
+        .order_by(desc(Job.created_at) if sort != "oldest" else Job.created_at)
+        .offset(offset)
+        .limit(page_size)
     )
+    result = await session.execute(data_q)
     jobs = result.scalars().all()
-    return {"jobs": [_job_to_dict(j) for j in jobs]}
+
+    total_pages = (total + page_size - 1) // page_size if total > 0 else 0
+
+    return PaginatedJobsResponse(
+        jobs=[_job_to_dict(j) for j in jobs],
+        total=total,
+        page=page,
+        page_size=page_size,
+        total_pages=total_pages,
+    )
 
 
 @router.get("/jobs/{job_id}")
@@ -227,9 +280,48 @@ async def download_translated_file(
         log.warning("output_file_missing", job_id=job_id, path=job.output_path)
         raise HTTPException(status_code=404, detail="Output file has been deleted")
 
-    download_name = f"translated_{job.original_filename}"
+    _media_type_map: dict[str, str] = {
+        "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "pdf": "application/pdf",
+        "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    }
+    media_type = _media_type_map.get(job.input_format, "application/octet-stream")
     return FileResponse(
         path=job.output_path,
-        filename=download_name,
-        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        filename=f"{job.original_filename}",
+        media_type=media_type,
     )
+
+
+@router.delete("/jobs/{job_id}", status_code=204, response_model=None)
+async def delete_job(
+    job_id: str,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_active_user),
+) -> None:
+    """Delete a job and its associated files.
+
+    Auth: requires valid JWT (get_current_active_user).
+    Ownership: job must belong to current_user.
+
+    Returns HTTP 204 on success (no body).
+    HTTP 404 if job not found or not owned by user.
+    """
+    from app.core.config import get_settings
+
+    job = await get_job_for_user(session, job_id, current_user.id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    settings = get_settings()
+
+    # Delete the job's data directory (source + output files)
+    job_dir = os.path.join(settings.data_dir, "jobs", job_id)
+    if os.path.isdir(job_dir):
+        import shutil
+        shutil.rmtree(job_dir)
+
+    # Delete the Job row from DB (cascade deletes segments + flags)
+    await session.delete(job)
+    await session.commit()

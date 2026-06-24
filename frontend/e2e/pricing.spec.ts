@@ -1,11 +1,11 @@
 /**
  * TASK-3.3 / TASK-3.5: Pricing page behaviors
  *
- * All /api/* routes are mocked with page.route() — no running backend required.
+ * All /api/v1/* routes are mocked with page.route() — no running backend required.
  *
  * /pricing is under the (app) route group, behind the middleware auth guard.
  * Auth: the middleware checks for the "forma_access_token" cookie.
- * We inject it via browserContext.addCookies() and stub /api/auth/me.
+ * We inject it via browserContext.addCookies() and stub /api/v1/auth/me.
  *
  * Verification commands:
  *   cd frontend && npx playwright test e2e/pricing.spec.ts -g 'plan opens lead capture'
@@ -43,7 +43,7 @@ async function setupAuth(context: BrowserContext) {
 }
 
 async function stubBaseRoutes(page: Page) {
-  await page.route("**/api/auth/me", (route) =>
+  await page.route("**/api/v1/auth/me", (route) =>
     route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -56,7 +56,7 @@ async function stubBaseRoutes(page: Page) {
     })
   );
 
-  await page.route("**/api/health", (route) =>
+  await page.route("**/api/v1/health", (route) =>
     route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -64,7 +64,7 @@ async function stubBaseRoutes(page: Page) {
     })
   );
 
-  await page.route("**/api/auth/refresh", (route) =>
+  await page.route("**/api/v1/auth/refresh", (route) =>
     route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -85,7 +85,7 @@ test("plan opens lead capture", async ({ page, context }) => {
   let leadCalled = false;
   let leadBody: unknown = null;
 
-  await page.route("**/api/leads", async (route) => {
+  await page.route("**/api/v1/leads", async (route) => {
     leadCalled = true;
     leadBody = JSON.parse(route.request().postData() ?? "{}");
     await route.fulfill({
@@ -97,7 +97,7 @@ test("plan opens lead capture", async ({ page, context }) => {
 
   // Assert NO checkout endpoint is called
   let checkoutCalled = false;
-  await page.route("**/api/licenses/checkout", async (route) => {
+  await page.route("**/api/v1/licenses/checkout", async (route) => {
     checkoutCalled = true;
     await route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
   });
@@ -129,8 +129,8 @@ test("plan opens lead capture", async ({ page, context }) => {
   await expect(submitBtn).toBeEnabled();
   await submitBtn.click();
 
-  // Wait for POST /api/leads
-  await page.waitForResponse("**/api/leads");
+  // Wait for POST /api/v1/leads
+  await page.waitForResponse("**/api/v1/leads");
 
   // Assert leads endpoint was called with correct body
   expect(leadCalled).toBe(true);

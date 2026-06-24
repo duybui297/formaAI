@@ -1,5 +1,5 @@
 """
-Integration tests for GET /health endpoint.
+Integration tests for GET /api/v1/health endpoint.
 
 Uses httpx.AsyncClient + ASGITransport with the FastAPI app.
 All infrastructure (DB, Redis, arq) is mocked — tests run without Docker.
@@ -41,7 +41,7 @@ async def test_health_returns_ok(mock_app_state):
         async with AsyncClient(
             transport=ASGITransport(app=app), base_url="http://test"
         ) as client:
-            response = await client.get("/health")
+            response = await client.get("/api/v1/health")
 
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
@@ -49,7 +49,7 @@ async def test_health_returns_ok(mock_app_state):
 
 @pytest.mark.asyncio
 async def test_health_cors_header(mock_app_state):
-    """GET /health responds to CORS preflight from localhost:3000."""
+    """GET /api/v1/health responds to CORS preflight from localhost:3000."""
     with patch("app.main.lifespan", mock_app_state):
         from app.main import app
 
@@ -57,7 +57,7 @@ async def test_health_cors_header(mock_app_state):
             transport=ASGITransport(app=app), base_url="http://test"
         ) as client:
             response = await client.options(
-                "/health",
+                "/api/v1/health",
                 headers={
                     "Origin": "http://localhost:3000",
                     "Access-Control-Request-Method": "GET",

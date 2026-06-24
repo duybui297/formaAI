@@ -15,7 +15,7 @@ class Base(DeclarativeBase):
 
 class JobStatus(str, enum.Enum):
     queued = "queued"
-    running = "running"
+    processing = "processing"   # US-3.7 AC: renamed from "running" for spec alignment
     needs_review = "needs_review"
     failed = "failed"
     done = "done"
@@ -60,6 +60,12 @@ class Job(Base):
     # D-04: .data/jobs/{job_id}/output.{ext} — null until reassembly complete
     output_path: Mapped[str | None] = mapped_column(Text, nullable=True)
     original_filename: Mapped[str] = mapped_column(String(512), nullable=False)
+
+    idempotency_key: Mapped[str | None] = mapped_column(
+        String(255), nullable=True, index=True
+    )
+
+    queue_priority: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     # D-10: progress counters for SSE payload
     segments_done: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
@@ -277,6 +283,96 @@ class SegmentFlag(Base):
     )
 
     segment: Mapped[Segment] = relationship("Segment", back_populates="flags")
+
+
+# ---------------------------------------------------------------------------
+# Language Catalogue (US-3.2 AC-3)
+# ---------------------------------------------------------------------------
+
+
+class Language(Base):
+    """
+    Admin-managed language catalogue — replaces the hardcoded SUPPORTED_LANGUAGES list.
+
+    popularity_rank: lower = more popular → shown first in the dropdown.
+    is_active: False hides the language from the dropdown without deleting the row.
+    """
+
+    __tablename__ = "language_catalogue"
+
+    code: Mapped[str] = mapped_column(String(16), primary_key=True)
+    name: Mapped[str] = mapped_column(String(64), nullable=False)
+    qwen_code: Mapped[str] = mapped_column(String(64), nullable=False)
+    is_auto_detect: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    popularity_rank: Mapped[int] = mapped_column(Integer, default=999, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+
+# ---------------------------------------------------------------------------
+# Chunked Upload Sessions
+# ---------------------------------------------------------------------------
+
+
+class UploadSessionStatus(str, enum.Enum):
+    active = "active"
+    completed = "completed"
+    expired = "expired"
+    cancelled = "cancelled"
+
+
+class UploadSession(Base):
+    """
+    Tracks a multi-chunk file upload session.
+
+    Flow:
+      1. POST /upload/init        → create session, return upload_id + chunk_size
+      2. POST /upload/{id}/chunks/{n}  → write one chunk to disk
+      3. POST /upload/{id}/complete     → assemble chunks, create Job, enqueue translate_job
+      4. DELETE /upload/{id}           → cancel session, delete temp chunks
+    """
+
+    __tablename__ = "upload_sessions"
+    __table_args__ = (
+        Index("ix_upload_sessions_user_active", "user_id", "status"),
+    )
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    user_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    original_filename: Mapped[str] = mapped_column(String(512), nullable=False)
+    file_size: Mapped[int] = mapped_column(Integer, nullable=False)
+    chunk_size: Mapped[int] = mapped_column(Integer, nullable=False)
+    total_chunks: Mapped[int] = mapped_column(Integer, nullable=False)
+    # List of 0-indexed chunk numbers that have been received
+    uploaded_chunks: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    # Directory where chunks are stored temporarily
+    session_path: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(32),
+        default=UploadSessionStatus.active.value,
+        nullable=False,
+    )
+    # Metadata needed to create the Job once upload completes
+    source_lang: Mapped[str] = mapped_column(String(64), nullable=True)
+    target_lang: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    glossary_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    has_tracked_changes: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    tracked_changes_action: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    is_scanned: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # US-3.7 AC-6: queue priority (captured at init, used at complete)
+    queue_priority: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Created job_id once complete() succeeds — enables polling / SSE tracking
+    job_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -541,4 +637,102 @@ class EmailVerificationToken(Base):
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+# ---------------------------------------------------------------------------
+# Webhook Subscriptions
+# ---------------------------------------------------------------------------
+
+
+class WebhookEventType(str, enum.Enum):
+    translation_completed = "translation.completed"
+    translation_failed = "translation.failed"
+
+
+class WebhookDeliveryStatus(str, enum.Enum):
+    pending = "pending"
+    success = "success"
+    failed = "failed"
+
+
+class WebhookEndpoint(Base):
+    """User-configured webhook endpoint — registers a URL to receive job events."""
+
+    __tablename__ = "webhook_endpoints"
+    __table_args__ = (
+        Index("ix_webhook_endpoints_user_active", "user_id", "is_active"),
+    )
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    user_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    url: Mapped[str] = mapped_column(Text, nullable=False)
+    # Fernet-encrypted secret used for HMAC-SHA256 payload signing
+    encrypted_secret: Mapped[str] = mapped_column(String(255), nullable=False)
+    # Which job events trigger this endpoint
+    events: Mapped[list] = mapped_column(JSON, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    deliveries: Mapped[list["WebhookDelivery"]] = relationship(
+        "WebhookDelivery", back_populates="endpoint", lazy="selectin",
+        cascade="all, delete-orphan",
+    )
+
+
+class WebhookDelivery(Base):
+    """Audit log of each webhook delivery attempt."""
+
+    __tablename__ = "webhook_deliveries"
+    __table_args__ = (
+        Index("ix_webhook_deliveries_endpoint_created", "endpoint_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    endpoint_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("webhook_endpoints.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    job_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    event_type: Mapped[WebhookEventType] = mapped_column(
+        SAEnum(WebhookEventType), nullable=False
+    )
+    attempt: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    status: Mapped[WebhookDeliveryStatus] = mapped_column(
+        SAEnum(WebhookDeliveryStatus), nullable=False
+    )
+    request_method: Mapped[str] = mapped_column(String(10), nullable=False)
+    request_url: Mapped[str] = mapped_column(Text, nullable=False)
+    request_headers: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    request_body: Mapped[str | None] = mapped_column(Text, nullable=True)
+    response_status_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    response_body: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    endpoint: Mapped[WebhookEndpoint] = relationship(
+        "WebhookEndpoint", back_populates="deliveries"
     )

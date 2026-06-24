@@ -10,6 +10,7 @@ import {
   Languages,
   ShieldCheck,
   CreditCard,
+  Webhook,
   Loader2,
   Eye,
   EyeOff,
@@ -33,6 +34,12 @@ import {
   revokeInvite,
   removeMember,
   uploadAvatar,
+  listWebhooks,
+  createWebhook,
+  updateWebhook,
+  deleteWebhook,
+  testWebhook,
+  listWebhookDeliveries,
 } from "@/lib/api"
 import type {
   NotificationPreferences,
@@ -41,6 +48,9 @@ import type {
   ApiKeyCreated,
   WorkspaceMember,
   WorkspaceInvite,
+  WebhookEndpoint,
+  WebhookEndpointCreated,
+  WebhookDelivery,
 } from "@/lib/api"
 import type { Language, Glossary } from "@/lib/types"
 import { getMeApi } from "@/lib/auth"
@@ -58,6 +68,7 @@ const NAV_ITEMS = [
   { id: "api", label: "API Keys", icon: Key },
   { id: "translation", label: "Translation Defaults", icon: Languages },
   { id: "notifications", label: "Notifications", icon: Bell },
+  { id: "webhooks", label: "Webhooks", icon: Webhook },
   { id: "billing", label: "Billing", icon: CreditCard },
   { id: "security", label: "Security", icon: ShieldCheck },
 ] as const
@@ -682,6 +693,402 @@ function NotificationsTab() {
 }
 
 // ---------------------------------------------------------------------------
+// Webhooks tab
+// ---------------------------------------------------------------------------
+
+const AVAILABLE_WEBHOOK_EVENTS = [
+  { value: "translation.completed", label: "Translation completed", description: "Triggered when a translation job completes successfully" },
+  { value: "translation.failed", label: "Translation failed", description: "Triggered when a translation job fails" },
+]
+
+function WebhooksTab() {
+  const { toast } = useToast()
+  const queryClient = useQueryClient()
+
+  const [showCreateModal, setShowCreateModal] = useState(false)
+  const [showSecretModal, setShowSecretModal] = useState<string | null>(null)
+  const [secretToShow, setSecretToShow] = useState<string | null>(null)
+  const [expandedLogId, setExpandedLogId] = useState<string | null>(null)
+
+  // Create form state
+  const [createName, setCreateName] = useState("")
+  const [createUrl, setCreateUrl] = useState("")
+  const [createEvents, setCreateEvents] = useState<string[]>(["translation.completed"])
+
+  const { data: webhooks, isLoading } = useQuery<WebhookEndpoint[]>({
+    queryKey: ["webhooks"],
+    queryFn: listWebhooks,
+    staleTime: 30000,
+  })
+
+  const createMutation = useMutation({
+    mutationFn: (payload: { name: string; url: string; events: string[] }) =>
+      createWebhook(payload),
+    onSuccess: (data: WebhookEndpointCreated) => {
+      queryClient.invalidateQueries({ queryKey: ["webhooks"] })
+      setShowCreateModal(false)
+      setCreateName("")
+      setCreateUrl("")
+      setCreateEvents(["translation.completed"])
+      setSecretToShow(data.secret)
+      setShowSecretModal(data.id)
+      toast({ variant: "success", title: "Webhook created" })
+    },
+    onError: (err: Error) => {
+      toast({ variant: "destructive", title: "Failed to create webhook", description: err.message })
+    },
+  })
+
+  const toggleMutation = useMutation({
+    mutationFn: ({ id, is_active }: { id: string; is_active: boolean }) =>
+      updateWebhook(id, { is_active }),
+    onError: (err: Error) => {
+      toast({ variant: "destructive", title: "Failed to update webhook", description: err.message })
+    },
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => deleteWebhook(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["webhooks"] })
+      toast({ variant: "success", title: "Webhook deleted" })
+    },
+    onError: (err: Error) => {
+      toast({ variant: "destructive", title: "Failed to delete webhook", description: err.message })
+    },
+  })
+
+  const testMutation = useMutation({
+    mutationFn: (id: string) => testWebhook(id),
+    onSuccess: () => {
+      toast({ variant: "success", title: "Test event dispatched", description: "Check your endpoint logs for the delivery" })
+    },
+    onError: (err: Error) => {
+      toast({ variant: "destructive", title: "Failed to send test", description: err.message })
+    },
+  })
+
+  function toggleEvent(ev: string) {
+    setCreateEvents((prev) =>
+      prev.includes(ev) ? prev.filter((e) => e !== ev) : [...prev, ev],
+    )
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-semibold text-zinc-900">Webhooks</h2>
+          <p className="text-sm text-zinc-500 mt-0.5">
+            Receive HTTP notifications when translation jobs complete or fail.
+          </p>
+        </div>
+        <button
+          onClick={() => setShowCreateModal(true)}
+          className="inline-flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition"
+        >
+          <span>+ Add endpoint</span>
+        </button>
+      </div>
+
+      {/* Webhook list */}
+      {isLoading ? (
+        <div className="bg-white rounded-xl border border-zinc-200 shadow-sm flex items-center justify-center py-12 gap-3 text-zinc-400">
+          <Loader2 className="w-5 h-5 animate-spin" />
+          <span>Loading webhooks...</span>
+        </div>
+      ) : !webhooks?.length ? (
+        <div className="bg-white rounded-xl border border-zinc-200 shadow-sm p-10 text-center">
+          <Webhook className="w-10 h-10 text-zinc-300 mx-auto mb-3" />
+          <p className="text-zinc-500 font-medium">No webhook endpoints</p>
+          <p className="text-sm text-zinc-400 mt-1">
+            Add an endpoint to receive notifications when jobs complete or fail.
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {webhooks.map((wh) => (
+            <WebhookCard
+              key={wh.id}
+              webhook={wh}
+              onToggle={(is_active) => toggleMutation.mutate({ id: wh.id, is_active })}
+              onDelete={() => deleteMutation.mutate(wh.id)}
+              onTest={() => testMutation.mutate(wh.id)}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* Create modal */}
+      {showCreateModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4 p-6">
+            <h3 className="text-lg font-semibold text-zinc-900 mb-4">Add webhook endpoint</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-zinc-700 mb-1">Name</label>
+                <input
+                  type="text"
+                  value={createName}
+                  onChange={(e) => setCreateName(e.target.value)}
+                  placeholder="My endpoint"
+                  className="w-full px-3 py-2 border border-zinc-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-zinc-700 mb-1">Endpoint URL</label>
+                <input
+                  type="url"
+                  value={createUrl}
+                  onChange={(e) => setCreateUrl(e.target.value)}
+                  placeholder="https://example.com/webhook"
+                  className="w-full px-3 py-2 border border-zinc-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-zinc-700 mb-2">Events</label>
+                <div className="space-y-2">
+                  {AVAILABLE_WEBHOOK_EVENTS.map((ev) => (
+                    <label key={ev.value} className="flex items-start gap-2.5 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={createEvents.includes(ev.value)}
+                        onChange={() => toggleEvent(ev.value)}
+                        className="mt-0.5 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500"
+                      />
+                      <div>
+                        <p className="text-sm font-medium text-zinc-900">{ev.label}</p>
+                        <p className="text-xs text-zinc-500">{ev.description}</p>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 mt-6">
+              <button
+                onClick={() => {
+                  setShowCreateModal(false)
+                  setCreateName("")
+                  setCreateUrl("")
+                  setCreateEvents(["translation.completed"])
+                }}
+                className="px-4 py-2 text-sm text-zinc-600 hover:text-zinc-800 transition"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  if (!createName.trim() || !createUrl.trim() || createEvents.length === 0) {
+                    toast({ variant: "destructive", title: "All fields required", description: "Fill in name, URL, and at least one event." })
+                    return
+                  }
+                  createMutation.mutate({ name: createName.trim(), url: createUrl.trim(), events: createEvents })
+                }}
+                disabled={createMutation.isPending}
+                className="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition"
+              >
+                {createMutation.isPending ? "Creating..." : "Create endpoint"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Secret reveal modal */}
+      {showSecretModal && secretToShow && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4 p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2 bg-amber-100 rounded-lg">
+                <Eye className="w-5 h-5 text-amber-600" />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-zinc-900">Webhook secret</h3>
+                <p className="text-sm text-zinc-500">Save this now — it will not be shown again.</p>
+              </div>
+            </div>
+            <div className="bg-zinc-50 border border-zinc-200 rounded-lg p-3 font-mono text-sm text-zinc-700 break-all">
+              {secretToShow}
+            </div>
+            <p className="text-xs text-zinc-400 mt-3">
+              Use this secret to verify webhook payloads. Sign with HMAC-SHA256 and compare against the{" "}
+              <code className="bg-zinc-100 px-1 rounded">X-Webhook-Signature-256</code> header.
+            </p>
+            <div className="flex justify-end mt-6">
+              <button
+                onClick={() => {
+                  setShowSecretModal(null)
+                  setSecretToShow(null)
+                }}
+                className="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition"
+              >
+                Got it
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// WebhookCard sub-component
+// ---------------------------------------------------------------------------
+
+function WebhookCard({
+  webhook,
+  onToggle,
+  onDelete,
+  onTest,
+}: {
+  webhook: WebhookEndpoint
+  onToggle: (is_active: boolean) => void
+  onDelete: () => void
+  onTest: () => void
+}) {
+  const [showLog, setShowLog] = useState(false)
+  const [deleteConfirm, setDeleteConfirm] = useState(false)
+
+  const { data: deliveries } = useQuery({
+    queryKey: ["webhook-deliveries", webhook.id],
+    queryFn: () => listWebhookDeliveries(webhook.id, 1, 20),
+    enabled: showLog,
+    staleTime: 10000,
+  })
+
+  return (
+    <div className="bg-white rounded-xl border border-zinc-200 shadow-sm">
+      <div className="p-5">
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <Webhook className="w-4 h-4 text-zinc-400 shrink-0" />
+              <h3 className="text-sm font-semibold text-zinc-900 truncate">{webhook.name}</h3>
+              {!webhook.is_active && (
+                <span className="px-1.5 py-0.5 bg-zinc-100 text-zinc-500 text-xs rounded">
+                  Disabled
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-zinc-500 mt-0.5 truncate">{webhook.url}</p>
+            <div className="flex flex-wrap gap-1 mt-2">
+              {webhook.events.map((ev) => (
+                <span key={ev} className="px-1.5 py-0.5 bg-indigo-50 text-indigo-600 text-xs rounded">
+                  {ev}
+                </span>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={onTest}
+              title="Send test event"
+              className="px-3 py-1.5 text-xs text-zinc-600 border border-zinc-200 rounded-lg hover:bg-zinc-50 transition"
+            >
+              Test
+            </button>
+            <button
+              onClick={() => setShowLog(!showLog)}
+              title="View delivery logs"
+              className="px-3 py-1.5 text-xs text-zinc-600 border border-zinc-200 rounded-lg hover:bg-zinc-50 transition"
+            >
+              {showLog ? "Hide log" : "Logs"}
+            </button>
+            <button
+              role="switch"
+              aria-checked={webhook.is_active}
+              onClick={() => onToggle(!webhook.is_active)}
+              className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 ${
+                webhook.is_active ? "bg-indigo-600" : "bg-zinc-200"
+              }`}
+            >
+              <span
+                className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
+                  webhook.is_active ? "translate-x-4" : "translate-x-0"
+                }`}
+              />
+            </button>
+            {deleteConfirm ? (
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={onDelete}
+                  className="px-2 py-1 text-xs bg-red-600 text-white rounded-lg hover:bg-red-700 transition"
+                >
+                  Confirm
+                </button>
+                <button
+                  onClick={() => setDeleteConfirm(false)}
+                  className="px-2 py-1 text-xs text-zinc-500 hover:text-zinc-700 transition"
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setDeleteConfirm(true)}
+                title="Delete endpoint"
+                className="p-1.5 text-zinc-400 hover:text-red-500 transition"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 12a2.25 2.25 0 01-2.25 2.25A2.25 2.25 0 0115 12a2.25 2.25 0 012.25 2.25 2.25 2.25 0 010 4.5 2.25 2.25 0 01-2.25 2.25A2.25 2.25 0 0110.5 21a2.25 2.25 0 01-2.25-2.25 2.25 2.25 0 010-4.5 2.25 2.25 0 012.25-2.25A2.25 2.25 0 0115 16.5a2.25 2.25 0 012.25-2.25A2.25 2.25 0 0119.5 12m0 0a2.25 2.25 0 01-2.25 2.25M19.5 12a2.25 2.25 0 00-2.25-2.25M19.5 12a2.25 2.25 0 01-2.25-2.25m-6 4.5a2.25 2.25 0 01-2.25-2.25m0 0a2.25 2.25 0 00-2.25-2.25m2.25 4.5a2.25 2.25 0 012.25-2.25m0 0a2.25 2.25 0 002.25 2.25m-2.25 0a2.25 2.25 0 012.25 2.25" />
+                </svg>
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Delivery log */}
+        {showLog && (
+          <div className="mt-4 border-t border-zinc-100 pt-4">
+            <h4 className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-3">
+              Delivery history
+            </h4>
+            {!deliveries ? (
+              <div className="flex items-center gap-2 text-sm text-zinc-400">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>Loading logs...</span>
+              </div>
+            ) : deliveries.deliveries.length === 0 ? (
+              <p className="text-sm text-zinc-400 italic">No deliveries yet.</p>
+            ) : (
+              <div className="space-y-2 max-h-64 overflow-y-auto">
+                {deliveries.deliveries.map((d) => (
+                  <div key={d.id} className="flex items-center gap-3 text-xs">
+                    <span className={`shrink-0 px-1.5 py-0.5 rounded font-medium ${
+                      d.status === "success"
+                        ? "bg-green-100 text-green-700"
+                        : d.status === "failed"
+                        ? "bg-red-100 text-red-700"
+                        : "bg-yellow-100 text-yellow-700"
+                    }`}>
+                      {d.status}
+                    </span>
+                    <span className="text-zinc-400">{d.event_type}</span>
+                    <span className="text-zinc-400">
+                      {new Date(d.created_at).toLocaleString()}
+                    </span>
+                    {d.response_status_code && (
+                      <span className="text-zinc-400">HTTP {d.response_status_code}</span>
+                    )}
+                    {d.error_message && (
+                      <span className="text-red-500 truncate max-w-xs">{d.error_message}</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Translation Defaults tab
 // ---------------------------------------------------------------------------
 
@@ -1210,6 +1617,7 @@ const PLACEHOLDER_MESSAGES: Record<NavId, string> = {
   notifications: "Notification preferences control which emails and in-app alerts you receive for job completions and license updates.",
   security: "Security settings for your account. Manage your password and two-factor authentication.",
   billing: "Billing information and your current plan details are managed here. View invoices and upgrade or downgrade your subscription.",
+  webhooks: "Configure webhook endpoints to receive event notifications when translation jobs complete.",
 }
 
 function PlaceholderTab({ id }: { id: NavId }) {
@@ -1356,6 +1764,7 @@ export default function SettingsPage() {
               {activeTab === "security" && <SecurityTab />}
               {activeTab === "translation" && <TranslationDefaultsTab />}
               {activeTab === "notifications" && <NotificationsTab />}
+              {activeTab === "webhooks" && <WebhooksTab />}
               {activeTab === "billing" && <BillingTab />}
               {activeTab === "api" && <ApiKeysTab />}
               {activeTab === "workspace" && <TeamWorkspaceTab />}

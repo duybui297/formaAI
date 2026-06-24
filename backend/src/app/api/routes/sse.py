@@ -1,5 +1,5 @@
 """
-GET /jobs/{id}/stream — SSE progress stream via Redis pub/sub.
+GET /api/v1/jobs/{id}/stream — SSE progress stream via Redis pub/sub.
 
 D-09: SSE is the primary real-time transport. Frontend falls back to
 TanStack Query polling when SSE is unavailable.

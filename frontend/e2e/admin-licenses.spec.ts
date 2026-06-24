@@ -1,11 +1,11 @@
 /**
  * TASK-3.1: Admin Dashboard — License Lifecycle Management
  *
- * All /api/* routes are mocked with page.route() so the test suite is
+ * All /api/v1/* routes are mocked with page.route() so the test suite is
  * fully hermetic — no running backend or database required.
  *
  * Auth: the middleware checks for the "forma_access_token" cookie.
- * We inject it via browserContext.addCookies() and stub /api/auth/me.
+ * We inject it via browserContext.addCookies() and stub /api/v1/auth/me.
  */
 
 import { test, expect, type Page, type BrowserContext } from "@playwright/test";
@@ -103,7 +103,7 @@ async function setupAuth(context: BrowserContext) {
 
 async function stubBaseRoutes(page: Page) {
   // Auth /me endpoint — always returns an admin user
-  await page.route("**/api/auth/me", (route) =>
+  await page.route("**/api/v1/auth/me", (route) =>
     route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -118,7 +118,7 @@ async function stubBaseRoutes(page: Page) {
   );
 
   // Health check (sidebar)
-  await page.route("**/api/health", (route) =>
+  await page.route("**/api/v1/health", (route) =>
     route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -127,7 +127,7 @@ async function stubBaseRoutes(page: Page) {
   );
 
   // Auth refresh (in case token refresh fires)
-  await page.route("**/api/auth/refresh", (route) =>
+  await page.route("**/api/v1/auth/refresh", (route) =>
     route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -139,8 +139,8 @@ async function stubBaseRoutes(page: Page) {
 async function stubLicenseList(page: Page, licenses = LICENSES) {
   await page.route(
     (url) =>
-      url.pathname === "/api/admin/licenses" ||
-      url.pathname.startsWith("/api/admin/licenses?"),
+      url.pathname === "/api/v1/admin/licenses" ||
+      url.pathname.startsWith("/api/v1/admin/licenses?"),
     (route) =>
       route.fulfill({
         status: 200,
@@ -157,7 +157,7 @@ async function stubLicenseList(page: Page, licenses = LICENSES) {
 
 async function stubLicenseDetail(page: Page, id = "lic-1") {
   await page.route(
-    (url) => url.pathname === `/api/admin/licenses/${id}`,
+    (url) => url.pathname === `/api/v1/admin/licenses/${id}`,
     (route) =>
       route.fulfill({
         status: 200,
@@ -170,7 +170,7 @@ async function stubLicenseDetail(page: Page, id = "lic-1") {
 async function stubActivities(page: Page, licenseId = "lic-1") {
   await page.route(
     (url) =>
-      url.pathname === `/api/admin/licenses/${licenseId}/activities`,
+      url.pathname === `/api/v1/admin/licenses/${licenseId}/activities`,
     (route) =>
       route.fulfill({
         status: 200,
@@ -254,7 +254,7 @@ test("create one-time key copy", async ({ page, context }) => {
 
   // Stub the POST /admin/licenses endpoint
   let postedBody: unknown = null;
-  await page.route("**/api/admin/licenses", async (route) => {
+  await page.route("**/api/v1/admin/licenses", async (route) => {
     if (route.request().method() === "POST") {
       postedBody = JSON.parse(route.request().postData() ?? "{}");
       await route.fulfill({
@@ -340,8 +340,8 @@ test("filters persist in url", async ({ page, context }) => {
   const calledParams: string[] = [];
   await page.route(
     (url) =>
-      url.pathname === "/api/admin/licenses" ||
-      url.pathname.startsWith("/api/admin/licenses"),
+      url.pathname === "/api/v1/admin/licenses" ||
+      url.pathname.startsWith("/api/v1/admin/licenses"),
     (route) => {
       calledParams.push(route.request().url());
       route.fulfill({
@@ -423,7 +423,7 @@ test("bulk actions and detail drawer", async ({ page, context }) => {
 
   // Stub bulk suspend
   let suspendBody: unknown = null;
-  await page.route("**/api/admin/licenses/suspend", async (route) => {
+  await page.route("**/api/v1/admin/licenses/suspend", async (route) => {
     suspendBody = JSON.parse(route.request().postData() ?? "{}");
     await route.fulfill({
       status: 200,
@@ -434,7 +434,7 @@ test("bulk actions and detail drawer", async ({ page, context }) => {
 
   // Stub bulk revoke
   let revokeBody: unknown = null;
-  await page.route("**/api/admin/licenses/revoke", async (route) => {
+  await page.route("**/api/v1/admin/licenses/revoke", async (route) => {
     revokeBody = JSON.parse(route.request().postData() ?? "{}");
     await route.fulfill({
       status: 200,
@@ -444,7 +444,7 @@ test("bulk actions and detail drawer", async ({ page, context }) => {
   });
 
   // Stub extend expiry
-  await page.route("**/api/admin/licenses/lic-1/extend", async (route) => {
+  await page.route("**/api/v1/admin/licenses/lic-1/extend", async (route) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -453,7 +453,7 @@ test("bulk actions and detail drawer", async ({ page, context }) => {
   });
 
   // Stub activities for detail drawer
-  await page.route("**/api/admin/licenses/lic-1/activities", (route) =>
+  await page.route("**/api/v1/admin/licenses/lic-1/activities", (route) =>
     route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -484,7 +484,7 @@ test("bulk actions and detail drawer", async ({ page, context }) => {
   await suspendBtn.click();
 
   // Wait for suspend to fire and confirm the request body
-  await page.waitForResponse("**/api/admin/licenses/suspend");
+  await page.waitForResponse("**/api/v1/admin/licenses/suspend");
   expect(suspendBody).toMatchObject({ ids: expect.arrayContaining(["lic-1", "lic-2"]) });
 
   // After suspend, selection is cleared
@@ -502,7 +502,7 @@ test("bulk actions and detail drawer", async ({ page, context }) => {
   page.on("dialog", (dialog) => dialog.accept());
   await revokeBtn.click();
 
-  await page.waitForResponse("**/api/admin/licenses/revoke");
+  await page.waitForResponse("**/api/v1/admin/licenses/revoke");
   expect(revokeBody).toMatchObject({ ids: expect.arrayContaining(["lic-1"]) });
 
   // ---- Detail drawer ----
@@ -540,7 +540,7 @@ test("bulk actions and detail drawer", async ({ page, context }) => {
   await expect(extendSubmitBtn).toBeEnabled();
   await extendSubmitBtn.click();
 
-  await page.waitForResponse("**/api/admin/licenses/lic-1/extend");
+  await page.waitForResponse("**/api/v1/admin/licenses/lic-1/extend");
 
   // Extend form closes after success
   await expect(extendForm).not.toBeVisible();
@@ -557,7 +557,7 @@ test("bulk actions and detail drawer", async ({ page, context }) => {
 test("non-admin redirected from admin", async ({ page, context }) => {
   await setupAuth(context);
   // /me as a NON-admin user (is_superuser false)
-  await page.route("**/api/auth/me", (route) =>
+  await page.route("**/api/v1/auth/me", (route) =>
     route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -570,7 +570,7 @@ test("non-admin redirected from admin", async ({ page, context }) => {
       }),
     })
   );
-  await page.route("**/api/health", (route) =>
+  await page.route("**/api/v1/health", (route) =>
     route.fulfill({ status: 200, contentType: "application/json", body: "{}" })
   );
 

@@ -10,9 +10,11 @@ const nextConfig = {
   async rewrites() {
     return [
       {
-        // Proxy /api/* to FastAPI backend (avoids CORS in dev)
+        // Proxy /api/* to FastAPI backend (avoids CORS in dev).
+        // Forward the full /api prefix unchanged so backend receives /api/v1/*.
+        // Backend mounts all routes at /api/v1 (see backend/src/app/main.py).
         source: "/api/:path*",
-        destination: `${process.env.BACKEND_URL || "http://api:8000"}/:path*`,
+        destination: `${process.env.BACKEND_URL || "http://api:8000"}/api/:path*`,
       },
     ];
   },

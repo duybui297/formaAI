@@ -1,9 +1,11 @@
 """
 Public license routes — TASK-2.2 + TASK-3.3 + TASK-3.7.
 
-POST /licenses/activate   — activate a PENDING license (public, no auth required)
-POST /licenses/checkout   — self-serve checkout (authenticated user, non-admin)
-GET  /licenses/me         — caller's entitlement summary (TASK-3.7-b)
+All routes are prefixed with /api/v1/licenses (applied at app level).
+POST /api/v1/licenses/activate   — activate a PENDING license (public, no auth required)
+POST /api/v1/licenses/checkout   — self-serve checkout (authenticated user, non-admin)
+GET  /api/v1/licenses/me         — caller's entitlement summary (TASK-3.7-b)
+GET  /api/v1/licenses/my-licenses — list all licenses owned by the authenticated user
 """
 from __future__ import annotations
 

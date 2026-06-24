@@ -1,8 +1,10 @@
 """
 Segment endpoints — REV-01, REV-02, REV-04.
 
-GET  /jobs/{id}/segments            — list with flags (REV-01)
-PATCH /segments/{id}                — persist edited_text (REV-02); 409 if job not reviewable
+All routes are prefixed with /api/v1 (applied at app level).
+
+GET  /api/v1/jobs/{id}/segments            — list with flags (REV-01)
+PATCH /api/v1/segments/{id}                — persist edited_text (REV-02); 409 if job not reviewable
 POST  /segments/{id}/regenerate     — sync re-translate, overwrite translated_text (REV-04)
 """
 from __future__ import annotations

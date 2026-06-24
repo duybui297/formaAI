@@ -15,7 +15,7 @@ export default function GlossariesPage() {
   const { data: glossaries = [], isLoading } = useQuery<Glossary[]>({
     queryKey: ["glossaries"],
     queryFn: async () => {
-      const res = await authFetch("/glossaries", { throwOnError: false })
+      const res = await authFetch("/v1/glossaries", { throwOnError: false })
       if (!res.ok) {
         if (res.status === 401) {
           return [] as Glossary[]
@@ -29,7 +29,7 @@ export default function GlossariesPage() {
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) =>
-      authFetch(`/glossaries/${id}`, { method: "DELETE", throwOnError: false }).then((r) => {
+      authFetch(`/v1/glossaries/${id}`, { method: "DELETE", throwOnError: false }).then((r) => {
         if (!r.ok) throw new Error("Delete failed")
       }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["glossaries"] }),

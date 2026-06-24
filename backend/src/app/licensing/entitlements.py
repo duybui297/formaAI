@@ -12,7 +12,7 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Job, License, LicenseStatus, LicenseTier, User
-from app.licensing.plans import ENTITLEMENTS, TierEntitlement, _TIER_RANK
+from app.licensing.plans import ENTITLEMENTS, TierEntitlement, TIER_RANK
 
 
 async def resolve_entitlements(
@@ -43,11 +43,11 @@ async def resolve_entitlements(
         return None
 
     # Pick the tier with the highest rank, skipping any unrecognized tiers.
-    valid_tiers = [t for t in tiers if t in _TIER_RANK]
+    valid_tiers = [t for t in tiers if t in TIER_RANK]
     if not valid_tiers:
         return None
 
-    best_tier = max(valid_tiers, key=lambda t: _TIER_RANK[t])
+    best_tier = max(valid_tiers, key=lambda t: TIER_RANK[t])
     return ENTITLEMENTS[best_tier]
 
 

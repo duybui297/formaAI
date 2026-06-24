@@ -1,16 +1,18 @@
 """
 Glossary CRUD routes — GLOS-01, GLOS-02, GLOS-05.
 
-GET    /glossaries                              — list all (filterable by lang pair)
-POST   /glossaries                              — create glossary
-GET    /glossaries/{id}                         — get glossary + term list
-PATCH  /glossaries/{id}                         — rename glossary
-DELETE /glossaries/{id}                         — delete glossary (cascades to terms)
-GET    /glossaries/{id}/terms                   — list terms
-POST   /glossaries/{id}/terms                   — add term
-PATCH  /glossaries/{id}/terms/{term_id}         — update term (source_term, target_term, notes)
-DELETE /glossaries/{id}/terms/{term_id}         — delete term
-POST   /glossaries/{id}/terms/import            — bulk import CSV or TBX
+All routes are prefixed with /api/v1/glossaries (applied at app level).
+
+GET    /api/v1/glossaries                              — list all (filterable by lang pair)
+POST   /api/v1/glossaries                              — create glossary
+GET    /api/v1/glossaries/{id}                         — get glossary + term list
+PATCH  /api/v1/glossaries/{id}                         — rename glossary
+DELETE /api/v1/glossaries/{id}                         — delete glossary (cascades to terms)
+GET    /api/v1/glossaries/{id}/terms                   — list terms
+POST   /api/v1/glossaries/{id}/terms                   — add term
+PATCH  /api/v1/glossaries/{id}/terms/{term_id}         — update term (source_term, target_term, notes)
+DELETE /api/v1/glossaries/{id}/terms/{term_id}         — delete term
+POST   /api/v1/glossaries/{id}/terms/import            — bulk import CSV or TBX
 """
 from __future__ import annotations
 

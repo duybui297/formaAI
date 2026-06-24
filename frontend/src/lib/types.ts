@@ -1,4 +1,4 @@
-export type JobStatus = "queued" | "running" | "needs_review" | "failed" | "done"
+export type JobStatus = "queued" | "processing" | "needs_review" | "failed" | "done"
 export type JobStage = "parse" | "ocr" | "translate" | "compose" | "reassemble" | "done" | "failed"
 
 // D-10 payload shape — matches SSE event + GET /jobs/{id} response
@@ -61,6 +61,37 @@ export interface JobSummary {
   created_at: string
   // Phase 4: D-04-14 low confidence pages (from job metadata)
   low_confidence_pages?: number[]
+}
+
+// US-4.1: Paginated jobs list response
+export interface PaginatedJobsResponse {
+  jobs: JobSummary[]
+  total: number
+  page: number
+  page_size: number
+  total_pages: number
+}
+
+// US-4.1 [BE] — spec-aligned translations endpoint
+// GET /api/v1/translations?page=&size=&sort= (default sort: -created_at)
+// Org-scoped; response shape per spec uses `rows` (not `jobs`).
+export interface TranslationRow {
+  job_id: string
+  filename: string
+  input_format: string
+  source_lang: string
+  target_lang: string
+  status: JobStatus
+  created_at: string
+  updated_at: string | null
+}
+
+export interface PaginatedTranslationsResponse {
+  rows: TranslationRow[]
+  total: number
+  page: number
+  size: number
+  total_pages: number
 }
 
 // --- Phase 2 types ---

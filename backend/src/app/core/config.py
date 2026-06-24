@@ -82,6 +82,12 @@ class Settings(BaseSettings):
         "emails (activate, reset, welcome, verify). Example: https://app.forma.app",
     )
 
+    webhook_encryption_key: SecretStr = Field(
+        default=SecretStr(""),
+        description="Fernet key for encrypting webhook secrets at rest. "
+        "Generate with: python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\"",
+    )
+
     @field_validator("token_budget")
     @classmethod
     def validate_token_budget(cls, v: int) -> int:

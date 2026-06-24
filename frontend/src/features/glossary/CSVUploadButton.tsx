@@ -22,7 +22,7 @@ export function CSVUploadButton({ glossaryId, onImported }: CSVUploadButtonProps
     form.append("file", file)
 
     try {
-      const res = await authFetch(`/glossaries/${glossaryId}/terms/import`, {
+      const res = await authFetch(`/v1/glossaries/${glossaryId}/terms/import`, {
         method: "POST",
         body: form,
         throwOnError: false,

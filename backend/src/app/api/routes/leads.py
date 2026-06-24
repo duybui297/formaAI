@@ -1,8 +1,8 @@
 """
 Marketing lead capture — TASK-3.5.
 
-POST /leads  — open (no auth); stores {email, plan} and returns 201.
-Reachable as /api/leads via the Next.js proxy (proxy strips /api prefix).
+POST /api/v1/leads  — open (no auth); stores {email, plan} and returns 201.
+Reachable as /api/v1/leads via the Next.js proxy (proxy strips /api prefix).
 """
 from __future__ import annotations
 
@@ -262,7 +262,7 @@ async def _send_lead_confirmation_email(email: str, plan: str) -> None:
         )
 
 
-router = APIRouter(prefix="/leads", tags=["leads"])
+router = APIRouter(prefix="/licenses", tags=["leads"])
 
 
 @router.post(

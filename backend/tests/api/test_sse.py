@@ -95,7 +95,7 @@ async def test_sse_yields_progress_event():
     a running-status message to the Redis channel.
     """
     progress_msg = {
-        "status": "running",
+        "status": "processing",
         "stage": "translate",
         "segments_done": 5,
         "segments_total": 20,

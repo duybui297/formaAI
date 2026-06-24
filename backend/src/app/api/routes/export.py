@@ -1,7 +1,7 @@
 """
 Export endpoint — REV-05, REV-06.
 
-POST /jobs/{id}/export  — idempotent DOCX reassembly; returns FileResponse
+POST /api/v1/jobs/{id}/export  — idempotent DOCX reassembly; returns FileResponse
 """
 from __future__ import annotations
 

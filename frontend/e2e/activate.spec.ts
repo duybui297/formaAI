@@ -1,13 +1,13 @@
 /**
  * TASK-3.2: Client Activation Screen & Expiry Warning Banner
  *
- * All /api/* routes are mocked with page.route() — no running backend required.
+ * All /api/v1/* routes are mocked with page.route() — no running backend required.
  *
  * /activate is a PUBLIC route (no auth cookie needed — same as /login).
  * For banner tests, we need the (app) shell, so we use auth + /dashboard stub.
  *
  * Auth: the middleware checks for the "forma_access_token" cookie.
- * We inject it via browserContext.addCookies() and stub /api/auth/me.
+ * We inject it via browserContext.addCookies() and stub /api/v1/auth/me.
  */
 
 import { test, expect, type Page, type BrowserContext } from "@playwright/test";
@@ -48,7 +48,7 @@ async function setupAuth(context: BrowserContext) {
 }
 
 async function stubBaseRoutes(page: Page) {
-  await page.route("**/api/auth/me", (route) =>
+  await page.route("**/api/v1/auth/me", (route) =>
     route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -61,7 +61,7 @@ async function stubBaseRoutes(page: Page) {
     })
   );
 
-  await page.route("**/api/health", (route) =>
+  await page.route("**/api/v1/health", (route) =>
     route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -69,7 +69,7 @@ async function stubBaseRoutes(page: Page) {
     })
   );
 
-  await page.route("**/api/auth/refresh", (route) =>
+  await page.route("**/api/v1/auth/refresh", (route) =>
     route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -86,7 +86,7 @@ test("autoformat and submit", async ({ page }) => {
   // /activate is public — no auth cookie required
   let capturedBody: unknown = null;
 
-  await page.route("**/api/licenses/activate", async (route) => {
+  await page.route("**/api/v1/licenses/activate", async (route) => {
     capturedBody = JSON.parse(route.request().postData() ?? "{}");
     await route.fulfill({
       status: 200,
@@ -115,7 +115,7 @@ test("autoformat and submit", async ({ page }) => {
   await submitBtn.click();
 
   // POST was called
-  await page.waitForResponse("**/api/licenses/activate");
+  await page.waitForResponse("**/api/v1/licenses/activate");
   expect(capturedBody).toMatchObject({ raw_key: "ABCD-1234-EFGH-5678" });
 
   // Success card appears
@@ -128,7 +128,7 @@ test("autoformat and submit", async ({ page }) => {
 
 test("success and error states", async ({ page }) => {
   // ---- SUCCESS STATE ----
-  await page.route("**/api/licenses/activate", (route) =>
+  await page.route("**/api/v1/licenses/activate", (route) =>
     route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -140,7 +140,7 @@ test("success and error states", async ({ page }) => {
 
   await page.getByTestId("license-key-input").fill("GOOD-KEY1-GOOD-KEY2");
   await page.getByTestId("activate-submit").click();
-  await page.waitForResponse("**/api/licenses/activate");
+  await page.waitForResponse("**/api/v1/licenses/activate");
 
   const successCard = page.getByTestId("activate-success");
   await expect(successCard).toBeVisible();
@@ -157,8 +157,8 @@ test("success and error states", async ({ page }) => {
   await expect(featuresEl).toContainText("Glossary");
 
   // ---- INVALID_KEY — RED ----
-  await page.unroute("**/api/licenses/activate");
-  await page.route("**/api/licenses/activate", (route) =>
+  await page.unroute("**/api/v1/licenses/activate");
+  await page.route("**/api/v1/licenses/activate", (route) =>
     route.fulfill({
       status: 422,
       contentType: "application/json",
@@ -170,7 +170,7 @@ test("success and error states", async ({ page }) => {
   await page.goto("/activate");
   await page.getByTestId("license-key-input").fill("BAAD-BAAD-BAAD-BAAD");
   await page.getByTestId("activate-submit").click();
-  await page.waitForResponse("**/api/licenses/activate");
+  await page.waitForResponse("**/api/v1/licenses/activate");
 
   const errorEl = page.getByTestId("activate-error");
   await expect(errorEl).toBeVisible();
@@ -179,8 +179,8 @@ test("success and error states", async ({ page }) => {
   await expect(errorEl).toHaveAttribute("data-code", "INVALID_KEY");
 
   // ---- ALREADY_ACTIVATED — AMBER ----
-  await page.unroute("**/api/licenses/activate");
-  await page.route("**/api/licenses/activate", (route) =>
+  await page.unroute("**/api/v1/licenses/activate");
+  await page.route("**/api/v1/licenses/activate", (route) =>
     route.fulfill({
       status: 409,
       contentType: "application/json",
@@ -194,7 +194,7 @@ test("success and error states", async ({ page }) => {
   await page.goto("/activate");
   await page.getByTestId("license-key-input").fill("USED-USED-USED-USED");
   await page.getByTestId("activate-submit").click();
-  await page.waitForResponse("**/api/licenses/activate");
+  await page.waitForResponse("**/api/v1/licenses/activate");
 
   const alreadyEl = page.getByTestId("activate-error");
   await expect(alreadyEl).toBeVisible();
@@ -202,8 +202,8 @@ test("success and error states", async ({ page }) => {
   await expect(alreadyEl).toHaveAttribute("data-code", "ALREADY_ACTIVATED");
 
   // ---- EXPIRED — RED + renewal link ----
-  await page.unroute("**/api/licenses/activate");
-  await page.route("**/api/licenses/activate", (route) =>
+  await page.unroute("**/api/v1/licenses/activate");
+  await page.route("**/api/v1/licenses/activate", (route) =>
     route.fulfill({
       status: 410,
       contentType: "application/json",
@@ -217,7 +217,7 @@ test("success and error states", async ({ page }) => {
   await page.goto("/activate");
   await page.getByTestId("license-key-input").fill("EXPR-EXPR-EXPR-EXPR");
   await page.getByTestId("activate-submit").click();
-  await page.waitForResponse("**/api/licenses/activate");
+  await page.waitForResponse("**/api/v1/licenses/activate");
 
   const expiredEl = page.getByTestId("activate-error");
   await expect(expiredEl).toBeVisible();
@@ -236,7 +236,7 @@ test("expiry warning banner", async ({ page, context }) => {
   await stubBaseRoutes(page);
 
   // Stub dashboard and admin routes so the (app) shell renders without errors
-  await page.route("**/api/admin/licenses**", (route) =>
+  await page.route("**/api/v1/admin/licenses**", (route) =>
     route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -244,7 +244,7 @@ test("expiry warning banner", async ({ page, context }) => {
     })
   );
 
-  await page.route("**/api/jobs**", (route) =>
+  await page.route("**/api/v1/jobs**", (route) =>
     route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -272,14 +272,14 @@ test("expiry warning banner", async ({ page, context }) => {
   // Reload so ExpiryBanner reads localStorage on mount
   await page.reload();
   await stubBaseRoutes(page);
-  await page.route("**/api/admin/licenses**", (route) =>
+  await page.route("**/api/v1/admin/licenses**", (route) =>
     route.fulfill({
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({ licenses: [], total: 0, page: 1, page_size: 20 }),
     })
   );
-  await page.route("**/api/jobs**", (route) =>
+  await page.route("**/api/v1/jobs**", (route) =>
     route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -311,14 +311,14 @@ test("expiry warning banner", async ({ page, context }) => {
 
   await page.reload();
   await stubBaseRoutes(page);
-  await page.route("**/api/admin/licenses**", (route) =>
+  await page.route("**/api/v1/admin/licenses**", (route) =>
     route.fulfill({
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({ licenses: [], total: 0, page: 1, page_size: 20 }),
     })
   );
-  await page.route("**/api/jobs**", (route) =>
+  await page.route("**/api/v1/jobs**", (route) =>
     route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -339,14 +339,14 @@ test("banner dismiss persists", async ({ page, context }) => {
   await setupAuth(context);
   await stubBaseRoutes(page);
 
-  await page.route("**/api/admin/licenses**", (route) =>
+  await page.route("**/api/v1/admin/licenses**", (route) =>
     route.fulfill({
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({ licenses: [], total: 0, page: 1, page_size: 20 }),
     })
   );
-  await page.route("**/api/jobs**", (route) =>
+  await page.route("**/api/v1/jobs**", (route) =>
     route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -371,14 +371,14 @@ test("banner dismiss persists", async ({ page, context }) => {
 
   await page.reload();
   await stubBaseRoutes(page);
-  await page.route("**/api/admin/licenses**", (route) =>
+  await page.route("**/api/v1/admin/licenses**", (route) =>
     route.fulfill({
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({ licenses: [], total: 0, page: 1, page_size: 20 }),
     })
   );
-  await page.route("**/api/jobs**", (route) =>
+  await page.route("**/api/v1/jobs**", (route) =>
     route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -405,14 +405,14 @@ test("banner dismiss persists", async ({ page, context }) => {
   // Reload — banner stays hidden (persisted dismiss)
   await page.reload();
   await stubBaseRoutes(page);
-  await page.route("**/api/admin/licenses**", (route) =>
+  await page.route("**/api/v1/admin/licenses**", (route) =>
     route.fulfill({
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({ licenses: [], total: 0, page: 1, page_size: 20 }),
     })
   );
-  await page.route("**/api/jobs**", (route) =>
+  await page.route("**/api/v1/jobs**", (route) =>
     route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -441,7 +441,7 @@ test("activate success contract", async ({ page }) => {
 
   let capturedBody: unknown = null;
 
-  await page.route("**/api/licenses/activate", async (route) => {
+  await page.route("**/api/v1/licenses/activate", async (route) => {
     capturedBody = JSON.parse(route.request().postData() ?? "{}");
     await route.fulfill({
       status: 200,
@@ -460,7 +460,7 @@ test("activate success contract", async ({ page }) => {
   await expect(submitBtn).toBeEnabled();
   await submitBtn.click();
 
-  await page.waitForResponse("**/api/licenses/activate");
+  await page.waitForResponse("**/api/v1/licenses/activate");
 
   // Assert request body uses raw_key (not key)
   expect((capturedBody as Record<string, unknown>)?.raw_key).toBe("GOOD-KEY1-GOOD-KEY2");

@@ -21,7 +21,7 @@ export function useJobProgress(jobId: string) {
       headers["Authorization"] = `Bearer ${token}`
     }
 
-    fetchEventSource(`/api/jobs/${jobId}/stream`, {
+    fetchEventSource(`/api/v1/jobs/${jobId}/stream`, {
       signal: ctrl.signal,
       headers,
       onmessage(ev) {
@@ -41,7 +41,7 @@ export function useJobProgress(jobId: string) {
 
   return useQuery<JobProgress>({
     queryKey: ["job", jobId],
-    queryFn: () => authFetch(`/jobs/${jobId}`).then(r => r.json()),
+    queryFn: () => authFetch(`/v1/jobs/${jobId}`).then(r => r.json()),
     refetchInterval: (query) => {
       const status = query.state.data?.status
       if (status && TERMINAL.has(status)) return false

@@ -55,6 +55,11 @@ from app.services.job_service import (
     transition_to_running,
     update_job_progress,
 )
+from app.services.webhook_service import (
+    notify_webhooks_for_job,
+    WebhookEventType,
+)
+from app.services.notification_service import notify_job_email
 
 log = structlog.get_logger()
 
@@ -304,10 +309,10 @@ async def _run_translation(ctx: dict, session, job_id: str) -> None:
         log.error("job_not_found", job_id=job_id)
         return
 
-    # JOB-02: queued → running
+    # JOB-02: queued → processing
     await transition_to_running(session, job_id)
     await _publish_progress(
-        redis, job_id, "running", "parse", 0, 0, 0, 0, "Parsing document..."
+        redis, job_id, "processing", "parse", 0, 0, 0, 0, "Parsing document..."
     )
 
     try:
@@ -348,6 +353,16 @@ async def _run_translation(ctx: dict, session, job_id: str) -> None:
                     segment_count=len(segments),
                 )
                 _format_ctx = {"type": "pdf", "doc": _pdf_doc}
+
+            case "xlsx":
+                from app.pipeline.xlsx.extractor import extract_xlsx_segments  # noqa: PLC0415
+                segments = extract_xlsx_segments(job.input_path, job_id)
+                log.info(
+                    "xlsx_extracted",
+                    job_id=job_id,
+                    segment_count=len(segments),
+                )
+                _format_ctx = {"type": "xlsx", "input_path": job.input_path}
 
             case "scanned_pdf":
                 import pymupdf  # noqa: PLC0415
@@ -403,7 +418,7 @@ async def _run_translation(ctx: dict, session, job_id: str) -> None:
                 for _attempt in range(3):  # OCR_MAX_RETRIES = 2 (D-04-30): 3 attempts total
                     try:
                         await _publish_progress(
-                            redis, job_id, "running", JobStage.ocr,
+                            redis, job_id, "processing", JobStage.ocr,
                             0, _total_pages, 0, _attempt, "OCR starting",
                             stage_progress={"stage": "ocr", "current": 0, "total": _total_pages},
                         )
@@ -514,7 +529,7 @@ async def _run_translation(ctx: dict, session, job_id: str) -> None:
             session, job_id, 0, segments_total, 0, 0, JobStage.translate
         )
         await _publish_progress(
-            redis, job_id, "running", "translate", 0, segments_total, 0, 0,
+            redis, job_id, "processing", "translate", 0, segments_total, 0, 0,
             f"Starting translation of {segments_total} segments in {len(batches)} batches..."
         )
 
@@ -579,7 +594,7 @@ async def _run_translation(ctx: dict, session, job_id: str) -> None:
                 batch_done_counts[batch_id] = len(batch_texts)
                 segments_done_now = sum(batch_done_counts) + passthrough_count
                 await _publish_progress(
-                    redis, job_id, "running", "translate",
+                    redis, job_id, "processing", "translate",
                     segments_done_now, segments_total,
                     batch_id, 0,
                     f"Translating batch {batch_id + 1}/{len(batches)}"
@@ -632,7 +647,7 @@ async def _run_translation(ctx: dict, session, job_id: str) -> None:
         # STAGE 4: Reassemble + save output — dispatched by format (D-04)
         # ----------------------------------------------------------------
         await _publish_progress(
-            redis, job_id, "running", "reassemble",
+            redis, job_id, "processing", "reassemble",
             segments_done, segments_total, len(batches), 0,
             "Reassembling document..."
         )
@@ -707,6 +722,13 @@ async def _run_translation(ctx: dict, session, job_id: str) -> None:
                     _format_ctx["doc"], segments, translated_map,
                     output_path, _pdf_overflow_flags,
                 )
+
+            case "xlsx":
+                from app.pipeline.xlsx.reassembler import reassemble_xlsx  # noqa: PLC0415
+                output_path = reassemble_xlsx(
+                    _format_ctx["input_path"], segments, translated_map
+                )
+                log.info("xlsx_reassembled", job_id=job_id, output_path=output_path)
                 log.info(
                     "pdf_reassembled",
                     job_id=job_id,
@@ -785,7 +807,7 @@ async def _run_translation(ctx: dict, session, job_id: str) -> None:
                 for _attempt in range(3):  # COMPOSE_MAX_RETRIES = 2 (D-04-30): 3 attempts total
                     try:
                         await _publish_progress(
-                            redis, job_id, "running", JobStage.compose,
+                            redis, job_id, "processing", JobStage.compose,
                             0, _scanned_total_pages, 0, _attempt, "Composing outputs",
                             stage_progress={"stage": "compose", "current": 0, "total": _scanned_total_pages},
                         )
@@ -879,6 +901,25 @@ async def _run_translation(ctx: dict, session, job_id: str) -> None:
             "translate_job_done", job_id=job_id, output_path=output_path,
             segments=segments_total, batches=len(batches)
         )
+        await notify_webhooks_for_job(
+            session_factory=ctx["session_factory"],
+            job=job,
+            event_type=WebhookEventType.translation_completed,
+            encryption_key=ctx["settings"].webhook_encryption_key.get_secret_value(),
+        )
+
+        # US-3.7 AC-4: email notification on job completion
+        if job.user_id is not None:
+            _user_row = await session.get(User, job.user_id)
+            if _user_row and _user_row.email:
+                notify_job_email(
+                    to_email=_user_row.email,
+                    job_id=job_id,
+                    filename=job.original_filename,
+                    source_lang=job.source_lang,
+                    target_lang=job.target_lang,
+                    is_success=True,
+                )
 
     except SegmentTooLargeError as exc:
         # D-08: oversized segment — fail gracefully with clear error
@@ -899,6 +940,25 @@ async def _run_translation(ctx: dict, session, job_id: str) -> None:
             "segment_too_large", job_id=job_id,
             segment_id=exc.segment_id, token_count=exc.token_count
         )
+        await notify_webhooks_for_job(
+            session_factory=ctx["session_factory"],
+            job=job,
+            event_type=WebhookEventType.translation_failed,
+            encryption_key=ctx["settings"].webhook_encryption_key.get_secret_value(),
+        )
+
+        if job.user_id is not None:
+            _user_row = await session.get(User, job.user_id)
+            if _user_row and _user_row.email:
+                notify_job_email(
+                    to_email=_user_row.email,
+                    job_id=job_id,
+                    filename=job.original_filename,
+                    source_lang=job.source_lang,
+                    target_lang=job.target_lang,
+                    is_success=False,
+                    error_msg=msg,
+                )
 
     except Exception as exc:
         # Unexpected failure: write error log, mark job failed, publish failed status
@@ -922,6 +982,25 @@ async def _run_translation(ctx: dict, session, job_id: str) -> None:
             }
         )
         log.exception("translate_job_failed", job_id=job_id, error=str(exc))
+        await notify_webhooks_for_job(
+            session_factory=ctx["session_factory"],
+            job=job,
+            event_type=WebhookEventType.translation_failed,
+            encryption_key=ctx["settings"].webhook_encryption_key.get_secret_value(),
+        )
+
+        if job.user_id is not None:
+            _user_row = await session.get(User, job.user_id)
+            if _user_row and _user_row.email:
+                notify_job_email(
+                    to_email=_user_row.email,
+                    job_id=job_id,
+                    filename=job.original_filename,
+                    source_lang=job.source_lang,
+                    target_lang=job.target_lang,
+                    is_success=False,
+                    error_msg=msg,
+                )
         raise  # re-raise so arq marks the job as failed in its own queue
 
 

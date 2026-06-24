@@ -1,5 +1,5 @@
 """
-GET /health — liveness + basic readiness probe.
+GET /api/v1/health — liveness + basic readiness probe.
 
 D-18: Docker healthcheck calls this endpoint.
 Returns {"status": "ok"} for liveness.

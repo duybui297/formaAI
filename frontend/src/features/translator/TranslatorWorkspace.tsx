@@ -22,6 +22,7 @@ import { useJobProgress } from "@/hooks/useJobProgress"
 import { useCounterAnimation } from "@/hooks/useCounterAnimation"
 import { useEntitlement } from "@/hooks/useEntitlement"
 import { listJobs } from "@/lib/api"
+import type { PaginatedJobsResponse } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import type { JobStatus, JobSummary } from "@/lib/types"
 
@@ -35,7 +36,7 @@ function StatusDot({ status }: { status: JobStatus }) {
         status === "done" && "bg-emerald-50 text-emerald-700 border border-emerald-100",
         status === "needs_review" && "bg-amber-50 text-amber-700 border border-amber-100",
         status === "failed" && "bg-red-50 text-red-700 border border-red-100",
-        status === "running" && "bg-indigo-50 text-indigo-700 border border-indigo-100",
+        status === "processing" && "bg-indigo-50 text-indigo-700 border border-indigo-100",
         status === "queued" && "bg-zinc-50 text-zinc-600 border border-zinc-200"
       )}
     >
@@ -45,7 +46,7 @@ function StatusDot({ status }: { status: JobStatus }) {
           status === "done" && "bg-emerald-500",
           status === "needs_review" && "bg-amber-500",
           status === "failed" && "bg-red-500",
-          status === "running" && "bg-indigo-500 animate-pulse",
+          status === "processing" && "bg-indigo-500 animate-pulse",
           status === "queued" && "bg-zinc-400"
         )}
       />
@@ -76,7 +77,7 @@ function JobProgressCard({ jobId, onClose }: { jobId: string; onClose: () => voi
       ? Math.round((job.segments_done / job.segments_total) * 100)
       : job.status === "done" ? 100 : 0
 
-  const isProcessing = job.status === "running" || job.status === "queued"
+  const isProcessing = job.status === "processing" || job.status === "queued"
   const isDone = job.status === "done" || job.status === "needs_review"
 
   return (
@@ -131,7 +132,7 @@ function JobProgressCard({ jobId, onClose }: { jobId: string; onClose: () => voi
             Review Translation
           </Link>
           <button
-            onClick={() => { window.location.href = `/api/jobs/${jobId}/download` }}
+            onClick={() => { window.location.href = `/api/v1/jobs/${jobId}/download` }}
             className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg font-medium text-zinc-700 bg-white border border-zinc-200 hover:bg-zinc-50 transition"
           >
             <Download className="w-4 h-4" />
@@ -148,9 +149,9 @@ export function TranslatorWorkspace() {
 
   const { data: entitlement, isLoading: entitlementLoading } = useEntitlement()
 
-  const { data: jobs = [], isLoading: jobsLoading } = useQuery({
-    queryKey: ["jobs"],
-    queryFn: listJobs,
+  const { data: jobsData = { jobs: [] }, isLoading: jobsLoading } = useQuery<PaginatedJobsResponse>({
+    queryKey: ["jobs-recent"],
+    queryFn: () => listJobs({ page: 1, page_size: 10 }),
     refetchInterval: 5_000,
   })
 
@@ -229,7 +230,7 @@ export function TranslatorWorkspace() {
               <Skeleton className="h-12 w-full" />
               <Skeleton className="h-12 w-full" />
             </div>
-          ) : jobs.length === 0 ? (
+          ) : jobsData.jobs.length === 0 ? (
             <div className="p-12 text-center">
               <p className="text-sm font-medium text-zinc-500">No translations yet</p>
               <p className="text-xs text-zinc-400 mt-1">Upload a document to get started.</p>
@@ -247,7 +248,7 @@ export function TranslatorWorkspace() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-200">
-                  {jobs.slice(0, 10).map((job) => (
+                  {jobsData.jobs.slice(0, 10).map((job) => (
                     <tr
                       key={job.id}
                       className="hover:bg-zinc-50/80 transition group cursor-pointer"
@@ -294,7 +295,7 @@ export function TranslatorWorkspace() {
                                 <Eye className="w-4 h-4" />
                               </Link>
                               <a
-                                href={`/api/jobs/${job.id}/download`}
+                                href={`/api/v1/jobs/${job.id}/download`}
                                 className="p-1.5 text-zinc-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-md transition"
                                 title="Download"
                               >

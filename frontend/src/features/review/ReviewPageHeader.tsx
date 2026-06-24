@@ -19,7 +19,7 @@ export function ReviewPageHeader({ job }: ReviewPageHeaderProps) {
   const handleExport = async () => {
     setExporting(true);
     try {
-      const res = await authFetch(`/jobs/${job.id}/export`, {
+      const res = await authFetch(`/v1/jobs/${job.id}/export`, {
         method: "POST",
       });
       if (!res.ok) {

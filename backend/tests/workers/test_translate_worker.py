@@ -205,7 +205,7 @@ async def test_publish_progress_sends_correct_channel():
     mock_redis.publish = AsyncMock(return_value=1)
 
     await _publish_progress(
-        mock_redis, "abc-123", "running", "translate", 5, 10, 2, 0, "Batch 2"
+        mock_redis, "abc-123", "processing", "translate", 5, 10, 2, 0, "Batch 2"
     )
 
     mock_redis.publish.assert_called_once()
@@ -213,7 +213,7 @@ async def test_publish_progress_sends_correct_channel():
     assert channel == "job:abc-123"
 
     payload = json.loads(payload_str)
-    assert payload["status"] == "running"
+    assert payload["status"] == "processing"
     assert payload["stage"] == "translate"
     assert payload["segments_done"] == 5
     assert payload["segments_total"] == 10

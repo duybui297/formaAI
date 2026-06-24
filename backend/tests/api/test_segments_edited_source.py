@@ -258,7 +258,7 @@ async def test_patch_segment_409_when_job_not_reviewable():
     factory = async_sessionmaker(engine, expire_on_commit=False)
 
     async with factory() as sess:
-        job = await _create_job(sess, status=JobStatus.running)
+        job = await _create_job(sess, status=JobStatus.processing)
         seg = await _create_segment(sess, job_id=job.id, seq=1)
         job_id = job.id
         seg_id = seg.id

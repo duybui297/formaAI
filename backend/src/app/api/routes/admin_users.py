@@ -1,10 +1,12 @@
 """
 Admin user management routes — TASK-3.6.
 
-GET    /admin/users              — paginated list (excludes soft-deleted), admin-only
-POST   /admin/users              — create user, admin-only
-PATCH  /admin/users/{id}         — update full_name / is_active / is_superuser, admin-only
-DELETE /admin/users/{id}         — soft-delete (sets deleted_at + is_active=False), admin-only
+All routes are prefixed with /api/v1/admin/users (applied at app level).
+
+GET    /api/v1/admin/users              — paginated list (excludes soft-deleted), admin-only
+POST   /api/v1/admin/users              — create user, admin-only
+PATCH  /api/v1/admin/users/{id}         — update full_name / is_active / is_superuser, admin-only
+DELETE /api/v1/admin/users/{id}         — soft-delete (sets deleted_at + is_active=False), admin-only
 
 Guards:
   - Admin cannot deactivate or demote their own account.

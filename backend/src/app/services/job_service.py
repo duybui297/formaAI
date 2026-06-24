@@ -33,14 +33,33 @@ async def create_job(
     tracked_changes_action: str | None = None,
     glossary_id: str | None = None,
     user_id: str | None = None,
-) -> Job:
+    idempotency_key: str | None = None,
+    queue_priority: int | None = None,
+) -> tuple[Job, bool]:
     """
     Insert a new Job row with status=queued.
 
-    Returns the persisted Job (with auto-generated ID and timestamps).
+    US-3.7 AC-5: If idempotency_key is provided and a Job with that key already
+    exists for the same user, returns (existing_job, is_duplicate=True) — no new
+    row is created. Callers can use is_duplicate to decide whether to skip enqueuing.
+
+    Returns (job, is_duplicate) — is_duplicate=False for new jobs.
+
     glossary_id: optional FK to glossaries.id (D-02-01); None if no glossary selected.
-    user_id: optional FK to users.id (auth phase 2); enables per-user job filtering.
+    user_id: optional FK to users.id; enables per-user job filtering.
     """
+    if idempotency_key and user_id:
+        from sqlalchemy import select
+        result = await session.execute(
+            select(Job).where(
+                Job.idempotency_key == idempotency_key,
+                Job.user_id == user_id,
+            )
+        )
+        existing = result.scalar_one_or_none()
+        if existing is not None:
+            return existing, True
+
     job = Job(
         source_lang=source_lang,
         target_lang=target_lang,
@@ -52,11 +71,13 @@ async def create_job(
         glossary_id=glossary_id,
         status=JobStatus.queued,
         user_id=user_id,
+        idempotency_key=idempotency_key,
+        queue_priority=queue_priority,
     )
     session.add(job)
     await session.commit()
     await session.refresh(job)
-    return job
+    return job, False
 
 
 async def get_job(session: AsyncSession, job_id: str) -> Job | None:
@@ -177,3 +198,15 @@ def append_error_log(data_dir: str, job_id: str, message: str) -> None:
         # Best-effort: if we can't write the log, swallow silently so callers
         # can still mark the job failed in the DB without a cascading error.
         pass
+
+
+def build_job_path(data_dir: str, job_id: str) -> str:
+    """
+    Build the per-job working directory path.
+
+    Path structure: {data_dir}/jobs/{job_id}/
+    The workspace_id is stored in the Job DB row (Job.user_id -> User.workspace_id)
+    but is not embedded in the filesystem path to keep paths flat and simple.
+    Multi-tenant isolation is enforced at the DB query layer (per-user job filtering).
+    """
+    return os.path.join(data_dir, "jobs", job_id)

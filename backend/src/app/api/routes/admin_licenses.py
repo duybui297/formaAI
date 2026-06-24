@@ -1,15 +1,16 @@
 """
 Admin license management routes — TASK-2.1 + TASK-2.5.
 
+All routes are prefixed with /api/v1/admin/licenses (applied at app level).
 Aligned to FE contract (TASK-3.1):
 
-POST   /admin/licenses                    — create a new license (admin only, idempotent via header)
-GET    /admin/licenses                    — paginated list with tier/status/issued_after/issued_before/sort_by/sort_dir filters
-GET    /admin/licenses/{id}               — full license detail (key_masked)
-GET    /admin/licenses/{id}/activities    — activity timeline newest-first (bare array)
-POST   /admin/licenses/suspend            — bulk ACTIVE → SUSPENDED; body { ids: [...] }
-POST   /admin/licenses/revoke             — bulk any → REVOKED; body { ids: [...] }
-POST   /admin/licenses/{id}/extend        — set absolute expired_at; body { expired_at: "<ISO>" }
+POST   /api/v1/admin/licenses                    — create a new license (admin only, idempotent via header)
+GET    /api/v1/admin/licenses                    — paginated list with tier/status/issued_after/issued_before/sort_by/sort_dir filters
+GET    /api/v1/admin/licenses/{id}               — full license detail (key_masked)
+GET    /api/v1/admin/licenses/{id}/activities    — activity timeline newest-first (bare array)
+POST   /api/v1/admin/licenses/suspend            — bulk ACTIVE → SUSPENDED; body { ids: [...] }
+POST   /api/v1/admin/licenses/revoke             — bulk any → REVOKED; body { ids: [...] }
+POST   /api/v1/admin/licenses/{id}/extend      — set absolute expired_at; body { expired_at: "<ISO>" }
 """
 from __future__ import annotations
 

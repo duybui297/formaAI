@@ -46,7 +46,7 @@ function TermAddRow({
     if (!canAdd) return
     setSaving(true)
     try {
-      const res = await authFetch(`/glossaries/${glossaryId}/terms`, {
+      const res = await authFetch(`/v1/glossaries/${glossaryId}/terms`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -133,7 +133,7 @@ export function TermsTable({ glossaryId, terms, onTermsChange }: TermsTableProps
 
   const saveEdit = async (termId: string) => {
     try {
-      const res = await authFetch(`/glossaries/${glossaryId}/terms/${termId}`, {
+      const res = await authFetch(`/v1/glossaries/${glossaryId}/terms/${termId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -157,7 +157,7 @@ export function TermsTable({ glossaryId, terms, onTermsChange }: TermsTableProps
 
   const deleteTerm = async (termId: string) => {
     try {
-      const res = await authFetch(`/glossaries/${glossaryId}/terms/${termId}`, {
+      const res = await authFetch(`/v1/glossaries/${glossaryId}/terms/${termId}`, {
         method: "DELETE",
         throwOnError: false,
       })

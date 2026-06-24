@@ -23,7 +23,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.api.middleware.cors import add_cors_middleware
 from app.api.middleware.license import LicenseValidationMiddleware
-from app.api.routes import admin_licenses, admin_users, auth, export, glossaries, health, jobs, languages, leads, licenses, notifications, ping, segments, sse, upload
+from app.api.routes import admin_licenses, admin_users, auth, chunked_upload, export, glossaries, health, jobs, languages, leads, licenses, notifications, ping, segments, sse, translations, upload, webhooks
 from app.core.config import get_settings
 from app.core.logging import configure_logging
 from app.llm.client import make_llm_client
@@ -89,19 +89,23 @@ app = FastAPI(
 add_cors_middleware(app)
 app.add_middleware(LicenseValidationMiddleware)
 
-# Mount routers — no prefix (keep URLs flat for PoC simplicity)
-app.include_router(health.router)
-app.include_router(upload.router)
-app.include_router(languages.router)
-app.include_router(glossaries.router)
-app.include_router(jobs.router)
-app.include_router(segments.router)
-app.include_router(export.router)
-app.include_router(sse.router)
-app.include_router(auth.router)
-app.include_router(admin_licenses.router)
-app.include_router(admin_users.router)
-app.include_router(licenses.router)
-app.include_router(leads.router)
-app.include_router(notifications.router)
-app.include_router(ping.router)
+# Mount routers with /api/v1 prefix for spec compliance.
+# Routers that already carry their own prefix (e.g. /auth, /admin) are NOT re-prefixed here.
+app.include_router(health.router, prefix="/api/v1")
+app.include_router(upload.router, prefix="/api/v1")
+app.include_router(chunked_upload.router, prefix="/api/v1")
+app.include_router(translations.router, prefix="/api/v1")
+app.include_router(languages.router, prefix="/api/v1")
+app.include_router(glossaries.router, prefix="/api/v1")
+app.include_router(jobs.router, prefix="/api/v1")
+app.include_router(segments.router, prefix="/api/v1")
+app.include_router(export.router, prefix="/api/v1")
+app.include_router(sse.router, prefix="/api/v1")
+app.include_router(auth.router, prefix="/api/v1")
+app.include_router(webhooks.router, prefix="/api/v1")
+app.include_router(admin_licenses.router, prefix="/api/v1")
+app.include_router(admin_users.router, prefix="/api/v1")
+app.include_router(licenses.router, prefix="/api/v1")
+app.include_router(leads.router, prefix="/api/v1")
+app.include_router(notifications.router, prefix="/api/v1")
+app.include_router(ping.router, prefix="/api/v1")

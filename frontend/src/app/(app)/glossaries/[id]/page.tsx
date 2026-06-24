@@ -19,7 +19,7 @@ export default function GlossaryDetailPage() {
   } = useQuery<Glossary>({
     queryKey: ["glossary", id],
     queryFn: async () => {
-      const res = await authFetch(`/glossaries/${id}`, { throwOnError: false })
+      const res = await authFetch(`/v1/glossaries/${id}`, { throwOnError: false })
       if (!res.ok) throw new Error("Failed to load glossary")
       // Single-item endpoint returns Glossary directly (no wrapper)
       return res.json()

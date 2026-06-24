@@ -1,5 +1,5 @@
 """
-GET /notifications — derived user alerts (no persistence required).
+GET /api/v1/notifications — derived user alerts (no persistence required).
 
 Derives from existing data:
 - Completed job → "Translation complete" alert

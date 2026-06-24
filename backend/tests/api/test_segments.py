@@ -333,7 +333,7 @@ async def test_patch_segment_returns_409_when_job_running(tmp_path):
         factory = async_sessionmaker(engine, expire_on_commit=False)
 
         async with factory() as sess:
-            job = await _create_job(sess, status=JobStatus.running)
+            job = await _create_job(sess, status=JobStatus.processing)
             seg = await _create_segment(sess, job.id)
 
         async def override_session():

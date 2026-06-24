@@ -259,7 +259,7 @@ async def test_download_artifact_returns_409_when_job_running(tmp_path):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     factory = async_sessionmaker(engine, expire_on_commit=False)
-    await _insert_job(factory, job_id, status=JobStatus.running)
+    await _insert_job(factory, job_id, status=JobStatus.processing)
 
     mock_settings = MagicMock(data_dir=str(tmp_path))
 

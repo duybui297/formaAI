@@ -112,9 +112,9 @@ async def test_export_raises_value_error_for_running_job(session, tmp_path):
     """export_job raises ValueError when job status is running."""
     from app.services.export_service import export_job
 
-    job = await _make_job(session, status=JobStatus.running)
+    job = await _make_job(session, status=JobStatus.processing)
 
-    with pytest.raises(ValueError, match="running"):
+    with pytest.raises(ValueError, match="processing"):
         await export_job(session, job.id, str(tmp_path))
 
 

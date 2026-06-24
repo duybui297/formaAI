@@ -6,7 +6,7 @@ import { useQuery } from "@tanstack/react-query"
 function DashScopeHealthDot() {
   const { status } = useQuery({
     queryKey: ["health"],
-    queryFn: () => fetch("/api/health").then(r => r.json()),
+    queryFn: () => fetch("/api/v1/health").then(r => r.json()),
     refetchInterval: 30_000,
     retry: 1,
   })

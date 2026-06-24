@@ -17,7 +17,7 @@ import {
 import { listJobs } from "@/lib/api"
 import { getMyEntitlements, getNotifications } from "@/lib/api"
 import { cn } from "@/lib/utils"
-import type { Notification } from "@/lib/types"
+import type { Notification, JobSummary } from "@/lib/types"
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) return "0 B"
@@ -87,8 +87,8 @@ function NotificationItem({ notif }: { notif: Notification }) {
 
 export default function DashboardPage() {
   const { data: jobsData, isLoading: jobsLoading } = useQuery({
-    queryKey: ["jobs"],
-    queryFn: listJobs,
+    queryKey: ["jobs-recent"],
+    queryFn: () => listJobs({ page: 1, page_size: 5 }),
   })
 
   const { data: entitlements, isLoading: entLoading } = useQuery({
@@ -101,7 +101,7 @@ export default function DashboardPage() {
     queryFn: getNotifications,
   })
 
-  const jobs = jobsData ?? []
+  const jobs: JobSummary[] = jobsData?.jobs ?? []
 
   const stats = useMemo(() => {
     const completedJobs = jobs.filter((j) => j.status === "done")

@@ -94,7 +94,7 @@ export function JobsTable({ jobs }: JobsTableProps) {
                     size="sm"
                     className="h-7 px-2 text-xs text-indigo-600 hover:text-indigo-700"
                     onClick={() => {
-                      window.location.href = `/api/jobs/${job.id}/download`
+                      window.location.href = `/api/v1/jobs/${job.id}/download`
                     }}
                   >
                     Download

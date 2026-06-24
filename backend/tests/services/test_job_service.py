@@ -104,7 +104,7 @@ async def test_transition_to_running_updates_status(db_session: AsyncSession):
 
     updated = await get_job(db_session, job.id)
     assert updated is not None
-    assert updated.status == JobStatus.running
+    assert updated.status == JobStatus.processing
     assert updated.stage == JobStage.parse
 
 

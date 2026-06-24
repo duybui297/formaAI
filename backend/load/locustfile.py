@@ -1,7 +1,7 @@
 """
 TASK-4.2-d: Load test for the license validation middleware READ path (Redis cache hit).
 
-Measures P99 latency for GET /v1/ping with a VALID, ACTIVE, Redis-cached
+Measures P99 latency for GET /api/v1/ping with a VALID, ACTIVE, Redis-cached
 X-License-Key header — the O(1) hot path through LicenseValidationMiddleware.
 
 SLA: P99 < 50ms at 1000 concurrent users.
@@ -12,9 +12,9 @@ Setup (runs ONCE before spawning users):
     key so every request is a Redis HIT — no DB fallback.
 
 Task weights:
-    - validate_license (90%): GET /v1/ping  with X-License-Key = <active key>
+    - validate_license (90%): GET /api/v1/ping  with X-License-Key = <active key>
       → exercises ONLY the Redis GET + middleware allow path
-    - health_check     (10%): GET /health        (baseline, no middleware overhead)
+    - health_check     (10%): GET /api/v1/health   (baseline, no middleware overhead)
 
 Usage:
     # From backend/ directory (server must already be running on :8000):
@@ -98,8 +98,8 @@ class LicenseValidationUser(HttpUser):
     """
     Simulates clients hitting the licensed API with a valid, Redis-cached key.
 
-    90% of traffic → GET /v1/ping (license middleware O(1) Redis cache hit)
-    10% of traffic → GET /health       (baseline: no middleware overhead)
+    90% of traffic → GET /api/v1/ping (license middleware O(1) Redis cache hit)
+    10% of traffic → GET /api/v1/health  (baseline: no middleware overhead)
 
     Wait time: 0–50ms between tasks (aggressive burst to saturate 1000 users).
     """
@@ -109,7 +109,7 @@ class LicenseValidationUser(HttpUser):
 
     @task(9)
     def validate_license(self) -> None:
-        """GET /v1/ping — main SLA path.
+        """GET /api/v1/ping — main SLA path.
 
         Every request carries X-License-Key for a Redis-cached ACTIVE license.
         Middleware performs: Redis GET license:{hash} → HIT → allow → 200.
@@ -117,10 +117,10 @@ class LicenseValidationUser(HttpUser):
         """
         key = _ACTIVE_KEY or ""
         with self.client.get(
-            "/v1/ping",
+            "/api/v1/ping",
             headers={"X-License-Key": key},
             catch_response=True,
-            name="GET /v1/ping [license-cached]",
+            name="GET /api/v1/ping [license-cached]",
         ) as resp:
             if resp.status_code == 200:
                 resp.success()
@@ -134,11 +134,11 @@ class LicenseValidationUser(HttpUser):
 
     @task(1)
     def health_check(self) -> None:
-        """GET /health — baseline latency (no license middleware)."""
+        """GET /api/v1/health — baseline latency (no license middleware)."""
         with self.client.get(
-            "/health",
+            "/api/v1/health",
             catch_response=True,
-            name="GET /health [baseline]",
+            name="GET /api/v1/health [baseline]",
         ) as resp:
             if resp.status_code == 200:
                 resp.success()

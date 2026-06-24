@@ -71,7 +71,7 @@ test.describe("Phase 2: Review UX + Glossary", () => {
 
   test("review page filter chips are present", async ({ page }) => {
     // Request the jobs list from the API proxy.
-    const jobsResponse = await page.request.get("/api/jobs");
+    const jobsResponse = await page.request.get("/api/v1/jobs");
     const body = await jobsResponse.json().catch(() => ({ jobs: [] }));
     const completedJob = ((body.jobs ?? []) as Array<{ id: string; status: string }>).find(
       (j) => j.status === "done" || j.status === "needs_review"
@@ -94,7 +94,7 @@ test.describe("Phase 2: Review UX + Glossary", () => {
   });
 
   test("keyboard help panel toggles on ? key", async ({ page }) => {
-    const jobsResponse = await page.request.get("/api/jobs");
+    const jobsResponse = await page.request.get("/api/v1/jobs");
     const body = await jobsResponse.json().catch(() => ({ jobs: [] }));
     const completedJob = ((body.jobs ?? []) as Array<{ id: string; status: string }>).find(
       (j) => j.status === "done" || j.status === "needs_review"

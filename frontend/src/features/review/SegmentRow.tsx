@@ -277,7 +277,7 @@ export function SegmentRow({
             // to correct pixel offsets — use a relative wrapper + absolute overlay instead.
             <div className="relative w-full">
               <img
-                src={`/api/jobs/${jobId}/pages/${pageNum}.png`}
+                src={`/api/v1/jobs/${jobId}/pages/${pageNum}.png`}
                 className="w-full block"
                 alt={`Page ${parseInt(pageNum, 10) + 1} for segment ${segment.seq_in_job}`}
                 onError={() => setImageError(true)}

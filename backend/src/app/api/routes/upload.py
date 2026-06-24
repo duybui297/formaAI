@@ -1,5 +1,5 @@
 """
-POST /upload — file upload, validation, job creation, arq enqueue.
+POST /api/v1/upload — file upload, validation, job creation, arq enqueue.
 
 Requirements:
 - UPLD-01: accept file upload
@@ -23,7 +23,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Uplo
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_arq_pool, get_current_active_user
-from app.api.routes.languages import _VALID_TARGET_CODES
+from app.api.routes.languages import get_valid_target_codes_async
 from app.db.models import User
 from app.db.session import get_session
 from app.licensing.entitlements import count_monthly_jobs, resolve_entitlements
@@ -37,9 +37,8 @@ router = APIRouter()
 # TASK-3.7: Global cap removed — per-tier limits enforced after entitlement resolution.
 # Kept as absolute ceiling to prevent pathological uploads before DB hit.
 MAX_UPLOAD_BYTES: int = 100 * 1024 * 1024  # 100 MB (ENTERPRISE ceiling, hard ceiling)
-ALLOWED_EXTENSIONS: frozenset[str] = frozenset({".docx", ".pptx", ".pdf"})  # UPLD-02
-# Formats with end-to-end pipelines: DOCX (Phase 1), PPTX + native PDF (Phase 3, D-15)
-SUPPORTED_FORMATS: frozenset[str] = frozenset({".docx", ".pptx", ".pdf"})
+ALLOWED_EXTENSIONS: frozenset[str] = frozenset({".docx", ".pptx", ".pdf", ".xlsx"})  # UPLD-02
+SUPPORTED_FORMATS: frozenset[str] = frozenset({".docx", ".pptx", ".pdf", ".xlsx"})
 
 _STREAMING_CHUNK = 64 * 1024  # 64 KB per read chunk
 
@@ -102,7 +101,7 @@ async def upload_document(
     if ext not in ALLOWED_EXTENSIONS:
         raise HTTPException(
             status_code=415,
-            detail="Unsupported file type. Upload a DOCX, PDF, or PPTX.",
+            detail="Unsupported file type. Upload a DOCX, PDF, PPTX, or XLSX.",
         )
 
     # --- Format gate (D-15) — defensive: ALLOWED_EXTENSIONS already filtered above ---
@@ -113,10 +112,16 @@ async def upload_document(
         )
 
     # --- Language code validation (T-06a-03) ---
-    if target_lang not in _VALID_TARGET_CODES:
+    if target_lang not in await get_valid_target_codes_async(session):
         raise HTTPException(
             status_code=422,
             detail=f"Unsupported target language: {target_lang!r}",
+        )
+
+    if source_lang != "auto" and source_lang == target_lang:
+        raise HTTPException(
+            status_code=422,
+            detail="Source and target language must be different.",
         )
 
     # --- Glossary pair validation (D-02-25/26) ---
@@ -199,21 +204,34 @@ async def upload_document(
             # Malformed DOCX — let worker report the real error; upload proceeds.
             pass
 
+    # --- Idempotency key (US-3.7 AC-5) ---
+    idempotency_key = request.headers.get("Idempotency-Key")
+
     # --- Create Job row (DB auto-generates job.id via uuid4 default) ---
     settings = request.app.state.settings
-    job = await create_job(
+    job, is_duplicate = await create_job(
         session=session,
         source_lang=source_lang,
         target_lang=target_lang,
         input_format=input_format,
-        # input_path is set after we know job.id — use placeholder, update below
         input_path="",
         original_filename=filename,
         has_tracked_changes=has_tracked,
         tracked_changes_action=tracked_changes_action,
         glossary_id=glossary_id,
         user_id=current_user.id,
+        idempotency_key=idempotency_key,
+        queue_priority=entitlement.queue_priority,
     )
+
+    # US-3.7 AC-5: idempotent — return existing job if key was already used
+    if is_duplicate:
+        log.info("upload_idempotent", job_id=job.id, key=idempotency_key)
+        return {
+            "job_id": job.id,
+            "has_tracked_changes": job.has_tracked_changes,
+            "is_duplicate": True,
+        }
 
     # --- Persist file to per-job directory (D-04: .data/jobs/{job_id}/source.{ext}) ---
     job_dir = os.path.join(settings.data_dir, "jobs", job.id)
@@ -227,7 +245,11 @@ async def upload_document(
     await session.commit()
 
     # --- Enqueue arq job via shared pool (W11: no per-request pool) ---
-    await arq_pool.enqueue_job("translate_job", job.id)
+    # US-3.7 AC-6: priority lanes — ENTERPRISE=1, PRO=5, TRIAL=10
+    await arq_pool.enqueue_job(
+        "translate_job", job.id,
+        priority=job.queue_priority,
+    )
 
     log.info("upload_accepted", job_id=job.id, filename=filename, size_bytes=total)
 

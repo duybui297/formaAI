@@ -55,7 +55,7 @@ def _make_mock_job(
     job.tracked_changes_action = None
     job.glossary_id = None
     job.status = MagicMock()
-    job.status.value = "running"
+    job.status.value = "processing"
     return job
 
 
@@ -100,7 +100,7 @@ async def test_worker_sse_publishes_stage_progress():
     await _publish_progress(
         redis=mock_redis,
         job_id="job-123",
-        status="running",
+        status="processing",
         stage="ocr",
         segments_done=0,
         segments_total=5,
