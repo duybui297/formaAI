@@ -1131,7 +1131,11 @@ async def reset_password(
             detail="Invalid or expired reset token",
         )
 
-    if prt.expires_at < datetime.now(timezone.utc):
+    # Normalise naive datetime (SQLite) to UTC-aware before comparing
+    expires_at = prt.expires_at
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    if expires_at < datetime.now(timezone.utc):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Reset token has expired. Please request a new one.",
