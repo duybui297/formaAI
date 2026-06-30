@@ -41,7 +41,7 @@
     },
     {
       "id": "TASK-2.4",
-      "name": "Background Cron Job \u2014 Expiration Reconciliation",
+      "name": "Background Cron Job — Expiration Reconciliation",
       "deps": [
         "TASK-2.2"
       ],
@@ -58,7 +58,7 @@
     },
     {
       "id": "TASK-3.1",
-      "name": "Admin Dashboard \u2014 License Lifecycle Management",
+      "name": "Admin Dashboard — License Lifecycle Management",
       "deps": [
         "TASK-2.1"
       ],
@@ -74,7 +74,7 @@
     },
     {
       "id": "TASK-3.3",
-      "name": "Pricing \u2192 Self-serve License (user-facing)",
+      "name": "Pricing → Self-serve License (user-facing)",
       "deps": [
         "TASK-2.1",
         "TASK-3.2"
@@ -129,6 +129,12 @@
         "TASK-4.1"
       ],
       "days": 3
+    },
+    {
+      "id": "TASK-1.3",
+      "name": "Forgot Password (US-1.3)",
+      "deps": [],
+      "days": 1
     }
   ]
 }

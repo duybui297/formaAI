@@ -1236,6 +1236,118 @@
         "output_excerpt": "  <frozen importlib._bootstrap>:488: DeprecationWarning: builtin type SwigPyObject has no __module__ attribute\n\ntests/test_worker_ocr_gate.py::test_worker_blocks_ocr_for_trial\n  <frozen importlib._bootstrap>:488: DeprecationWarning: builtin type swigvarlink has no __module__ attribute\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n1 passed, 2 deselected, 5 warnings in 0.40s\n<sys>:0: DeprecationWarning: builtin type swigvarlink has no __module__ attribute",
         "artifact": null
       }
+    },
+    {
+      "id": "1.3-a",
+      "task": "TASK-1.3",
+      "phase": "EPIC E1 — Authentication & Account",
+      "layer": "BE",
+      "priority": "Urgent",
+      "behavior": "Submit a registered email to POST /v1/auth/forgot-password creates a one-time PasswordResetToken valid ~60 minutes; the response is the neutral \"if an account with that email exists\" message.",
+      "verification": "cd backend && uv run pytest -o addopts=\"\" tests/api/test_forgot_password.py -k test_forgot_password_creates_token_valid_60min -q",
+      "state": "PASSING",
+      "evidence": {
+        "date": "2026-06-30",
+        "command": "cd backend && uv run pytest -o addopts=\"\" tests/api/test_forgot_password.py -k test_forgot_password_creates_token_valid_60min -q",
+        "output_excerpt": ".                                                                        [100%]\n1 passed, 6 deselected in 0.81s",
+        "artifact": null
+      }
+    },
+    {
+      "id": "1.3-b",
+      "task": "TASK-1.3",
+      "phase": "EPIC E1 — Authentication & Account",
+      "layer": "BE",
+      "priority": "Urgent",
+      "behavior": "Anti-enumeration: forgot-password returns an identical 200 body for a known and an unknown email, and no reset token is created for an unknown email.",
+      "verification": "cd backend && uv run pytest -o addopts=\"\" tests/api/test_forgot_password.py -k test_forgot_password_anti_enumeration -q",
+      "state": "PASSING",
+      "evidence": {
+        "date": "2026-06-30",
+        "command": "cd backend && uv run pytest -o addopts=\"\" tests/api/test_forgot_password.py -k test_forgot_password_anti_enumeration -q",
+        "output_excerpt": ".                                                                        [100%]\n1 passed, 6 deselected in 0.80s",
+        "artifact": null
+      }
+    },
+    {
+      "id": "1.3-c",
+      "task": "TASK-1.3",
+      "phase": "EPIC E1 — Authentication & Account",
+      "layer": "BE",
+      "priority": "Urgent",
+      "behavior": "A valid reset token sets a new password; the new password logs in, the old password is rejected (401), and the token is consumed (one-time use).",
+      "verification": "cd backend && uv run pytest -o addopts=\"\" tests/api/test_forgot_password.py -k test_reset_password_full_flow -q",
+      "state": "PASSING",
+      "evidence": {
+        "date": "2026-06-30",
+        "command": "cd backend && uv run pytest -o addopts=\"\" tests/api/test_forgot_password.py -k test_reset_password_full_flow -q",
+        "output_excerpt": ".                                                                        [100%]\n1 passed, 6 deselected in 1.52s",
+        "artifact": null
+      }
+    },
+    {
+      "id": "1.3-d",
+      "task": "TASK-1.3",
+      "phase": "EPIC E1 — Authentication & Account",
+      "layer": "BE",
+      "priority": "Urgent",
+      "behavior": "A reset token that was already used is rejected with 400.",
+      "verification": "cd backend && uv run pytest -o addopts=\"\" tests/api/test_forgot_password.py -k test_reset_password_used_token_rejected -q",
+      "state": "PASSING",
+      "evidence": {
+        "date": "2026-06-30",
+        "command": "cd backend && uv run pytest -o addopts=\"\" tests/api/test_forgot_password.py -k test_reset_password_used_token_rejected -q",
+        "output_excerpt": ".                                                                        [100%]\n1 passed, 6 deselected in 1.05s",
+        "artifact": null
+      }
+    },
+    {
+      "id": "1.3-e",
+      "task": "TASK-1.3",
+      "phase": "EPIC E1 — Authentication & Account",
+      "layer": "BE",
+      "priority": "Urgent",
+      "behavior": "An expired reset token is rejected with 400 and an \"expired\" message (supports the FE \"Link expired\" + re-send CTA).",
+      "verification": "cd backend && uv run pytest -o addopts=\"\" tests/api/test_forgot_password.py -k test_reset_password_expired_token_rejected -q",
+      "state": "PASSING",
+      "evidence": {
+        "date": "2026-06-30",
+        "command": "cd backend && uv run pytest -o addopts=\"\" tests/api/test_forgot_password.py -k test_reset_password_expired_token_rejected -q",
+        "output_excerpt": ".                                                                        [100%]\n1 passed, 6 deselected in 0.83s",
+        "artifact": null
+      }
+    },
+    {
+      "id": "1.3-f",
+      "task": "TASK-1.3",
+      "phase": "EPIC E1 — Authentication & Account",
+      "layer": "BE",
+      "priority": "Urgent",
+      "behavior": "An unknown / malformed reset token is rejected with 400.",
+      "verification": "cd backend && uv run pytest -o addopts=\"\" tests/api/test_forgot_password.py -k test_reset_password_invalid_token_rejected -q",
+      "state": "PASSING",
+      "evidence": {
+        "date": "2026-06-30",
+        "command": "cd backend && uv run pytest -o addopts=\"\" tests/api/test_forgot_password.py -k test_reset_password_invalid_token_rejected -q",
+        "output_excerpt": ".                                                                        [100%]\n1 passed, 6 deselected in 0.56s",
+        "artifact": null
+      }
+    },
+    {
+      "id": "1.3-g",
+      "task": "TASK-1.3",
+      "phase": "EPIC E1 — Authentication & Account",
+      "layer": "BE",
+      "priority": "Urgent",
+      "behavior": "A second forgot-password request within the cooldown window does not mint a second token (anti-spam).",
+      "verification": "cd backend && uv run pytest -o addopts=\"\" tests/api/test_forgot_password.py -k test_forgot_password_cooldown_no_second_token -q",
+      "state": "PASSING",
+      "evidence": {
+        "date": "2026-06-30",
+        "command": "cd backend && uv run pytest -o addopts=\"\" tests/api/test_forgot_password.py -k test_forgot_password_cooldown_no_second_token -q",
+        "output_excerpt": ".                                                                        [100%]\n1 passed, 6 deselected in 0.80s",
+        "artifact": null
+      }
     }
   ]
 }

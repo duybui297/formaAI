@@ -29,13 +29,14 @@ Live status for tasks defined in [`FEATURELIST.md`](./FEATURELIST.md) / [`featur
 | 3.7 | Translation Entitlement Enforcement | FE/BE | High | 2.2 | DONE | 2026-05-30 | 2026-05-30 | all behaviors PASSING |
 | 4.1 | Concurrency & Time-Travel Testing | BE | High | 2.2, 2.3, 2.4 | DONE | 2026-05-29 | 2026-05-29 | all behaviors PASSING |
 | 4.2 | Integration & Security Testing | BE/DevOps | Medium | 4.1 | BLOCKED | 2026-05-29 | | 4.2-d: P99<50ms @1000u needs separate load-gen host + multi-node deploy; single dev box hits 250ms (a/b/c PASS) |
+| 1.3 | Forgot Password (US-1.3) | BE | Urgent | — | DONE |  | 2026-06-30 | all behaviors PASSING |
 
 ## Roll-up
 
 | Metric | Value |
 |--------|-------|
 | Total tasks | 16 |
-| DONE | 15 / 16 |
+| DONE | 16 / 17 |
 | IN_PROGRESS | 0 |
 | BLOCKED | 1 |
 | Est. days total | 46 |
@@ -86,3 +87,6 @@ Live status for tasks defined in [`FEATURELIST.md`](./FEATURELIST.md) / [`featur
 - 2026-05-30  TASK-3.6  IN_PROGRESS→DONE  reconciled from featurelist.json
 - 2026-05-30  TASK-3.7  TODO→IN_PROGRESS  started
 - 2026-05-30  TASK-3.7  IN_PROGRESS→DONE  reconciled from featurelist.json
+- 2026-06-30  TASK-1.3  TODO→DONE  reconciled from featurelist.json
+- 2026-06-30  TASK-4.2  BLOCKED→IN_PROGRESS  reconciled from featurelist.json
+- 2026-06-30  TASK-4.2  →BLOCKED  4.2-d: P99<50ms @1000u needs separate load-gen host + multi-node deploy; single dev box hits 250ms (a/b/c PASS)

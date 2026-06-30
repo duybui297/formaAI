@@ -221,6 +221,23 @@
 
 ---
 
+## EPIC E1 — Authentication & Account
+
+### TASK-1.3 — Forgot Password (US-1.3)
+- **Layer:** BE · **Priority:** Urgent · **Est:** 1d · **Depends on:** —
+
+| Feature | Behavior | Verification |
+|---------|----------|--------------|
+| `1.3-a` | Submit a registered email to POST /v1/auth/forgot-password creates a one-time PasswordResetToken valid ~60 minutes; the response is the neutral "if an account with that email exists" message. | `cd backend && uv run pytest -o addopts="" tests/api/test_forgot_password.py -k test_forgot_password_creates_token_valid_60min -q` |
+| `1.3-b` | Anti-enumeration: forgot-password returns an identical 200 body for a known and an unknown email, and no reset token is created for an unknown email. | `cd backend && uv run pytest -o addopts="" tests/api/test_forgot_password.py -k test_forgot_password_anti_enumeration -q` |
+| `1.3-c` | A valid reset token sets a new password; the new password logs in, the old password is rejected (401), and the token is consumed (one-time use). | `cd backend && uv run pytest -o addopts="" tests/api/test_forgot_password.py -k test_reset_password_full_flow -q` |
+| `1.3-d` | A reset token that was already used is rejected with 400. | `cd backend && uv run pytest -o addopts="" tests/api/test_forgot_password.py -k test_reset_password_used_token_rejected -q` |
+| `1.3-e` | An expired reset token is rejected with 400 and an "expired" message (supports the FE "Link expired" + re-send CTA). | `cd backend && uv run pytest -o addopts="" tests/api/test_forgot_password.py -k test_reset_password_expired_token_rejected -q` |
+| `1.3-f` | An unknown / malformed reset token is rejected with 400. | `cd backend && uv run pytest -o addopts="" tests/api/test_forgot_password.py -k test_reset_password_invalid_token_rejected -q` |
+| `1.3-g` | A second forgot-password request within the cooldown window does not mint a second token (anti-spam). | `cd backend && uv run pytest -o addopts="" tests/api/test_forgot_password.py -k test_forgot_password_cooldown_no_second_token -q` |
+
+---
+
 ## Summary
 
 | Phase | Tasks | Behaviors | Est. Days |
