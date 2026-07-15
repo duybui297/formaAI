@@ -1020,7 +1020,7 @@ async def upload_avatar(
         f.write(contents)
 
     # Use API proxy path so browser can load the avatar
-    avatar_url = f"/api/auth/me/avatar/{user.id}{ext}"
+    avatar_url = f"/api/v1/auth/me/avatar/{user.id}{ext}"
     user.avatar_url = avatar_url
     await session.commit()
 

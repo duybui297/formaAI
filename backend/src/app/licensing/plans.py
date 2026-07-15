@@ -129,3 +129,49 @@ def get_plan_config(plan: str) -> PlanConfig:
         return PLAN_CONFIGS[plan.lower()]
     except KeyError:
         raise ValueError(f"Unknown plan '{plan}'. Valid plans: {sorted(VALID_PLANS)}")
+
+
+# ---------------------------------------------------------------------------
+# US-3.6: Credit cost calculation
+# ---------------------------------------------------------------------------
+
+# Base: 1 credit = 1 word (non-OCR)
+CREDITS_PER_WORD: int = 1
+
+# OCR costs 2x more due to extra processing
+OCR_CREDIT_MULTIPLIER: int = 2
+
+# Inverse of queue_priority — higher tier = lower multiplier = cheaper per word
+# TRIAL (priority=10) → 10 credits/word
+# PRO (priority=5)  → 5 credits/word
+# ENTERPRISE (priority=1) → 1 credit/word
+TIER_CREDIT_MULTIPLIERS: dict[LicenseTier, int] = {
+    LicenseTier.TRIAL: 10,
+    LicenseTier.PRO: 5,
+    LicenseTier.ENTERPRISE: 1,
+}
+
+# US-3.8: Free retry window for system-side failures
+FREE_RETRY_WINDOW_HOURS: int = 24
+
+# US-3.8: System-side failure reasons that qualify for credit refund
+SYSTEM_SIDE_FAILURE_REASONS: frozenset[str] = frozenset({
+    "model_timeout",
+    "ocr_low_confidence",
+    "translation_error",
+})
+
+
+def calculate_credit_cost(
+    word_count: int,
+    tier: LicenseTier,
+    is_scanned: bool,
+) -> int:
+    """
+    US-3.6: Calculate credit cost for a translation job.
+
+    Formula: word_count × tier_multiplier × (is_scanned ? OCR_MULTIPLIER : 1)
+    """
+    tier_mult = TIER_CREDIT_MULTIPLIERS.get(tier, 10)
+    ocr_mult = OCR_CREDIT_MULTIPLIER if is_scanned else 1
+    return word_count * tier_mult * ocr_mult

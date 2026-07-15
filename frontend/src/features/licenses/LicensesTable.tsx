@@ -29,7 +29,7 @@ const STATUS_CLASSES: Record<LicenseStatus, string> = {
   active: "bg-emerald-100 text-emerald-800 border-emerald-200",
   suspended: "bg-orange-100 text-orange-800 border-orange-200",
   revoked: "bg-red-100 text-red-800 border-red-200",
-  expired: "bg-zinc-100 text-zinc-600 border-zinc-200",
+  expired: "bg-muted text-muted-foreground border-border",
 }
 
 function TierBadge({ tier }: { tier: LicenseTier }) {
@@ -78,7 +78,7 @@ function SortHeader({ field, label, sortBy, sortDir, onSort }: SortHeaderProps) 
   return (
     <button
       data-testid={`sort-${field}`}
-      className="flex items-center gap-1 hover:text-zinc-900 font-medium text-xs uppercase tracking-wide text-zinc-500"
+      className="flex items-center gap-1 hover:text-foreground font-medium text-xs uppercase tracking-wide text-muted-foreground"
       onClick={() => onSort(field)}
       type="button"
     >
@@ -128,10 +128,10 @@ export function LicensesTable({
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="rounded-lg border border-zinc-200 overflow-hidden">
+      <div className="rounded-lg border border-border overflow-hidden">
         <Table>
           <TableHeader>
-            <TableRow className="bg-zinc-50">
+            <TableRow className="bg-muted">
               <TableHead className="w-10">
                 <Checkbox
                   data-testid="select-all"
@@ -160,7 +160,7 @@ export function LicensesTable({
           <TableBody>
             {licenses.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center text-zinc-400 py-12 text-sm">
+                <TableCell colSpan={6} className="text-center text-muted-foreground py-12 text-sm">
                   No licenses found.
                 </TableCell>
               </TableRow>
@@ -169,7 +169,7 @@ export function LicensesTable({
                 <TableRow
                   key={license.id}
                   data-testid="license-row"
-                  className="cursor-pointer hover:bg-zinc-50 transition-colors"
+                  className="cursor-pointer hover:bg-muted transition-colors"
                   onClick={() => onRowClick(license)}
                 >
                   <TableCell onClick={(e) => e.stopPropagation()}>
@@ -184,12 +184,12 @@ export function LicensesTable({
                     <div className="flex flex-col gap-0.5">
                       <span
                         data-testid="masked-key"
-                        className="font-mono text-sm text-zinc-800 tracking-wide"
+                        className="font-mono text-sm text-foreground tracking-wide"
                       >
                         {license.key_masked}
                       </span>
                       {license.customer_id && (
-                        <span className="text-xs text-zinc-400">{license.customer_id}</span>
+                        <span className="text-xs text-muted-foreground">{license.customer_id}</span>
                       )}
                     </div>
                   </TableCell>
@@ -199,10 +199,10 @@ export function LicensesTable({
                   <TableCell>
                     <StatusChip status={license.status} />
                   </TableCell>
-                  <TableCell className="text-sm text-zinc-600">
+                  <TableCell className="text-sm text-muted-foreground">
                     {new Date(license.issued_at).toLocaleDateString()}
                   </TableCell>
-                  <TableCell className="text-sm text-zinc-600">
+                  <TableCell className="text-sm text-muted-foreground">
                     {license.expired_at
                       ? new Date(license.expired_at).toLocaleDateString()
                       : "—"}
@@ -215,7 +215,7 @@ export function LicensesTable({
       </div>
 
       {/* Pagination */}
-      <div className="flex items-center justify-between text-sm text-zinc-500">
+      <div className="flex items-center justify-between text-sm text-muted-foreground">
         <span>
           {total === 0
             ? "No results"

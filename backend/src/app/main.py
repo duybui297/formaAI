@@ -23,7 +23,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.api.middleware.cors import add_cors_middleware
 from app.api.middleware.license import LicenseValidationMiddleware
-from app.api.routes import admin_licenses, admin_users, auth, chunked_upload, export, glossaries, health, jobs, languages, leads, licenses, notifications, ping, segments, sse, translations, upload, webhooks
+from app.api.routes import admin_licenses, admin_users, auth, chunked_upload, dashboard, export, glossaries, health, jobs, languages, leads, licenses, notifications, ping, segments, sse, translations, upload, webhooks
 from app.core.config import get_settings
 from app.core.logging import configure_logging
 from app.llm.client import make_llm_client
@@ -106,6 +106,7 @@ app.include_router(webhooks.router, prefix="/api/v1")
 app.include_router(admin_licenses.router, prefix="/api/v1")
 app.include_router(admin_users.router, prefix="/api/v1")
 app.include_router(licenses.router, prefix="/api/v1")
+app.include_router(dashboard.router, prefix="/api/v1")
 app.include_router(leads.router, prefix="/api/v1")
 app.include_router(notifications.router, prefix="/api/v1")
 app.include_router(ping.router, prefix="/api/v1")

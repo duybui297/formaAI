@@ -125,7 +125,7 @@ export default function ReviewPage({
   if (!job || isLoading) {
     return (
       <>
-        <div className="px-8 py-8 text-slate-400 text-sm">
+        <div className="px-8 py-8 text-muted-foreground text-sm">
           Loading review…
         </div>
       </>
@@ -208,7 +208,7 @@ export default function ReviewPage({
         />
 
         {filteredSegments.length === 0 ? (
-          <div className="flex items-center justify-center h-32 text-sm text-slate-400">
+          <div className="flex items-center justify-center h-32 text-sm text-muted-foreground">
             No segments with this flag type.
           </div>
         ) : (

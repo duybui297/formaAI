@@ -64,6 +64,9 @@ def _job_to_dict(job: Job) -> dict:
         "has_tracked_changes": job.has_tracked_changes,
         "glossary_id": job.glossary_id,
         "low_confidence_pages": job.low_confidence_pages,
+        # US-3.8: failure categorization
+        "failure_reason": job.failure_reason.value if job.failure_reason else None,
+        "failure_details": job.failure_details,
         "created_at": job.created_at.isoformat() if job.created_at else None,
         "updated_at": job.updated_at.isoformat() if job.updated_at else None,
     }

@@ -1,7 +1,8 @@
 "use client"
 import { useState } from "react"
 import { Pencil, Trash2, Check, X } from "lucide-react"
-import { useToast } from "@/hooks/use-toast"
+import { useCrudToast } from "@/hooks/use-crud-toast"
+import { useConfirm } from "@/hooks/use-confirm"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -34,7 +35,7 @@ function TermAddRow({
   glossaryId: string
   onAdded: () => void
 }) {
-  const { toast } = useToast()
+  const crud = useCrudToast()
   const [sourceTerm, setSourceTerm] = useState("")
   const [targetTerm, setTargetTerm] = useState("")
   const [notes, setNotes] = useState("")
@@ -58,15 +59,16 @@ function TermAddRow({
       })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        toast({ variant: "destructive", description: data.detail || "Failed to add term." })
+        crud.failed("create", "term", data.detail || "Failed to add term.")
         return
       }
       setSourceTerm("")
       setTargetTerm("")
       setNotes("")
+      crud.created("Term", sourceTerm.trim())
       onAdded()
-    } catch {
-      toast({ variant: "destructive", description: "Network error. Please try again." })
+    } catch (err) {
+      crud.failed("create", "term", err)
     } finally {
       setSaving(false)
     }
@@ -113,7 +115,8 @@ function TermAddRow({
 }
 
 export function TermsTable({ glossaryId, terms, onTermsChange }: TermsTableProps) {
-  const { toast } = useToast()
+  const crud = useCrudToast()
+  const confirm = useConfirm()
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editState, setEditState] = useState<EditState>({ source_term: "", target_term: "", notes: "" })
 
@@ -145,29 +148,42 @@ export function TermsTable({ glossaryId, terms, onTermsChange }: TermsTableProps
       })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        toast({ variant: "destructive", description: data.detail || "Failed to save term." })
+        crud.failed("update", "term", data.detail || "Failed to save term.")
         return
       }
       setEditingId(null)
+      crud.updated("Term", editState.source_term.trim())
       onTermsChange()
-    } catch {
-      toast({ variant: "destructive", description: "Network error. Please try again." })
+    } catch (err) {
+      crud.failed("update", "term", err)
     }
   }
 
-  const deleteTerm = async (termId: string) => {
+  const deleteTerm = async (termId: string, sourceTerm: string) => {
+    const ok = await confirm({
+      title: "Delete term?",
+      description: (
+        <>
+          This will permanently delete <strong>{sourceTerm}</strong>. This cannot be undone.
+        </>
+      ),
+      confirmLabel: "Delete",
+      tone: "danger",
+    })
+    if (!ok) return
     try {
       const res = await authFetch(`/v1/glossaries/${glossaryId}/terms/${termId}`, {
         method: "DELETE",
         throwOnError: false,
       })
       if (!res.ok) {
-        toast({ variant: "destructive", description: "Failed to delete term." })
+        crud.failed("delete", "term", "Failed to delete term.")
         return
       }
+      crud.deleted("Term", sourceTerm)
       onTermsChange()
-    } catch {
-      toast({ variant: "destructive", description: "Network error. Please try again." })
+    } catch (err) {
+      crud.failed("delete", "term", err)
     }
   }
 
@@ -229,7 +245,7 @@ export function TermsTable({ glossaryId, terms, onTermsChange }: TermsTableProps
                     onClick={cancelEdit}
                     aria-label="Cancel"
                   >
-                    <X className="h-4 w-4 text-slate-500" />
+                    <X className="h-4 w-4 text-muted-foreground" />
                   </Button>
                 </div>
               </TableCell>
@@ -238,7 +254,7 @@ export function TermsTable({ glossaryId, terms, onTermsChange }: TermsTableProps
             <TableRow key={term.id}>
               <TableCell className="text-sm">{term.source_term}</TableCell>
               <TableCell className="text-sm">{term.target_term}</TableCell>
-              <TableCell className="text-sm text-slate-500">{term.notes ?? "—"}</TableCell>
+              <TableCell className="text-sm text-muted-foreground">{term.notes ?? "—"}</TableCell>
               <TableCell>
                 <div className="flex items-center gap-1">
                   <Button
@@ -247,12 +263,12 @@ export function TermsTable({ glossaryId, terms, onTermsChange }: TermsTableProps
                     onClick={() => startEdit(term)}
                     aria-label={`Edit term ${term.source_term}`}
                   >
-                    <Pencil className="h-4 w-4 text-slate-500" />
+                    <Pencil className="h-4 w-4 text-muted-foreground" />
                   </Button>
                   <Button
                     variant="ghost"
                     size="icon"
-                    onClick={() => deleteTerm(term.id)}
+                    onClick={() => deleteTerm(term.id, term.source_term)}
                     aria-label={`Delete term ${term.source_term}`}
                   >
                     <Trash2 className="h-4 w-4 text-red-500" />

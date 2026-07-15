@@ -31,6 +31,19 @@ class JobStage(str, enum.Enum):
     failed = "failed"
 
 
+class FailureReason(str, enum.Enum):
+    """US-3.8: Categorized failure reasons for translation jobs."""
+
+    UNSUPPORTED_CONTENT = "unsupported_content"
+    OCR_LOW_CONFIDENCE = "ocr_low_confidence"
+    MODEL_TIMEOUT = "model_timeout"
+    PAYMENT = "payment"
+    QUOTA_EXCEEDED = "quota_exceeded"
+    FEATURE_NOT_IN_PLAN = "feature_not_in_plan"
+    SEGMENT_TOO_LARGE = "segment_too_large"
+    TRANSLATION_ERROR = "translation_error"
+
+
 class TrackedChangesAction(str, enum.Enum):
     strip = "strip"
     preserve = "preserve"
@@ -67,12 +80,21 @@ class Job(Base):
 
     queue_priority: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
+    # US-3.6: estimated credit cost for this job (used for refund on failure)
+    estimated_credit_cost: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
     # D-10: progress counters for SSE payload
     segments_done: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     segments_total: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     retry_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
     error_msg: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # US-3.8: failure categorization with typed reasons
+    failure_reason: Mapped[FailureReason | None] = mapped_column(
+        String(50), nullable=True
+    )
+    failure_details: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     # D-13: tracked changes detection + user choice (strip/preserve/null=none found)
     has_tracked_changes: Mapped[bool] = mapped_column(
@@ -112,7 +134,8 @@ class Job(Base):
     )
 
     segments: Mapped[list[Segment]] = relationship(
-        "Segment", back_populates="job", lazy="selectin"
+        "Segment", back_populates="job", lazy="selectin",
+        cascade="all, delete-orphan",
     )
 
 
@@ -164,7 +187,8 @@ class Segment(Base):
     edited_source_text: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     flags: Mapped[list["SegmentFlag"]] = relationship(
-        "SegmentFlag", back_populates="segment", lazy="selectin"
+        "SegmentFlag", back_populates="segment", lazy="selectin",
+        passive_deletes=True,
     )
 
     job: Mapped[Job] = relationship("Job", back_populates="segments")
@@ -505,6 +529,47 @@ class Lead(Base):
     )
     email: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     plan: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+# ---------------------------------------------------------------------------
+# US-3.8: Credits Ledger
+# ---------------------------------------------------------------------------
+
+class CreditLedger(Base):
+    """
+    Audit trail for credit transactions.
+
+    Tracks every credit debit (negative) and credit refund (positive) per user.
+    Positive amount = refund, Negative amount = consumption.
+    """
+
+    __tablename__ = "credits_ledger"
+    __table_args__ = (
+        Index("ix_credits_ledger_user_created", "user_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    user_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    job_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("jobs.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    # Positive = refund (system→user), Negative = consumption (user→system)
+    amount: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Reason code: translation, refund_system_failure, refund_ocr_low_confidence, etc.
+    reason: Mapped[str] = mapped_column(String(64), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

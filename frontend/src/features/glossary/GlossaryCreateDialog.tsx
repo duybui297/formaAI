@@ -1,6 +1,6 @@
 "use client"
 import { useState } from "react"
-import { useToast } from "@/hooks/use-toast"
+import { useCrudToast } from "@/hooks/use-crud-toast"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -24,7 +24,7 @@ export function GlossaryCreateDialog({
   onOpenChange,
   onCreated,
 }: GlossaryCreateDialogProps) {
-  const { toast } = useToast()
+  const crud = useCrudToast()
   const [name, setName] = useState("")
   const [sourceLang, setSourceLang] = useState("")
   const [targetLang, setTargetLang] = useState("")
@@ -46,16 +46,17 @@ export function GlossaryCreateDialog({
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
         const msg = data.detail || data.error || "Failed to create glossary."
-        toast({ variant: "destructive", description: msg })
+        crud.failed("create", "glossary", msg)
         return
       }
       // Reset form state
       setName("")
       setSourceLang("")
       setTargetLang("")
+      crud.created("Glossary", name.trim())
       onCreated()
-    } catch {
-      toast({ variant: "destructive", description: "Network error. Please try again." })
+    } catch (err) {
+      crud.failed("create", "glossary", err)
     } finally {
       setSubmitting(false)
     }
@@ -69,7 +70,7 @@ export function GlossaryCreateDialog({
         </DialogHeader>
         <form onSubmit={handleSubmit} className="flex flex-col gap-4 py-2">
           <div className="flex flex-col gap-1">
-            <label className="text-sm text-slate-700">Name</label>
+            <label className="text-sm text-foreground">Name</label>
             <Input
               value={name}
               onChange={(e) => setName(e.target.value)}

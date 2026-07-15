@@ -53,9 +53,9 @@ export function FilterBar({ filters }: FilterBarProps) {
     filters.tier || filters.status || filters.issued_after || filters.issued_before
 
   return (
-    <div className="flex flex-wrap items-end gap-3 p-4 bg-white rounded-lg border border-zinc-200">
+    <div className="flex flex-wrap items-end gap-3 p-4 bg-card rounded-lg border border-border">
       <div className="flex flex-col gap-1 min-w-[140px]">
-        <label className="text-xs font-medium text-zinc-500 uppercase tracking-wide">Tier</label>
+        <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Tier</label>
         <Select
           value={filters.tier || "all"}
           onValueChange={(v) => update("tier", v === "all" ? "" : v)}
@@ -73,7 +73,7 @@ export function FilterBar({ filters }: FilterBarProps) {
       </div>
 
       <div className="flex flex-col gap-1 min-w-[140px]">
-        <label className="text-xs font-medium text-zinc-500 uppercase tracking-wide">Status</label>
+        <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Status</label>
         <Select
           value={filters.status || "all"}
           onValueChange={(v) => update("status", v === "all" ? "" : v)}
@@ -93,7 +93,7 @@ export function FilterBar({ filters }: FilterBarProps) {
       </div>
 
       <div className="flex flex-col gap-1">
-        <label className="text-xs font-medium text-zinc-500 uppercase tracking-wide">Issued after</label>
+        <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Issued after</label>
         <Input
           data-testid="filter-issued-after"
           type="date"
@@ -104,7 +104,7 @@ export function FilterBar({ filters }: FilterBarProps) {
       </div>
 
       <div className="flex flex-col gap-1">
-        <label className="text-xs font-medium text-zinc-500 uppercase tracking-wide">Issued before</label>
+        <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Issued before</label>
         <Input
           data-testid="filter-issued-before"
           type="date"
@@ -118,7 +118,7 @@ export function FilterBar({ filters }: FilterBarProps) {
         <Button
           variant="ghost"
           size="sm"
-          className="h-8 text-zinc-500 hover:text-zinc-900"
+          className="h-8 text-muted-foreground hover:text-foreground"
           onClick={clearAll}
           data-testid="filter-clear"
         >

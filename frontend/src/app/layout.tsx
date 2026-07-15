@@ -2,7 +2,9 @@ import type { Metadata } from "next"
 import { Inter, Roboto, Montserrat, JetBrains_Mono } from "next/font/google"
 import "./globals.css"
 import { QueryProvider } from "@/components/providers/query-provider"
+import { ThemeProvider } from "@/components/providers/theme-provider"
 import { Toaster } from "@/components/ui/toaster"
+import { ConfirmProvider } from "@/hooks/use-confirm"
 
 // Inter with latin + vietnamese subsets for diacritics (UI-SPEC typography)
 const inter = Inter({
@@ -46,7 +48,11 @@ export default function RootLayout({
     <html lang="en" className={`${roboto.variable} ${montserrat.variable} ${jetbrainsMono.variable}`}>
       <body className={`${inter.variable} font-sans antialiased`}>
         <QueryProvider>
-          {children}
+          <ThemeProvider>
+            <ConfirmProvider>
+              {children}
+            </ConfirmProvider>
+          </ThemeProvider>
         </QueryProvider>
         <Toaster />
       </body>

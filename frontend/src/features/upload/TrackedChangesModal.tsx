@@ -65,7 +65,7 @@ export function TrackedChangesModal({
               <div className="font-medium text-sm">
                 Remove tracked changes before translating
               </div>
-              <div className="text-sm text-slate-500">
+              <div className="text-sm text-muted-foreground">
                 Insertions and deletions will be stripped. The final accepted text will be
                 translated.
               </div>
@@ -77,7 +77,7 @@ export function TrackedChangesModal({
               <div className="font-medium text-sm">
                 Preserve and translate both versions
               </div>
-              <div className="text-sm text-slate-500">
+              <div className="text-sm text-muted-foreground">
                 Inserted and deleted text will both be translated and kept in the output
                 document.
               </div>
@@ -89,7 +89,7 @@ export function TrackedChangesModal({
               <div className="font-medium text-sm">
                 Cancel &mdash; I&apos;ll clean up the document first
               </div>
-              <div className="text-sm text-slate-500">
+              <div className="text-sm text-muted-foreground">
                 The upload will be cancelled so you can accept or reject the changes in
                 Word.
               </div>

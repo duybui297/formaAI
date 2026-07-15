@@ -135,11 +135,11 @@ function LeadCaptureDialog({ open, plan, onClose }: LeadCaptureDialogProps) {
         aria-hidden="true"
       />
 
-      <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-md p-8 space-y-6">
+      <div className="relative bg-card rounded-2xl shadow-xl w-full max-w-md p-8 space-y-6">
         <button
           type="button"
           onClick={handleClose}
-          className="absolute top-4 right-4 text-zinc-400 hover:text-zinc-600"
+          className="absolute top-4 right-4 text-muted-foreground hover:text-foreground"
           aria-label="Close"
         >
           <X className="w-5 h-5" />
@@ -148,16 +148,16 @@ function LeadCaptureDialog({ open, plan, onClose }: LeadCaptureDialogProps) {
         {submitted ? (
           <div data-testid="lead-capture-success" className="text-center space-y-3">
             <CheckCircle2 className="w-10 h-10 text-green-500 mx-auto" />
-            <h2 className="text-xl font-semibold text-zinc-900">
+            <h2 className="text-xl font-semibold text-foreground">
               Thanks — we&apos;ll be in touch!
             </h2>
-            <p className="text-sm text-zinc-500">
+            <p className="text-sm text-muted-foreground">
               Cảm ơn! Chúng tôi sẽ liên hệ ưu đãi sớm.
             </p>
             <button
               type="button"
               onClick={handleClose}
-              className="mt-4 px-5 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 transition"
+              className="mt-4 px-5 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition"
             >
               Close
             </button>
@@ -165,10 +165,10 @@ function LeadCaptureDialog({ open, plan, onClose }: LeadCaptureDialogProps) {
         ) : (
           <>
             <div className="space-y-1">
-              <h2 className="text-xl font-semibold text-zinc-900">
-                Interested in the <span className="text-indigo-600">{planName}</span> plan?
+              <h2 className="text-xl font-semibold text-foreground">
+                Interested in the <span className="text-primary">{planName}</span> plan?
               </h2>
-              <p className="text-sm text-zinc-500">
+              <p className="text-sm text-muted-foreground">
                 Leave your email and we&apos;ll reach out with your offer.
               </p>
             </div>
@@ -177,7 +177,7 @@ function LeadCaptureDialog({ open, plan, onClose }: LeadCaptureDialogProps) {
               <div className="space-y-1.5">
                 <label
                   htmlFor="lead-email"
-                  className="text-sm font-medium text-zinc-700"
+                  className="text-sm font-medium text-foreground"
                 >
                   Email address
                 </label>
@@ -192,7 +192,7 @@ function LeadCaptureDialog({ open, plan, onClose }: LeadCaptureDialogProps) {
                     setError(null)
                   }}
                   placeholder="you@example.com"
-                  className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full rounded-lg border border-border px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
                 />
               </div>
 
@@ -209,7 +209,7 @@ function LeadCaptureDialog({ open, plan, onClose }: LeadCaptureDialogProps) {
                 type="submit"
                 data-testid="lead-capture-submit"
                 disabled={submitting || !email.trim()}
-                className="w-full py-2.5 rounded-xl bg-indigo-600 text-white font-semibold text-sm hover:bg-indigo-700 transition disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                className="w-full py-2.5 rounded-xl bg-primary text-primary-foreground font-semibold text-sm hover:bg-primary/90 transition disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
                 {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
                 Send my details
@@ -232,21 +232,21 @@ export default function PricingPage() {
   return (
     <div className="space-y-12 pb-12 p-6 md:p-8 lg:p-10 overflow-y-auto h-full">
       <div className="text-center max-w-2xl mx-auto space-y-4 pt-8">
-        <h1 className="text-4xl md:text-5xl font-bold tracking-tight text-zinc-900">
+        <h1 className="text-4xl md:text-5xl font-bold tracking-tight text-foreground">
           Simple, transparent pricing
         </h1>
-        <p className="text-lg text-zinc-500">
+        <p className="text-lg text-muted-foreground">
           Choose the plan that best fits your translation volume and professional requirements. No hidden fees.
         </p>
 
         <div className="flex items-center justify-center gap-3 mt-8">
-          <span className="text-sm font-medium text-zinc-900">Monthly</span>
-          <button className="relative inline-flex h-6 w-11 items-center rounded-full bg-indigo-600 transition-colors">
-            <span className="translate-x-6 inline-block h-4 w-4 transform rounded-full bg-white transition-transform" />
+          <span className="text-sm font-medium text-foreground">Monthly</span>
+          <button className="relative inline-flex h-6 w-11 items-center rounded-full bg-primary transition-colors">
+            <span className="translate-x-6 inline-block h-4 w-4 transform rounded-full bg-card transition-transform" />
           </button>
-          <span className="text-sm font-medium text-zinc-500 flex items-center gap-1.5">
+          <span className="text-sm font-medium text-muted-foreground flex items-center gap-1.5">
             Yearly{" "}
-            <span className="bg-emerald-100 text-emerald-700 text-xs px-2 py-0.5 rounded-full font-bold">
+            <span className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-300 text-xs px-2 py-0.5 rounded-full font-bold">
               Save 20%
             </span>
           </span>
@@ -259,39 +259,39 @@ export default function PricingPage() {
             key={i}
             data-tier={plan.tier}
             data-plan={plan.plan}
-            className={`relative p-8 bg-white rounded-3xl border shadow-sm flex flex-col ${
+            className={`relative p-8 bg-card rounded-3xl border shadow-sm flex flex-col ${
               plan.popular
-                ? "border-indigo-600 shadow-indigo-100 shadow-xl ring-1 ring-indigo-600"
-                : "border-zinc-200"
+                ? "border-primary dark:border-primary/80 shadow-primary/20 dark:shadow-primary/40 shadow-xl ring-1 ring-primary dark:ring-primary/80"
+                : "border-border dark:border-border/80"
             }`}
           >
             {plan.popular && (
               <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2">
-                <span className="bg-indigo-600 text-white text-xs font-bold uppercase tracking-wider py-1 px-3 rounded-full flex items-center gap-1">
+                <span className="bg-primary text-primary-foreground text-xs font-bold uppercase tracking-wider py-1 px-3 rounded-full flex items-center gap-1">
                   <Zap className="w-3 h-3 fill-current" /> Most Popular
                 </span>
               </div>
             )}
 
             <div className="mb-6">
-              <h3 className="text-xl font-semibold text-zinc-900">{plan.name}</h3>
-              <p className="text-xs font-medium text-indigo-600 mt-1">
+              <h3 className="text-xl font-semibold text-foreground">{plan.name}</h3>
+              <p className="text-xs font-medium text-primary dark:text-primary/70 mt-1">
                 License: {plan.tier}
               </p>
-              <p className="text-sm text-zinc-500 mt-2 min-h-[40px]">{plan.description}</p>
+              <p className="text-sm text-muted-foreground mt-2 min-h-[40px]">{plan.description}</p>
             </div>
 
-            <div className="mb-8 border-b border-zinc-100 pb-8 flex-1">
+            <div className="mb-8 border-b border-b-border pb-8 flex-1">
               <div className="flex items-baseline gap-2">
-                <span className="text-4xl font-bold text-zinc-900">{plan.price}</span>
-                <span className="text-sm font-medium text-zinc-500">{plan.interval}</span>
+                <span className="text-4xl font-bold text-foreground">{plan.price}</span>
+                <span className="text-sm font-medium text-muted-foreground">{plan.interval}</span>
               </div>
             </div>
 
             <ul className="space-y-4 mb-8">
               {plan.features.map((feature, idx) => (
-                <li key={idx} className="flex items-start gap-3 text-sm text-zinc-700">
-                  <CheckCircle2 className="w-5 h-5 text-indigo-600 shrink-0" />
+                <li key={idx} className="flex items-start gap-3 text-sm text-foreground">
+                  <CheckCircle2 className="w-5 h-5 text-primary shrink-0" />
                   <span>{feature}</span>
                 </li>
               ))}
@@ -302,8 +302,8 @@ export default function PricingPage() {
               onClick={() => setLeadPlan(plan.plan)}
               className={`w-full py-3 px-4 rounded-xl font-semibold transition-all shadow-sm flex items-center justify-center gap-2 ${
                 plan.buttonVariant === "solid"
-                  ? "bg-indigo-600 text-white hover:bg-indigo-700 hover:shadow-md"
-                  : "bg-white text-zinc-900 border border-zinc-200 hover:bg-zinc-50"
+                  ? "bg-primary text-primary-foreground hover:bg-primary/90 hover:shadow-md"
+                  : "bg-card text-foreground border border-border hover:bg-muted"
               }`}
             >
               {plan.buttonText}
@@ -312,12 +312,12 @@ export default function PricingPage() {
         ))}
       </div>
 
-      <div className="max-w-3xl mx-auto text-center mt-12 bg-zinc-50 border border-zinc-200 rounded-2xl p-8">
-        <h3 className="text-xl font-semibold text-zinc-900 mb-2">Need a custom enterprise solution?</h3>
-        <p className="text-zinc-600 mb-6">
+      <div className="max-w-3xl mx-auto text-center mt-12 bg-muted border border-border rounded-2xl p-8">
+        <h3 className="text-xl font-semibold text-foreground mb-2">Need a custom enterprise solution?</h3>
+        <p className="text-muted-foreground mb-6">
           Access unlimited API credits, on-premise deployment options, and custom SLA agreements.
         </p>
-        <button className="bg-zinc-900 text-white px-6 py-2.5 rounded-lg font-medium hover:bg-zinc-800 transition shadow-sm">
+        <button className="bg-foreground text-background px-6 py-2.5 rounded-lg font-medium hover:bg-foreground/10 transition shadow-sm">
           Contact Sales
         </button>
       </div>

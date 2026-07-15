@@ -29,19 +29,19 @@ function DashScopeHealthDot() {
 export function NavBar() {
   const pathname = usePathname()
   return (
-    <header className="h-14 bg-white border-b border-slate-200 flex items-center px-8">
+    <header className="h-14 bg-card border-b border-border flex items-center px-8">
       <div className="w-full flex items-center justify-between">
         <span className="text-[28px] font-semibold leading-none">AI Translation</span>
         <nav className="flex items-center gap-6">
           <Link
             href="/translator"
-            className={`text-sm ${pathname?.startsWith("/translator") || pathname === "/upload" || pathname?.startsWith("/jobs") ? "text-indigo-600 font-medium" : "text-slate-600 hover:text-slate-900"}`}
+            className={`text-sm ${pathname?.startsWith("/translator") || pathname === "/upload" || pathname?.startsWith("/jobs") ? "text-primary font-medium" : "text-muted-foreground hover:text-foreground"}`}
           >
             Translator
           </Link>
           <Link
             href="/glossaries"
-            className={`text-sm ${pathname?.startsWith("/glossaries") ? "text-indigo-600 font-medium" : "text-slate-600 hover:text-slate-900"}`}
+            className={`text-sm ${pathname?.startsWith("/glossaries") ? "text-primary font-medium" : "text-muted-foreground hover:text-foreground"}`}
           >
             Glossaries
           </Link>

@@ -52,27 +52,27 @@ export function JobsTable({ jobs }: JobsTableProps) {
         {jobs.map((job, idx) => (
           <TableRow
             key={job.id}
-            className="hover:bg-slate-50 cursor-pointer"
+            className="hover:bg-muted cursor-pointer"
             onClick={() => router.push(`/jobs/${job.id}`)}
           >
-            <TableCell className="text-xs text-slate-400 font-mono">
+            <TableCell className="text-xs text-muted-foreground font-mono">
               {idx + 1}
             </TableCell>
-            <TableCell className="text-sm text-slate-800 max-w-[200px] truncate">
+            <TableCell className="text-sm text-foreground max-w-[200px] truncate">
               {job.original_filename}
             </TableCell>
-            <TableCell className="text-xs text-slate-600">
+            <TableCell className="text-xs text-muted-foreground">
               {sourceLangDisplay(job)} → {job.target_lang}
             </TableCell>
             <TableCell>
-              <Badge variant="outline" className="text-xs text-slate-700">
+              <Badge variant="outline" className="text-xs text-foreground">
                 {job.input_format.toUpperCase()}
               </Badge>
             </TableCell>
             <TableCell>
               <StatusBadge status={job.status} />
             </TableCell>
-            <TableCell className="text-xs text-slate-500">
+            <TableCell className="text-xs text-muted-foreground">
               {formatAge(job.created_at)}
             </TableCell>
             <TableCell
@@ -92,7 +92,7 @@ export function JobsTable({ jobs }: JobsTableProps) {
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="h-7 px-2 text-xs text-indigo-600 hover:text-indigo-700"
+                    className="h-7 px-2 text-xs text-primary hover:text-primary"
                     onClick={() => {
                       window.location.href = `/api/v1/jobs/${job.id}/download`
                     }}

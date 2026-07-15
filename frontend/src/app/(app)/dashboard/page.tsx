@@ -1,5 +1,4 @@
 "use client"
-import { useMemo } from "react"
 import Link from "next/link"
 import { useQuery } from "@tanstack/react-query"
 import {
@@ -13,46 +12,63 @@ import {
   Loader2,
   Clock,
   AlertTriangle,
+  Hash,
+  Sparkles,
+  ArrowRight,
 } from "lucide-react"
-import { listJobs } from "@/lib/api"
-import { getMyEntitlements, getNotifications } from "@/lib/api"
+import { getDashboardSummary, getNotifications } from "@/lib/api"
 import { cn } from "@/lib/utils"
-import type { Notification, JobSummary } from "@/lib/types"
+import type { Notification, DashboardSummary } from "@/lib/types"
 
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return "0 B"
-  if (!bytes) return "—"
-  const k = 1024
-  const sizes = ["B", "KB", "MB", "GB"]
-  const i = Math.floor(Math.log(bytes) / Math.log(k))
-  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`
+// ============================================================================
+// KPI Tile Components
+// ============================================================================
+
+function KpiTileSkeleton() {
+  return (
+    <div className="bg-card p-6 rounded-xl border border-border shadow-sm flex items-center gap-4 animate-pulse">
+      <div className="w-12 h-12 rounded-lg bg-muted" />
+      <div className="space-y-2 flex-1">
+        <div className="h-4 w-24 bg-muted rounded" />
+        <div className="h-8 w-16 bg-muted rounded" />
+      </div>
+    </div>
+  )
 }
 
-function StatCard({
+function KpiTile({
   label,
   value,
   icon: Icon,
   color,
   bg,
+  empty,
 }: {
   label: string
-  value: string
+  value: string | number | null
   icon: React.ElementType
   color: string
   bg: string
+  empty?: string
 }) {
+  const displayValue = value ?? empty ?? "—"
+
   return (
-    <div className="bg-white p-6 rounded-xl border border-zinc-200 shadow-sm flex items-center gap-4">
+    <div className="bg-card p-6 rounded-xl border border-border shadow-sm flex items-center gap-4">
       <div className={`p-3 rounded-lg ${bg} ${color}`}>
         <Icon className="w-6 h-6" />
       </div>
       <div>
-        <p className="text-sm font-medium text-zinc-500">{label}</p>
-        <p className="text-2xl font-bold text-zinc-900">{value}</p>
+        <p className="text-sm font-medium text-muted-foreground">{label}</p>
+        <p className="text-2xl font-bold text-foreground">{displayValue}</p>
       </div>
     </div>
   )
 }
+
+// ============================================================================
+// Notifications
+// ============================================================================
 
 function NotificationItem({ notif }: { notif: Notification }) {
   const Icon =
@@ -71,29 +87,36 @@ function NotificationItem({ notif }: { notif: Notification }) {
         ? "text-red-500"
         : notif.type === "license_expiry"
           ? "text-amber-500"
-          : "text-indigo-500"
+          : "text-primary"
 
   return (
     <div className="flex gap-3 items-start">
       <Icon className={`w-5 h-5 mt-0.5 ${iconColor}`} />
       <div>
-        <p className="text-sm font-medium text-zinc-900">{notif.title}</p>
-        <p className="text-sm text-zinc-500">{notif.description}</p>
-        {notif.time && <p className="text-xs text-zinc-400 mt-1">{notif.time}</p>}
+        <p className="text-sm font-medium text-foreground">{notif.title}</p>
+        <p className="text-sm text-muted-foreground">{notif.description}</p>
+        {notif.time && <p className="text-xs text-muted-foreground mt-1">{notif.time}</p>}
       </div>
     </div>
   )
 }
 
-export default function DashboardPage() {
-  const { data: jobsData, isLoading: jobsLoading } = useQuery({
-    queryKey: ["jobs-recent"],
-    queryFn: () => listJobs({ page: 1, page_size: 5 }),
-  })
+function formatNumber(n: number | null | undefined): string {
+  if (n == null) return "—"
+  if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`
+  return n.toLocaleString()
+}
 
-  const { data: entitlements, isLoading: entLoading } = useQuery({
-    queryKey: ["entitlements"],
-    queryFn: getMyEntitlements,
+// ============================================================================
+// Main Dashboard Page
+// ============================================================================
+
+export default function DashboardPage() {
+  const { data: summary, isLoading: summaryLoading } = useQuery({
+    queryKey: ["dashboard-summary"],
+    queryFn: getDashboardSummary,
+    staleTime: 60 * 1000, // 60s matching backend cache TTL
   })
 
   const { data: notifData, isLoading: notifLoading } = useQuery({
@@ -101,86 +124,46 @@ export default function DashboardPage() {
     queryFn: getNotifications,
   })
 
-  const jobs: JobSummary[] = jobsData?.jobs ?? []
-
-  const stats = useMemo(() => {
-    const completedJobs = jobs.filter((j) => j.status === "done")
-    const totalFiles = completedJobs.length
-
-    // Approximate word count from number of completed jobs
-    // (exact word count per job not currently stored; display job count as proxy)
-    const wordProxy = totalFiles * 1200 // rough estimate per job for display
-
-    const tierLabel = entitlements?.tier ?? null
-    const tierDisplay =
-      !entitlements || !entitlements.has_active
-        ? "No Plan"
-        : tierLabel === "ENTERPRISE"
-          ? "Enterprise"
-          : tierLabel === "PRO"
-            ? "Pro"
-            : tierLabel === "TRIAL"
-              ? "Free"
-              : tierLabel ?? "—"
-
-    const maxBytes = entitlements?.max_file_bytes ?? 0
-    const quotaRemaining =
-      entitlements?.monthly_quota !== null && entitlements?.monthly_quota !== undefined
-        ? Math.max(0, (entitlements.monthly_quota ?? 0) - (entitlements.quota_used ?? 0))
-        : null
-
-    return {
-      totalFiles,
-      wordProxy,
-      quotaRemaining,
-      quotaUsed: entitlements?.quota_used ?? 0,
-      maxBytes,
-      tierDisplay,
-      hasActive: entitlements?.has_active ?? false,
-    }
-  }, [jobs, entitlements])
-
-  // Build chart data from last 6 months of job history
-  const chartData = useMemo(() => {
-    const now = new Date()
-    const months: { name: string; words: number }[] = []
-    for (let i = 5; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
-      const monthStr = d.toLocaleString("default", { month: "short" })
-      const monthStart = new Date(d.getFullYear(), d.getMonth(), 1)
-      const monthEnd = new Date(d.getFullYear(), d.getMonth() + 1, 0)
-
-      const monthJobs = jobs.filter((j) => {
-        const created = new Date(j.created_at)
-        return created >= monthStart && created <= monthEnd
-      })
-      const doneJobs = monthJobs.filter((j) => j.status === "done")
-      months.push({
-        name: monthStr,
-        words: doneJobs.length * 1200,
-      })
-    }
-    return months
-  }, [jobs])
-
-  const maxWords = Math.max(...chartData.map((d) => d.words), 1)
   const notifications = notifData?.notifications ?? []
-  const isLoading = jobsLoading || entLoading || notifLoading
+  const isLoading = summaryLoading || notifLoading
+
+  // Derive display values from summary
+  const stats = {
+    filesTranslated: summary?.files_translated ?? 0,
+    wordsProcessed: summary?.words_processed ?? 0,
+    creditsRemaining: summary?.credits_remaining,
+    activePlan: summary?.active_plan ?? null,
+  }
+
+  const planDisplay =
+    !stats.activePlan
+      ? "No Plan"
+      : stats.activePlan === "ENTERPRISE"
+        ? "Enterprise"
+        : stats.activePlan === "PRO"
+          ? "Pro"
+          : stats.activePlan === "TRIAL"
+            ? "Free"
+            : stats.activePlan
+
+  // Empty state: new user with no activity
+  const isEmptyState = !summaryLoading && stats.filesTranslated === 0 && !stats.activePlan
 
   return (
     <div className="space-y-6 p-6 md:p-8 lg:p-10 overflow-y-auto h-full">
       <div className="max-w-7xl mx-auto space-y-6">
+        {/* Header */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight text-zinc-900">Dashboard</h1>
-            <p className="text-zinc-500 mt-1">
+            <h1 className="text-3xl font-bold tracking-tight text-foreground">Dashboard</h1>
+            <p className="text-muted-foreground mt-1">
               Welcome back! Here&apos;s an overview of your translation activity.
             </p>
           </div>
           <div className="flex items-center gap-3">
             <Link
               href="/translator"
-              className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-indigo-700 transition"
+              className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg font-medium hover:bg-primary/90 transition"
             >
               <UploadCloud className="w-4 h-4" />
               Quick Upload
@@ -188,124 +171,123 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {isLoading ? (
-          <div className="flex items-center justify-center py-12 gap-3 text-zinc-400">
+        {/* Loading State */}
+        {isLoading && (
+          <div className="flex items-center justify-center py-12 gap-3 text-muted-foreground">
             <Loader2 className="w-5 h-5 animate-spin" />
             <span>Loading dashboard…</span>
           </div>
-        ) : (
-          <>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <StatCard
-                label="Files Translated"
-                value={stats.totalFiles.toLocaleString()}
-                icon={FileText}
-                color="text-indigo-600"
-                bg="bg-indigo-50"
-              />
-              <StatCard
-                label="Jobs This Month"
-                value={String(stats.quotaUsed)}
-                icon={TrendingUp}
-                color="text-emerald-600"
-                bg="bg-emerald-50"
-              />
-              <StatCard
-                label="Credits Remaining"
-                value={
-                  stats.quotaRemaining !== null
-                    ? stats.quotaRemaining.toLocaleString()
-                    : "Unlimited"
-                }
-                icon={CreditCard}
-                color="text-amber-600"
-                bg="bg-amber-50"
-              />
-              <StatCard
-                label="Active Plan"
-                value={stats.tierDisplay}
-                icon={CheckCircle2}
-                color="text-purple-600"
-                bg="bg-purple-50"
-              />
-            </div>
+        )}
 
+        {/* Content */}
+        {!isLoading && (
+          <>
+            {/* KPI Tiles */}
+            {isEmptyState ? (
+              /* Empty State for new users */
+              <div className="bg-card p-12 rounded-xl border border-border shadow-sm text-center">
+                <div className="max-w-md mx-auto space-y-4">
+                  <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto">
+                    <Sparkles className="w-8 h-8 text-primary" />
+                  </div>
+                  <h2 className="text-xl font-semibold text-foreground">Welcome to AI Translation</h2>
+                  <p className="text-muted-foreground">
+                    Translate your first document to see your usage metrics here.
+                  </p>
+                  <Link
+                    href="/translator"
+                    className="inline-flex items-center gap-2 bg-primary text-primary-foreground px-6 py-3 rounded-lg font-medium hover:bg-primary/90 transition mt-4"
+                  >
+                    <UploadCloud className="w-5 h-5" />
+                    Translate your first file
+                  </Link>
+                </div>
+              </div>
+            ) : (
+              /* KPI Tiles Grid */
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <KpiTile
+                  label="Files Translated"
+                  value={formatNumber(stats.filesTranslated)}
+                  icon={FileText}
+                  color="text-primary"
+                  bg="bg-primary/10"
+                />
+                <KpiTile
+                  label="Words Processed"
+                  value={formatNumber(stats.wordsProcessed)}
+                  icon={Hash}
+                  color="text-blue-600"
+                  bg="bg-blue-50"
+                />
+                <KpiTile
+                  label="Credits Remaining"
+                  value={stats.creditsRemaining != null ? formatNumber(stats.creditsRemaining) : null}
+                  icon={CreditCard}
+                  color="text-amber-600"
+                  bg="bg-amber-50"
+                  empty="Unlimited"
+                />
+                <KpiTile
+                  label="Active Plan"
+                  value={planDisplay}
+                  icon={CheckCircle2}
+                  color="text-purple-600"
+                  bg="bg-purple-50"
+                />
+              </div>
+            )}
+
+            {/* Bottom Section: Notifications + Pro Tip */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {/* Chart */}
-              <div className="lg:col-span-2 bg-white p-6 rounded-xl border border-zinc-200 shadow-sm">
-                <h2 className="text-lg font-semibold text-zinc-900 mb-6">Translation Volume</h2>
-                {chartData.every((d) => d.words === 0) ? (
-                  <div className="h-[300px] flex items-center justify-center">
-                    <div className="text-center text-zinc-400">
-                      <FileText className="w-10 h-10 mx-auto mb-2 opacity-40" />
-                      <p className="text-sm">No translation data yet.</p>
-                      <Link href="/translator" className="text-indigo-600 text-sm hover:underline mt-1 inline-block">
-                        Upload your first document →
-                      </Link>
-                    </div>
+              {/* Notifications */}
+              <div className="lg:col-span-2 bg-card p-6 rounded-xl border border-border shadow-sm">
+                <h2 className="text-lg font-semibold text-foreground mb-6 flex items-center gap-2">
+                  <Bell className="w-5 h-5 text-primary" />
+                  Notifications
+                </h2>
+                {notifLoading ? (
+                  <div className="space-y-3">
+                    {[1, 2].map((i) => (
+                      <div key={i} className="h-12 bg-muted rounded animate-pulse" />
+                    ))}
+                  </div>
+                ) : notifications.length === 0 ? (
+                  <div className="text-center text-muted-foreground py-8">
+                    <Bell className="w-8 h-8 mx-auto mb-2 opacity-40" />
+                    <p className="text-sm">No notifications</p>
                   </div>
                 ) : (
-                  <div className="h-[300px] flex items-end gap-3 px-2">
-                    {chartData.map((d) => (
-                      <div key={d.name} className="flex-1 flex flex-col items-center gap-2">
-                        <span className="text-xs text-zinc-500">
-                          {d.words > 0 ? `${(d.words / 1000).toFixed(0)}k` : "0"}
-                        </span>
-                        <div
-                          className="w-full bg-indigo-600 rounded-t-md transition-all"
-                          style={{ height: `${Math.max(4, (d.words / maxWords) * 240)}px` }}
-                        />
-                        <span className="text-xs text-zinc-500">{d.name}</span>
-                      </div>
+                  <div className="space-y-4">
+                    {notifications.slice(0, 5).map((notif) => (
+                      <NotificationItem key={notif.id} notif={notif} />
                     ))}
                   </div>
                 )}
               </div>
 
-              <div className="space-y-6">
-                {/* Notifications */}
-                <div className="bg-white p-6 rounded-xl border border-zinc-200 shadow-sm">
-                  <h2 className="text-lg font-semibold text-zinc-900 mb-4 flex items-center gap-2">
-                    <Bell className="w-5 h-5 text-indigo-600" />
-                    Notifications
-                  </h2>
-                  {notifLoading ? (
-                    <div className="space-y-3">
-                      {[1, 2].map((i) => (
-                        <div key={i} className="h-12 bg-zinc-100 rounded animate-pulse" />
-                      ))}
-                    </div>
-                  ) : notifications.length === 0 ? (
-                    <div className="text-center text-zinc-400 py-6">
-                      <Bell className="w-8 h-8 mx-auto mb-2 opacity-40" />
-                      <p className="text-sm">No notifications</p>
-                    </div>
-                  ) : (
-                    <div className="space-y-4">
-                      {notifications.slice(0, 5).map((notif) => (
-                        <NotificationItem key={notif.id} notif={notif} />
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* Pro Tip */}
-                <div className="bg-indigo-600 text-white p-6 rounded-xl border border-indigo-500 shadow-sm relative overflow-hidden">
-                  <div className="relative z-10">
-                    <h2 className="text-lg font-semibold mb-2">Pro Tip</h2>
-                    <p className="text-indigo-100 text-sm mb-4">
-                      Did you know? You can upload custom glossaries to ensure technical terms are
-                      always translated exactly how you want them.
-                    </p>
-                    <Link
-                      href="/glossaries"
-                      className="text-sm font-medium bg-white/20 hover:bg-white/30 transition px-3 py-1.5 rounded-md inline-block"
-                    >
-                      Manage Glossaries
-                    </Link>
+              {/* Pro Tip */}
+              <div className="bg-primary text-primary-foreground p-5 rounded-xl border border-primary/80 shadow-sm relative overflow-hidden">
+                <div className="relative z-10 flex flex-col gap-3">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="w-4 h-4" />
+                    <h2 className="text-sm font-semibold uppercase tracking-wider">
+                      Pro Tip
+                    </h2>
                   </div>
-                  <div className="absolute -bottom-10 -right-10 w-40 h-40 bg-white/10 rounded-full blur-2xl" />
+                  <p className="text-primary-foreground/85 text-sm leading-snug">
+                    Upload custom glossaries to keep technical terms translated
+                    exactly how you want them.
+                  </p>
+                  <Link
+                    href="/glossaries"
+                    className="inline-flex items-center gap-1.5 text-sm font-medium bg-card/20 hover:bg-card/30 transition px-3 py-1.5 rounded-md self-start"
+                  >
+                    Manage Glossaries
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </Link>
                 </div>
+                <div className="absolute -bottom-10 -right-10 w-40 h-40 bg-card/10 rounded-full blur-2xl" />
               </div>
             </div>
           </>

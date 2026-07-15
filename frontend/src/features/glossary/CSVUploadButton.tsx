@@ -1,7 +1,7 @@
 "use client"
 import { useRef } from "react"
 import { Upload } from "lucide-react"
-import { useToast } from "@/hooks/use-toast"
+import { useCrudToast } from "@/hooks/use-crud-toast"
 import { Button } from "@/components/ui/button"
 import { authFetch } from "@/lib/auth"
 
@@ -11,7 +11,7 @@ interface CSVUploadButtonProps {
 }
 
 export function CSVUploadButton({ glossaryId, onImported }: CSVUploadButtonProps) {
-  const { toast } = useToast()
+  const crud = useCrudToast()
   const inputRef = useRef<HTMLInputElement>(null)
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -30,14 +30,17 @@ export function CSVUploadButton({ glossaryId, onImported }: CSVUploadButtonProps
       const data = await res.json().catch(() => ({}))
       if (!res.ok) {
         const msg = data.detail || data.error || "Import failed."
-        toast({ variant: "destructive", description: `Import failed: ${msg}` })
+        crud.failed("import", "terms", msg)
         return
       }
       const count = data.imported ?? 0
-      toast({ description: `Imported ${count} term${count !== 1 ? "s" : ""}.` })
+      crud.imported(
+        "Terms",
+        `${count} term${count !== 1 ? "s" : ""} from ${file.name}`,
+      )
       onImported(count)
-    } catch {
-      toast({ variant: "destructive", description: "Network error during import." })
+    } catch (err) {
+      crud.failed("import", "terms", err)
     } finally {
       // Reset so same file can be re-imported
       e.target.value = ""

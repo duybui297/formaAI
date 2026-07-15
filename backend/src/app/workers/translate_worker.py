@@ -33,6 +33,7 @@ from sqlalchemy.exc import IntegrityError
 from app.core.config import get_settings
 from app.core.logging import bind_job_id, clear_job_id, configure_logging
 from app.db.models import (  # Gap 1: ORM model for DB persistence
+    FailureReason,
     FlagSeverity,
     FlagType,
     JobStage,
@@ -48,10 +49,12 @@ from app.pipeline.docx.reassembler import reassemble_docx, reassemble_docx_runs
 from app.pipeline.docx.tracked import strip_tracked_changes
 from app.services.glossary_service import load_glossary_terms_for_job, run_post_check
 from app.services.job_service import (
+    add_credit_ledger_entry,
     append_error_log,
     get_job,
     transition_to_done,
     transition_to_failed,
+    transition_to_failed_with_reason,
     transition_to_running,
     update_job_progress,
 )
@@ -385,7 +388,12 @@ async def _run_translation(ctx: dict, session, job_id: str) -> None:
                         if _ent is not None and not _ent.ocr_allowed:
                             _ocr_block_msg = "OCR is not available on your current plan."
                             append_error_log(data_dir, job_id, _ocr_block_msg)
-                            await transition_to_failed(session, job_id, error_msg=_ocr_block_msg)
+                            await transition_to_failed_with_reason(
+                                session, job_id,
+                                failure_reason=FailureReason.FEATURE_NOT_IN_PLAN,
+                                failure_details={"feature": "ocr", "message": _ocr_block_msg},
+                                refund_credits=False,
+                            )
                             await _publish_progress(
                                 redis, job_id, "failed", "failed", 0, 0, 0, 0,
                                 _ocr_block_msg,
@@ -922,10 +930,20 @@ async def _run_translation(ctx: dict, session, job_id: str) -> None:
                 )
 
     except SegmentTooLargeError as exc:
-        # D-08: oversized segment — fail gracefully with clear error
+        # D-08 + US-3.8: oversized segment — fail gracefully with clear error
         msg = str(exc)
         append_error_log(data_dir, job_id, msg)
-        await transition_to_failed(session, job_id, error_msg=msg)
+        await transition_to_failed_with_reason(
+            session, job_id,
+            failure_reason=FailureReason.SEGMENT_TOO_LARGE,
+            failure_details={
+                "message": msg,
+                "failing_segments": [
+                    {"id": exc.segment_id, "source_text": exc.source_text_excerpt, "batch_id": 0}
+                ],
+            },
+            refund_credits=False,  # User-side: bad input file
+        )
         await _publish_progress(
             redis, job_id, "failed", "failed", 0, 0, 0, 0, msg,
             error={
@@ -972,7 +990,13 @@ async def _run_translation(ctx: dict, session, job_id: str) -> None:
             await session.rollback()
         except Exception:
             pass  # best-effort; if rollback itself fails, we still attempt the status update
-        await transition_to_failed(session, job_id, error_msg=msg)
+        # US-3.8: generic exception → TRANSLATION_ERROR (system-side → refund)
+        await transition_to_failed_with_reason(
+            session, job_id,
+            failure_reason=FailureReason.TRANSLATION_ERROR,
+            failure_details={"message": msg},
+            refund_credits=True,
+        )
         await _publish_progress(
             redis, job_id, "failed", "failed", 0, 0, 0, 0, msg,
             error={

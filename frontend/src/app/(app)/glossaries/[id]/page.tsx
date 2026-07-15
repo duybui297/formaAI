@@ -41,7 +41,7 @@ export default function GlossaryDetailPage() {
     return (
       <div>
         <div className="px-8 py-8">
-          <p className="text-slate-400">Loading…</p>
+          <p className="text-muted-foreground">Loading…</p>
         </div>
       </div>
     )
@@ -67,7 +67,7 @@ export default function GlossaryDetailPage() {
         <div className="mb-6">
           <Link
             href="/glossaries"
-            className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800 mb-4"
+            className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground mb-4"
           >
             <ArrowLeft className="h-3.5 w-3.5" />
             Back to Glossaries
@@ -77,7 +77,7 @@ export default function GlossaryDetailPage() {
               <h1 className="text-2xl font-semibold font-[--font-montserrat] text-[#111111]">
                 {glossary.name}
               </h1>
-              <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 text-sm">
+              <span className="px-2 py-0.5 rounded-full bg-muted text-muted-foreground text-sm">
                 {glossary.source_lang} → {glossary.target_lang}
               </span>
             </div>

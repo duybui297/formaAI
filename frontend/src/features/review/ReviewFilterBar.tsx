@@ -56,10 +56,10 @@ export function ReviewFilterBar({
     "h-8 rounded-full text-xs px-3 border transition-colors flex-shrink-0";
   const activeClass = "bg-violet-500 text-white border-violet-500";
   const inactiveClass =
-    "bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200";
+    "bg-muted text-foreground border-border hover:bg-muted";
 
   return (
-    <div className="flex items-center gap-2 h-12 px-4 bg-white border-b border-slate-100 overflow-x-auto sticky top-[120px] z-10">
+    <div className="flex items-center gap-2 h-12 px-4 bg-card border-b border-border overflow-x-auto sticky top-[120px] z-10">
       {/* All chip */}
       <button
         className={cn(chipBase, activeFilter === "all" ? activeClass : inactiveClass)}
@@ -88,7 +88,7 @@ export function ReviewFilterBar({
       <Button
         variant="ghost"
         size="sm"
-        className="flex items-center gap-1.5 text-xs text-slate-500 flex-shrink-0"
+        className="flex items-center gap-1.5 text-xs text-muted-foreground flex-shrink-0"
         onClick={onToggleHelp}
       >
         <Keyboard className="h-3.5 w-3.5" />

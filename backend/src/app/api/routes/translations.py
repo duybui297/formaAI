@@ -1,11 +1,13 @@
 """
 POST /api/v1/translations  — submit a translation job (US-3.7 spec-aligned)
 GET  /api/v1/translations  — paginated list of translations, org-scoped (US-4.1)
+POST /api/v1/translations/estimate — lightweight word-count + credit cost estimate (US-3.6)
 
 Accepts multipart/form-data with the source file and job metadata.
 This is the spec-aligned alternative to POST /upload; both share the same
 implementation but this endpoint carries the spec name.
 
+US-3.6: POST /translations/estimate parses the uploaded source, returns wordCount + creditCost.
 US-3.7 AC-5: Idempotency key via Idempotency-Key header.
 US-3.7 AC-6: Priority lanes per plan (Free/PRO/ENTERPRISE).
 US-4.1: paginated list with page/size/sort; org-scoped via workspace_id.
@@ -26,9 +28,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_arq_pool, get_current_active_user
 from app.api.routes.languages import get_valid_target_codes_async
-from app.db.models import Job, User
+from app.db.models import FailureReason, Job, User
 from app.db.session import get_session
 from app.licensing.entitlements import count_monthly_jobs, resolve_entitlements
+from app.services.estimate_service import count_words_in_file, estimate_credit_cost
 from app.services.glossary_service import get_glossary
 from app.services.job_service import create_job
 
@@ -41,6 +44,136 @@ ALLOWED_EXTENSIONS: frozenset[str] = frozenset({".docx", ".pptx", ".pdf", ".xlsx
 SUPPORTED_FORMATS: frozenset[str] = frozenset({".docx", ".pptx", ".pdf", ".xlsx"})
 
 _STREAMING_CHUNK = 64 * 1024  # 64 KB per read chunk
+
+
+# ---------------------------------------------------------------------------
+# US-3.6: POST /translations/estimate — word count + credit cost estimate
+# ---------------------------------------------------------------------------
+
+
+class EstimateResponse(BaseModel):
+    """US-3.6 response: word count, credit cost, and credit sufficiency flag."""
+
+    word_count: int
+    credit_cost: int
+    has_sufficient_credits: bool
+    is_scanned: bool
+
+
+@router.post("/translations/estimate", response_model=EstimateResponse)
+async def estimate_translation(
+    request: Request,
+    file: UploadFile = File(...),
+    source_lang: str = Form(...),
+    target_lang: str = Form(...),
+    is_scanned_override: bool | None = Form(None),
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_active_user),
+) -> EstimateResponse:
+    """
+    US-3.6: Lightweight word-count + credit-cost estimation.
+
+    Accepts the same file + language inputs as /translations.
+    Does NOT create a job or persist the file.
+    Does NOT check monthly quota (quota is consumed only on job submission).
+
+    Returns: {word_count, credit_cost, has_sufficient_credits, is_scanned}
+    """
+    # --- Entitlement check (LICENSE_REQUIRED) ---
+    entitlement = await resolve_entitlements(user=current_user, session=session)
+    if entitlement is None:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "error": "LICENSE_REQUIRED",
+                "message": "An active license is required to estimate translation cost.",
+            },
+        )
+
+    # --- Extension check ---
+    filename = file.filename or ""
+    ext = Path(filename).suffix.lower()
+    if ext not in ALLOWED_EXTENSIONS:
+        raise HTTPException(
+            status_code=415,
+            detail="Unsupported file type. Accepted: DOCX, PDF, PPTX, XLSX.",
+        )
+
+    # --- Language validation ---
+    if target_lang not in await get_valid_target_codes_async(session):
+        raise HTTPException(
+            status_code=422,
+            detail=f"Unsupported target language: {target_lang!r}.",
+        )
+    if source_lang != "auto" and source_lang == target_lang:
+        raise HTTPException(
+            status_code=422,
+            detail="Source and target language must be different.",
+        )
+
+    # --- Read file bytes (streaming, capped at absolute max) ---
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        chunk = await file.read(_STREAMING_CHUNK)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > MAX_UPLOAD_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=f"File too large for estimation — maximum is 100 MB.",
+            )
+        chunks.append(chunk)
+    content: bytes = b"".join(chunks)
+
+    # --- Detect scanned PDF ---
+    is_scanned = False
+    if ext == ".pdf":
+        if is_scanned_override is not None:
+            is_scanned = is_scanned_override
+        else:
+            try:
+                import pymupdf  # noqa: PLC0415
+                from app.pipeline.scanned_pdf.detector import detect_scanned_pdf  # noqa: PLC0415
+
+                _settings = request.app.state.settings
+                _probe_doc = pymupdf.open(stream=content, filetype="pdf")
+                is_scanned = detect_scanned_pdf(
+                    _probe_doc,
+                    threshold=_settings.ocr_text_density_threshold,
+                )
+                _probe_doc.close()
+            except Exception:
+                is_scanned = False
+
+    # --- Word count ---
+    word_count = count_words_in_file(content, ext)
+
+    # --- Credit cost ---
+    tier_name = entitlement.tier.value  # "TRIAL", "PRO", "ENTERPRISE"
+    credit_cost = estimate_credit_cost(word_count, tier_name, is_scanned)
+
+    # --- US-3.6: has_sfficient_credits = sufficient quota ===
+    # For the estimate, we check against monthly_quota (not a ledger balance).
+    # A user with unlimited quota (None) always has sufficient credits.
+    has_sufficient_credits = True
+    if entitlement.monthly_quota is not None:
+        quota_used = await count_monthly_jobs(
+            user_id=str(current_user.id), session=session
+        )
+        remaining = entitlement.monthly_quota - quota_used
+        # "1 job = word_count/1000" rough credit units for quota check.
+        # Simplify: if remaining > 0, user can submit.
+        # credit_cost is informational; actual debit happens on job completion (US-3.8).
+        has_sufficient_credits = remaining > 0
+
+    return EstimateResponse(
+        word_count=word_count,
+        credit_cost=credit_cost,
+        has_sufficient_credits=has_sufficient_credits,
+        is_scanned=is_scanned,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -329,6 +462,11 @@ async def submit_translation(
 
     input_format = "scanned_pdf" if (ext == ".pdf" and is_scanned) else ext.lstrip(".")
 
+    # --- US-3.6: Word count + credit cost for the job row ---
+    word_count = count_words_in_file(content, ext)
+    tier_name = entitlement.tier.value
+    credit_cost = estimate_credit_cost(word_count, tier_name, is_scanned)
+
     # --- DOCX tracked-changes probe ---
     has_tracked = False
     if ext == ".docx":
@@ -365,6 +503,7 @@ async def submit_translation(
         user_id=current_user.id,
         idempotency_key=idempotency_key,
         queue_priority=entitlement.queue_priority,
+        estimated_credit_cost=credit_cost,
     )
 
     # US-3.7 AC-5: idempotent — return existing job

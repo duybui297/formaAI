@@ -16,15 +16,15 @@ const FLAG_BADGE_STYLES: Record<FlagType, string> = {
   placeholder_mismatch: "bg-orange-100 text-orange-800 border-orange-300",
   llm_refusal: "bg-red-100 text-red-800 border-red-300",
   smartart: "bg-orange-100 text-orange-800 border-orange-300",
-  multi_column_degraded: "bg-slate-100 text-slate-600 border-slate-300",
+  multi_column_degraded: "bg-muted text-muted-foreground border-input",
   // Phase 4 additions (D-04-24, D-04-31)
-  figure_passthrough: "bg-slate-50 text-slate-600 border-slate-200",
+  figure_passthrough: "bg-muted text-muted-foreground border-border",
   ocr_page_error: "bg-amber-50 text-amber-700 border-amber-200",
 };
 
 // M2 split: overflow + auto_adjusted=true is the informational AUTO-FIT case,
 // distinct from real (uncorrectable) Overflow. Same contract as FlagBadge.tsx.
-const AUTO_FIT_STYLE = "bg-slate-100 text-slate-600 border-slate-300";
+const AUTO_FIT_STYLE = "bg-muted text-muted-foreground border-input";
 
 const FLAG_LABELS: Record<FlagType, string> = {
   overflow: "Overflow",
@@ -71,7 +71,7 @@ const LEFT_BORDER: Record<FlagType, string> = {
   smartart: "border-l-orange-500",
   multi_column_degraded: "border-l-slate-400",
   // Phase 4 additions
-  figure_passthrough: "border-l-slate-300",
+  figure_passthrough: "border-l-border",
   ocr_page_error: "border-l-amber-400",
 };
 
@@ -254,12 +254,12 @@ export function SegmentRow({
     <div
       data-focused={isFocused ? "true" : undefined}
       className={cn(
-        "flex flex-col border-b border-slate-100 border-l-4",
+        "flex flex-col border-b border-border border-l-4",
         isFocused ? "ring-2 ring-violet-500 bg-violet-50" : "",
         primaryFlag
           ? (LEFT_BORDER[primaryFlag] ?? "border-l-transparent")
           : "border-l-transparent",
-        "hover:bg-slate-50 cursor-pointer"
+        "hover:bg-muted cursor-pointer"
       )}
       onClick={onFocus}
     >
@@ -267,10 +267,10 @@ export function SegmentRow({
       {imageExpanded && pageNum !== null && segment.region_bbox && (
         <div
           id={`image-preview-${segment.id}`}
-          className="w-full border-b border-slate-100 bg-slate-50 overflow-hidden max-h-[200px]"
+          className="w-full border-b border-border bg-muted overflow-hidden max-h-[200px]"
         >
           {imageError ? (
-            <p className="text-xs text-slate-400 italic p-2">Image not available</p>
+            <p className="text-xs text-muted-foreground italic p-2">Image not available</p>
           ) : (
             // WR-06 fix: render full page image with region highlight overlay.
             // objectPosition % on object-none does not map normalized bbox coords
@@ -300,13 +300,13 @@ export function SegmentRow({
       {/* Main row: seq + source + target + flags */}
       <div className="flex min-h-[48px]">
         {/* Sequence index + expand toggle */}
-        <div className="w-12 flex-shrink-0 flex flex-col items-center py-2 px-1 text-xs text-slate-400 select-none">
+        <div className="w-12 flex-shrink-0 flex flex-col items-center py-2 px-1 text-xs text-muted-foreground select-none">
           <span>{segment.seq_in_job}</span>
           {/* Phase 4: D-04-11 — expand toggle button */}
           {segment.region_bbox && pageNum !== null && (
             <button
               type="button"
-              className="flex-shrink-0 py-1 px-0 text-slate-400 hover:text-slate-600"
+              className="flex-shrink-0 py-1 px-0 text-muted-foreground hover:text-muted-foreground"
               onClick={(e) => {
                 e.stopPropagation();
                 setImageExpanded((v) => !v);
@@ -322,12 +322,12 @@ export function SegmentRow({
 
         {/* Source cell */}
         <div
-          className="flex-[40] py-2 px-2 text-xs font-mono text-[#111111] bg-slate-50 border-r border-slate-100 select-text min-h-[48px] whitespace-pre-wrap"
+          className="flex-[40] py-2 px-2 text-xs font-mono text-[#111111] bg-muted border-r border-border select-text min-h-[48px] whitespace-pre-wrap"
           style={{ fontFamily: "var(--font-pt-mono, monospace)" }}
         >
           {/* Phase 4: D-04-13 — confidence chip + breadcrumb on same line */}
           {(segment.structural_position || segment.confidence !== null) && (
-            <span className="flex items-center gap-2 text-xs text-slate-400 font-mono mb-1 select-none">
+            <span className="flex items-center gap-2 text-xs text-muted-foreground font-mono mb-1 select-none">
               <ConfidenceChip confidence={segment.confidence} />
               {segment.structural_position && (
                 <span>{formatBreadcrumb(segment.structural_position)}</span>
@@ -403,14 +403,14 @@ export function SegmentRow({
             onChange={(e) => handleChange(e.target.value)}
             className={cn(
               "min-h-[48px] resize-none border-none shadow-none p-1 text-sm focus-visible:ring-2 focus-visible:ring-violet-500",
-              saveState === "saving" ? "ring-1 ring-dashed ring-slate-400" : ""
+              saveState === "saving" ? "ring-1 ring-dashed ring-muted-foreground" : ""
             )}
             placeholder="Translation…"
           />
 
           {/* Save state indicator + regenerate button row */}
           <div className="flex items-center justify-between mt-1">
-            <span className="text-xs text-slate-400">
+            <span className="text-xs text-muted-foreground">
               {saveState === "saving" && "Saving…"}
               {saveState === "saved" && (
                 <span className="flex items-center gap-1">

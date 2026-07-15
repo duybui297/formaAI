@@ -52,7 +52,7 @@ export default function GlossariesPage() {
         </div>
 
         {isLoading ? (
-          <p className="text-slate-400">Loading…</p>
+          <p className="text-muted-foreground">Loading…</p>
         ) : (
           <GlossaryList
             glossaries={glossaries}

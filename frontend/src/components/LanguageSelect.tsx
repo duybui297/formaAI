@@ -47,7 +47,7 @@ export function LanguageSelect({
 
   return (
     <div className="flex flex-col gap-1">
-      <label className="text-sm text-slate-700">{label}</label>
+      <label className="text-sm text-foreground">{label}</label>
       <Select value={value} onValueChange={onValueChange} disabled={disabled}>
         <SelectTrigger className="min-h-[48px]">
           <SelectValue placeholder={placeholder} />

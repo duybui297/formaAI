@@ -48,14 +48,14 @@ export function StageIndicator({ stage }: StageIndicatorProps) {
                 className={cn(
                   "w-6 h-6 rounded-full flex items-center justify-center",
                   isPast && "bg-emerald-500",
-                  isActive && !isFailed && "bg-indigo-600",
+                  isActive && !isFailed && "bg-primary",
                   isActive && isFailed && "bg-red-600",
-                  isFuture && "bg-slate-300"
+                  isFuture && "bg-muted"
                 )}
               >
                 {isPast && <CheckCircle2 className="w-4 h-4 text-white" />}
                 {isActive && !isFailed && (
-                  <div className="w-2 h-2 bg-white rounded-full" />
+                  <div className="w-2 h-2 bg-card rounded-full" />
                 )}
                 {isActive && isFailed && (
                   <XCircle className="w-4 h-4 text-white" />
@@ -65,9 +65,9 @@ export function StageIndicator({ stage }: StageIndicatorProps) {
                 className={cn(
                   "text-xs",
                   isPast && "text-emerald-600",
-                  isActive && !isFailed && "text-indigo-600 font-semibold",
+                  isActive && !isFailed && "text-primary font-semibold",
                   isActive && isFailed && "text-red-600 font-semibold",
-                  isFuture && "text-slate-400"
+                  isFuture && "text-muted-foreground"
                 )}
               >
                 {label}
@@ -77,7 +77,7 @@ export function StageIndicator({ stage }: StageIndicatorProps) {
               <div
                 className={cn(
                   "flex-1 border-t mb-4",
-                  idx < activeIdx ? "border-emerald-400" : "border-slate-200"
+                  idx < activeIdx ? "border-emerald-400" : "border-border"
                 )}
               />
             )}

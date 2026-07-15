@@ -30,7 +30,7 @@ const toastVariants = cva(
     variants: {
       variant: {
         default:
-          "border-zinc-200 bg-white text-zinc-900",
+          "border-border bg-card text-foreground",
         success:
           "border-emerald-200 bg-emerald-50 text-emerald-900",
         destructive:

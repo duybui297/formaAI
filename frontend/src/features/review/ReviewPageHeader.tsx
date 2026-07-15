@@ -59,10 +59,10 @@ export function ReviewPageHeader({ job }: ReviewPageHeaderProps) {
   };
 
   return (
-    <div className="sticky top-14 z-10 flex items-center gap-4 h-16 px-8 bg-white border-b border-slate-200">
+    <div className="sticky top-14 z-10 flex items-center gap-4 h-16 px-8 bg-card border-b border-border">
       <Link
         href="/translator"
-        className="text-sm text-slate-500 hover:text-slate-700 shrink-0"
+        className="text-sm text-muted-foreground hover:text-foreground shrink-0"
       >
         ← All Jobs
       </Link>
@@ -74,7 +74,7 @@ export function ReviewPageHeader({ job }: ReviewPageHeaderProps) {
         >
           {job.original_filename}
         </h1>
-        <p className="text-xs text-slate-400">
+        <p className="text-xs text-muted-foreground">
           {job.source_lang} → {job.target_lang}
           {job.glossary_name && (
             <span className="ml-2 px-1.5 py-0.5 bg-violet-50 text-violet-700 rounded text-xs">

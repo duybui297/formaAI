@@ -77,6 +77,7 @@ _EXCLUDED_PREFIXES = (
     "/api/v1/auth/forgot-password",
     "/api/v1/auth/reset-password",
     "/api/v1/auth/logout",
+    "/api/v1/auth/me/avatar",
 )
 
 _ENFORCED_PREFIX = "/api/v1/"

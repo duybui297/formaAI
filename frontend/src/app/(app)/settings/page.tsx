@@ -1,6 +1,7 @@
 "use client"
 
 import { useRef, useState } from "react"
+import { useTheme } from "next-themes"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import {
   User,
@@ -55,6 +56,7 @@ import type {
 import type { Language, Glossary } from "@/lib/types"
 import { getMeApi } from "@/lib/auth"
 import { useToast } from "@/hooks/use-toast"
+import { useConfirm } from "@/hooks/use-confirm"
 import type { AuthUser } from "@/lib/auth"
 import type { Entitlement, MyLicensesResponse } from "@/lib/types"
 
@@ -146,10 +148,10 @@ function ProfileTab({ user }: { user: AuthUser }) {
     lastName !== (user.full_name ?? "").split(" ").slice(1).join(" ")
 
   return (
-    <div className="bg-white rounded-xl border border-zinc-200 shadow-sm">
-      <div className="p-6 border-b border-zinc-200">
-        <h2 className="text-lg font-semibold text-zinc-900">Personal Information</h2>
-        <p className="text-sm text-zinc-500 mt-1">
+    <div className="bg-card rounded-xl border border-border shadow-sm">
+      <div className="p-6 border-b border-border">
+        <h2 className="text-lg font-semibold text-foreground">Personal Information</h2>
+        <p className="text-sm text-muted-foreground mt-1">
           Update your basic profile information and email.
         </p>
       </div>
@@ -166,7 +168,7 @@ function ProfileTab({ user }: { user: AuthUser }) {
                 className="w-20 h-20 rounded-full object-cover border-4 border-white shadow-sm ring-1 ring-zinc-200"
               />
             ) : (
-              <div className="w-20 h-20 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center text-2xl font-bold border-4 border-white shadow-sm ring-1 ring-zinc-200 select-none">
+              <div className="w-20 h-20 bg-primary/15 text-primary rounded-full flex items-center justify-center text-2xl font-bold border-4 border-white shadow-sm ring-1 ring-zinc-200 select-none">
                 {getInitials(user.full_name)}
               </div>
             )}
@@ -193,7 +195,7 @@ function ProfileTab({ user }: { user: AuthUser }) {
                 type="button"
                 onClick={() => avatarInputRef.current?.click()}
                 disabled={avatarMutation.isPending}
-                className="bg-white border border-zinc-200 px-4 py-2 rounded-lg text-sm font-medium text-zinc-700 hover:bg-zinc-50 transition shadow-sm cursor-pointer disabled:opacity-50"
+                className="bg-card border border-border px-4 py-2 rounded-lg text-sm font-medium text-foreground hover:bg-muted transition shadow-sm cursor-pointer disabled:opacity-50"
               >
                 {avatarMutation.isPending ? (
                   <span className="flex items-center gap-2">
@@ -204,14 +206,14 @@ function ProfileTab({ user }: { user: AuthUser }) {
                   "Change Avatar"
                 )}
               </button>
-              <p className="text-xs text-zinc-500 mt-2">JPG, PNG, GIF or WebP. Max 2MB.</p>
+              <p className="text-xs text-muted-foreground mt-2">JPG, PNG, GIF or WebP. Max 2MB.</p>
             </div>
           </div>
 
           {/* Name fields */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-2">
-              <label className="text-sm font-medium text-zinc-700" htmlFor="first-name">
+              <label className="text-sm font-medium text-foreground" htmlFor="first-name">
                 First Name
               </label>
               <input
@@ -219,11 +221,11 @@ function ProfileTab({ user }: { user: AuthUser }) {
                 type="text"
                 value={firstName}
                 onChange={(e) => setFirstName(e.target.value)}
-                className="w-full bg-white border border-zinc-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition"
+                className="w-full bg-card border border-input rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition"
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium text-zinc-700" htmlFor="last-name">
+              <label className="text-sm font-medium text-foreground" htmlFor="last-name">
                 Last Name
               </label>
               <input
@@ -231,11 +233,11 @@ function ProfileTab({ user }: { user: AuthUser }) {
                 type="text"
                 value={lastName}
                 onChange={(e) => setLastName(e.target.value)}
-                className="w-full bg-white border border-zinc-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition"
+                className="w-full bg-card border border-input rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition"
               />
             </div>
             <div className="space-y-2 md:col-span-2">
-              <label className="text-sm font-medium text-zinc-700" htmlFor="email">
+              <label className="text-sm font-medium text-foreground" htmlFor="email">
                 Email Address
               </label>
               <input
@@ -243,14 +245,14 @@ function ProfileTab({ user }: { user: AuthUser }) {
                 type="email"
                 defaultValue={user.email}
                 disabled
-                className="w-full bg-zinc-50 border border-zinc-300 rounded-lg px-3 py-2 text-zinc-500 cursor-not-allowed"
+                className="w-full bg-muted border border-input rounded-lg px-3 py-2 text-muted-foreground cursor-not-allowed"
               />
-              <p className="text-xs text-zinc-400">Email cannot be changed.</p>
+              <p className="text-xs text-muted-foreground">Email cannot be changed.</p>
             </div>
           </div>
         </div>
 
-        <div className="p-4 bg-zinc-50 border-t border-zinc-200 flex justify-end rounded-b-xl gap-3">
+        <div className="p-4 bg-muted border-t border-border flex justify-end rounded-b-xl gap-3">
           <button
             type="button"
             onClick={() => {
@@ -258,7 +260,7 @@ function ProfileTab({ user }: { user: AuthUser }) {
               setFirstName(parts[0] ?? "")
               setLastName(parts.slice(1).join(" ") ?? "")
             }}
-            className="px-4 py-2 text-sm font-medium text-zinc-600 hover:text-zinc-900 transition"
+            className="px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition"
           >
             Cancel
           </button>
@@ -266,7 +268,7 @@ function ProfileTab({ user }: { user: AuthUser }) {
             type="button"
             onClick={handleSave}
             disabled={mutation.isPending}
-            className="px-4 py-2 text-sm font-medium bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 shadow-sm disabled:opacity-60 disabled:cursor-not-allowed transition flex items-center gap-2"
+            className="px-4 py-2 text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 rounded-lg shadow-sm disabled:opacity-60 disabled:cursor-not-allowed transition flex items-center gap-2"
           >
             {mutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
             Save Changes
@@ -321,10 +323,10 @@ function SecurityTab() {
   }
 
   return (
-    <div className="bg-white rounded-xl border border-zinc-200 shadow-sm">
-      <div className="p-6 border-b border-zinc-200">
-        <h2 className="text-lg font-semibold text-zinc-900">Change Password</h2>
-        <p className="text-sm text-zinc-500 mt-1">
+    <div className="bg-card rounded-xl border border-border shadow-sm">
+      <div className="p-6 border-b border-border">
+        <h2 className="text-lg font-semibold text-foreground">Change Password</h2>
+        <p className="text-sm text-muted-foreground mt-1">
           Use a strong password that you don&apos;t use elsewhere.
         </p>
       </div>
@@ -333,7 +335,7 @@ function SecurityTab() {
         <div className="p-6 space-y-5">
           {/* Current password */}
           <div className="space-y-2">
-            <label className="text-sm font-medium text-zinc-700" htmlFor="current-password">
+            <label className="text-sm font-medium text-foreground" htmlFor="current-password">
               Current Password
             </label>
             <div className="relative">
@@ -343,12 +345,12 @@ function SecurityTab() {
                 value={currentPassword}
                 onChange={(e) => setCurrentPassword(e.target.value)}
                 required
-                className="w-full bg-white border border-zinc-300 rounded-lg px-3 py-2 pr-10 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition"
+                className="w-full bg-card border border-input rounded-lg px-3 py-2 pr-10 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition"
               />
               <button
                 type="button"
                 onClick={() => setShowCurrent((v) => !v)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 transition"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-muted-foreground transition"
               >
                 {showCurrent ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
@@ -357,7 +359,7 @@ function SecurityTab() {
 
           {/* New password */}
           <div className="space-y-2">
-            <label className="text-sm font-medium text-zinc-700" htmlFor="new-password">
+            <label className="text-sm font-medium text-foreground" htmlFor="new-password">
               New Password
             </label>
             <div className="relative">
@@ -368,22 +370,22 @@ function SecurityTab() {
                 onChange={(e) => setNewPassword(e.target.value)}
                 required
                 minLength={8}
-                className="w-full bg-white border border-zinc-300 rounded-lg px-3 py-2 pr-10 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition"
+                className="w-full bg-card border border-input rounded-lg px-3 py-2 pr-10 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition"
               />
               <button
                 type="button"
                 onClick={() => setShowNew((v) => !v)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 transition"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-muted-foreground transition"
               >
                 {showNew ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
             </div>
-            <p className="text-xs text-zinc-400">Minimum 8 characters.</p>
+            <p className="text-xs text-muted-foreground">Minimum 8 characters.</p>
           </div>
 
           {/* Confirm new password */}
           <div className="space-y-2">
-            <label className="text-sm font-medium text-zinc-700" htmlFor="confirm-password">
+            <label className="text-sm font-medium text-foreground" htmlFor="confirm-password">
               Confirm New Password
             </label>
             <input
@@ -393,12 +395,12 @@ function SecurityTab() {
               onChange={(e) => setConfirmPassword(e.target.value)}
               required
               minLength={8}
-              className="w-full bg-white border border-zinc-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition"
+              className="w-full bg-card border border-input rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition"
             />
           </div>
         </div>
 
-        <div className="p-4 bg-zinc-50 border-t border-zinc-200 flex justify-end rounded-b-xl gap-3">
+        <div className="p-4 bg-muted border-t border-border flex justify-end rounded-b-xl gap-3">
           <button
             type="button"
             onClick={() => {
@@ -406,14 +408,14 @@ function SecurityTab() {
               setNewPassword("")
               setConfirmPassword("")
             }}
-            className="px-4 py-2 text-sm font-medium text-zinc-600 hover:text-zinc-900 transition"
+            className="px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition"
           >
             Cancel
           </button>
           <button
             type="submit"
             disabled={saving}
-            className="px-4 py-2 text-sm font-medium bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 shadow-sm disabled:opacity-60 disabled:cursor-not-allowed transition flex items-center gap-2"
+            className="px-4 py-2 text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 rounded-lg shadow-sm disabled:opacity-60 disabled:cursor-not-allowed transition flex items-center gap-2"
           >
             {saving && <Loader2 className="w-4 h-4 animate-spin" />}
             Update Password
@@ -429,9 +431,9 @@ function SecurityTab() {
 // ---------------------------------------------------------------------------
 
 const TIER_CONFIG: Record<string, { label: string; color: string; bg: string; badge: string }> = {
-  TRIAL:     { label: "Starter",    color: "text-zinc-700", bg: "bg-zinc-100",    badge: "bg-zinc-200 text-zinc-700" },
-  PRO:       { label: "Professional", color: "text-indigo-700", bg: "bg-indigo-50", badge: "bg-indigo-100 text-indigo-700" },
-  ENTERPRISE:{ label: "Enterprise",  color: "text-violet-700", bg: "bg-violet-50",  badge: "bg-violet-100 text-violet-700" },
+  TRIAL:     { label: "Starter",    color: "text-foreground", bg: "bg-secondary",    badge: "bg-muted text-muted-foreground" },
+  PRO:       { label: "Professional", color: "text-primary", bg: "bg-primary/10", badge: "bg-primary/15 text-primary" },
+  ENTERPRISE:{ label: "Enterprise",  color: "text-violet-600", bg: "bg-violet-50 dark:bg-violet-950", badge: "bg-violet-100 dark:bg-violet-900 text-violet-700 dark:text-violet-300" },
 }
 
 function formatBytes(bytes: number): string {
@@ -479,18 +481,18 @@ function BillingTab() {
               </span>
             </div>
             {activeLicense ? (
-              <p className="text-sm text-zinc-500">
+              <p className="text-sm text-muted-foreground">
                 License expires {formatDate(activeLicense.expired_at)}
               </p>
             ) : (
-              <p className="text-sm text-zinc-500">
+              <p className="text-sm text-muted-foreground">
                 No active license. Contact your administrator.
               </p>
             )}
           </div>
           <div className="text-right shrink-0">
-            <p className="text-xs text-zinc-400">Max file size</p>
-            <p className="text-sm font-medium text-zinc-700">
+            <p className="text-xs text-muted-foreground">Max file size</p>
+            <p className="text-sm font-medium text-foreground">
               {entitlement?.max_file_bytes ? formatBytes(entitlement.max_file_bytes) : "—"}
             </p>
           </div>
@@ -508,7 +510,7 @@ function BillingTab() {
               className={`text-xs px-2 py-1 rounded-full border ${
                 on
                   ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                  : "border-zinc-200 bg-zinc-50 text-zinc-400"
+                  : "border-border bg-muted text-muted-foreground"
               }`}
             >
               {label} {on ? "✓" : "✗"}
@@ -518,51 +520,51 @@ function BillingTab() {
       </div>
 
       {/* Usage card */}
-      <div className="bg-white rounded-xl border border-zinc-200 shadow-sm">
-        <div className="p-6 border-b border-zinc-200">
-          <h2 className="text-lg font-semibold text-zinc-900">Usage this month</h2>
-          <p className="text-sm text-zinc-500 mt-1">
+      <div className="bg-card rounded-xl border border-border shadow-sm">
+        <div className="p-6 border-b border-border">
+          <h2 className="text-lg font-semibold text-foreground">Usage this month</h2>
+          <p className="text-sm text-muted-foreground mt-1">
             {formatBytes(quotaUsed)} of {quotaMax > 0 ? formatBytes(quotaMax) : "unlimited"} used
           </p>
         </div>
         <div className="p-6">
           {quotaMax > 0 ? (
             <>
-              <div className="h-2.5 bg-zinc-100 rounded-full overflow-hidden mb-3">
+              <div className="h-2.5 bg-secondary rounded-full overflow-hidden mb-3">
                 <div
                   className={`h-full rounded-full transition-all ${
                     quotaPct >= 90
                       ? "bg-red-500"
                       : quotaPct >= 70
                       ? "bg-amber-500"
-                      : "bg-indigo-500"
+                      : "bg-primary"
                   }`}
                   style={{ width: `${quotaPct}%` }}
                 />
               </div>
-              <div className="flex justify-between text-xs text-zinc-400">
+              <div className="flex justify-between text-xs text-muted-foreground">
                 <span>{quotaPct}% used</span>
                 <span>{formatBytes(Math.max(0, quotaMax - quotaUsed))} remaining</span>
               </div>
             </>
           ) : (
-            <p className="text-sm text-zinc-400">No usage limit in your current plan.</p>
+            <p className="text-sm text-muted-foreground">No usage limit in your current plan.</p>
           )}
         </div>
       </div>
 
       {/* Upgrade CTA */}
       {(!tier || tier === "TRIAL") && (
-        <div className="bg-indigo-600 rounded-xl p-6 flex items-center justify-between gap-4">
+        <div className="bg-primary rounded-xl p-6 flex items-center justify-between gap-4">
           <div>
             <p className="font-semibold text-white">Upgrade your plan</p>
-            <p className="text-sm text-indigo-200 mt-0.5">
+            <p className="text-sm text-primary/70 mt-0.5">
               Unlock larger files, more quota, and advanced features.
             </p>
           </div>
           <a
             href="/pricing"
-            className="shrink-0 px-4 py-2 bg-white text-indigo-700 text-sm font-semibold rounded-lg hover:bg-indigo-50 transition shadow-sm"
+            className="shrink-0 px-4 py-2 bg-card text-primary text-sm font-semibold rounded-lg hover:bg-primary/10 transition shadow-sm"
           >
             View Plans
           </a>
@@ -641,16 +643,16 @@ function NotificationsTab() {
   }
 
   return (
-    <div className="bg-white rounded-xl border border-zinc-200 shadow-sm">
-      <div className="p-6 border-b border-zinc-200">
-        <h2 className="text-lg font-semibold text-zinc-900">Email Notifications</h2>
-        <p className="text-sm text-zinc-500 mt-1">
+    <div className="bg-card rounded-xl border border-border shadow-sm">
+      <div className="p-6 border-b border-border">
+        <h2 className="text-lg font-semibold text-foreground">Email Notifications</h2>
+        <p className="text-sm text-muted-foreground mt-1">
           Choose which emails you want to receive.
         </p>
       </div>
 
       {isLoading ? (
-        <div className="flex items-center justify-center py-10 gap-3 text-zinc-400">
+        <div className="flex items-center justify-center py-10 gap-3 text-muted-foreground">
           <Loader2 className="w-5 h-5 animate-spin" />
           <span>Loading preferences...</span>
         </div>
@@ -661,11 +663,11 @@ function NotificationsTab() {
             return (
               <div
                 key={key}
-                className="flex items-center justify-between gap-4 px-6 py-4 hover:bg-zinc-50 transition"
+                className="flex items-center justify-between gap-4 px-6 py-4 hover:bg-muted transition"
               >
                 <div className="min-w-0">
-                  <p className="text-sm font-medium text-zinc-900">{title}</p>
-                  <p className="text-xs text-zinc-500 mt-0.5">{description}</p>
+                  <p className="text-sm font-medium text-foreground">{title}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{description}</p>
                 </div>
                 {/* Accessible custom switch */}
                 <button
@@ -673,12 +675,12 @@ function NotificationsTab() {
                   aria-checked={enabled}
                   aria-label={title}
                   onClick={() => toggle(key as NotifKey)}
-                  className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed ${
-                    enabled ? "bg-indigo-600" : "bg-zinc-200"
+                  className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 disabled:cursor-not-allowed ${
+                    enabled ? "bg-primary" : "bg-muted"
                   }`}
                 >
                   <span
-                    className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
+                    className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-card shadow-sm ring-0 transition duration-200 ease-in-out ${
                       enabled ? "translate-x-4" : "translate-x-0"
                     }`}
                   />
@@ -703,6 +705,7 @@ const AVAILABLE_WEBHOOK_EVENTS = [
 
 function WebhooksTab() {
   const { toast } = useToast()
+  const confirm = useConfirm()
   const queryClient = useQueryClient()
 
   const [showCreateModal, setShowCreateModal] = useState(false)
@@ -758,6 +761,20 @@ function WebhooksTab() {
     },
   })
 
+  const handleDeleteWebhook = async (wh: WebhookEndpoint) => {
+    const ok = await confirm({
+      title: "Delete webhook?",
+      description: (
+        <>
+          This will permanently delete <strong>{wh.name}</strong> and stop all event deliveries to <span className="font-mono text-xs">{wh.url}</span>. This cannot be undone.
+        </>
+      ),
+      confirmLabel: "Delete",
+      tone: "danger",
+    })
+    if (ok) deleteMutation.mutate(wh.id)
+  }
+
   const testMutation = useMutation({
     mutationFn: (id: string) => testWebhook(id),
     onSuccess: () => {
@@ -779,14 +796,14 @@ function WebhooksTab() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-semibold text-zinc-900">Webhooks</h2>
-          <p className="text-sm text-zinc-500 mt-0.5">
+          <h2 className="text-lg font-semibold text-foreground">Webhooks</h2>
+          <p className="text-sm text-muted-foreground mt-0.5">
             Receive HTTP notifications when translation jobs complete or fail.
           </p>
         </div>
         <button
           onClick={() => setShowCreateModal(true)}
-          className="inline-flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition"
+          className="inline-flex items-center gap-1.5 px-4 py-2 bg-primary text-primary-foreground text-sm font-medium rounded-lg hover:bg-primary/90 transition"
         >
           <span>+ Add endpoint</span>
         </button>
@@ -794,15 +811,15 @@ function WebhooksTab() {
 
       {/* Webhook list */}
       {isLoading ? (
-        <div className="bg-white rounded-xl border border-zinc-200 shadow-sm flex items-center justify-center py-12 gap-3 text-zinc-400">
+        <div className="bg-card rounded-xl border border-border shadow-sm flex items-center justify-center py-12 gap-3 text-muted-foreground">
           <Loader2 className="w-5 h-5 animate-spin" />
           <span>Loading webhooks...</span>
         </div>
       ) : !webhooks?.length ? (
-        <div className="bg-white rounded-xl border border-zinc-200 shadow-sm p-10 text-center">
-          <Webhook className="w-10 h-10 text-zinc-300 mx-auto mb-3" />
-          <p className="text-zinc-500 font-medium">No webhook endpoints</p>
-          <p className="text-sm text-zinc-400 mt-1">
+        <div className="bg-card rounded-xl border border-border shadow-sm p-10 text-center">
+          <Webhook className="w-10 h-10 text-muted-foreground mx-auto mb-3" />
+          <p className="text-muted-foreground font-medium">No webhook endpoints</p>
+          <p className="text-sm text-muted-foreground mt-1">
             Add an endpoint to receive notifications when jobs complete or fail.
           </p>
         </div>
@@ -813,7 +830,7 @@ function WebhooksTab() {
               key={wh.id}
               webhook={wh}
               onToggle={(is_active) => toggleMutation.mutate({ id: wh.id, is_active })}
-              onDelete={() => deleteMutation.mutate(wh.id)}
+              onDelete={() => handleDeleteWebhook(wh)}
               onTest={() => testMutation.mutate(wh.id)}
             />
           ))}
@@ -823,31 +840,31 @@ function WebhooksTab() {
       {/* Create modal */}
       {showCreateModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4 p-6">
-            <h3 className="text-lg font-semibold text-zinc-900 mb-4">Add webhook endpoint</h3>
+          <div className="bg-card rounded-xl shadow-xl w-full max-w-md mx-4 p-6">
+            <h3 className="text-lg font-semibold text-foreground mb-4">Add webhook endpoint</h3>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-zinc-700 mb-1">Name</label>
+                <label className="block text-sm font-medium text-foreground mb-1">Name</label>
                 <input
                   type="text"
                   value={createName}
                   onChange={(e) => setCreateName(e.target.value)}
                   placeholder="My endpoint"
-                  className="w-full px-3 py-2 border border-zinc-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full px-3 py-2 border border-input rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-zinc-700 mb-1">Endpoint URL</label>
+                <label className="block text-sm font-medium text-foreground mb-1">Endpoint URL</label>
                 <input
                   type="url"
                   value={createUrl}
                   onChange={(e) => setCreateUrl(e.target.value)}
                   placeholder="https://example.com/webhook"
-                  className="w-full px-3 py-2 border border-zinc-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full px-3 py-2 border border-input rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-zinc-700 mb-2">Events</label>
+                <label className="block text-sm font-medium text-foreground mb-2">Events</label>
                 <div className="space-y-2">
                   {AVAILABLE_WEBHOOK_EVENTS.map((ev) => (
                     <label key={ev.value} className="flex items-start gap-2.5 cursor-pointer">
@@ -855,11 +872,11 @@ function WebhooksTab() {
                         type="checkbox"
                         checked={createEvents.includes(ev.value)}
                         onChange={() => toggleEvent(ev.value)}
-                        className="mt-0.5 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500"
+                        className="mt-0.5 rounded border-input text-primary focus:ring-primary"
                       />
                       <div>
-                        <p className="text-sm font-medium text-zinc-900">{ev.label}</p>
-                        <p className="text-xs text-zinc-500">{ev.description}</p>
+                        <p className="text-sm font-medium text-foreground">{ev.label}</p>
+                        <p className="text-xs text-muted-foreground">{ev.description}</p>
                       </div>
                     </label>
                   ))}
@@ -874,7 +891,7 @@ function WebhooksTab() {
                   setCreateUrl("")
                   setCreateEvents(["translation.completed"])
                 }}
-                className="px-4 py-2 text-sm text-zinc-600 hover:text-zinc-800 transition"
+                className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground transition"
               >
                 Cancel
               </button>
@@ -887,7 +904,7 @@ function WebhooksTab() {
                   createMutation.mutate({ name: createName.trim(), url: createUrl.trim(), events: createEvents })
                 }}
                 disabled={createMutation.isPending}
-                className="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition"
+                className="px-4 py-2 bg-primary text-primary-foreground text-sm font-medium rounded-lg hover:bg-primary/90 disabled:opacity-50 transition"
               >
                 {createMutation.isPending ? "Creating..." : "Create endpoint"}
               </button>
@@ -899,22 +916,22 @@ function WebhooksTab() {
       {/* Secret reveal modal */}
       {showSecretModal && secretToShow && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4 p-6">
+          <div className="bg-card rounded-xl shadow-xl w-full max-w-md mx-4 p-6">
             <div className="flex items-center gap-3 mb-4">
               <div className="p-2 bg-amber-100 rounded-lg">
                 <Eye className="w-5 h-5 text-amber-600" />
               </div>
               <div>
-                <h3 className="text-lg font-semibold text-zinc-900">Webhook secret</h3>
-                <p className="text-sm text-zinc-500">Save this now — it will not be shown again.</p>
+                <h3 className="text-lg font-semibold text-foreground">Webhook secret</h3>
+                <p className="text-sm text-muted-foreground">Save this now — it will not be shown again.</p>
               </div>
             </div>
-            <div className="bg-zinc-50 border border-zinc-200 rounded-lg p-3 font-mono text-sm text-zinc-700 break-all">
+            <div className="bg-muted border border-border rounded-lg p-3 font-mono text-sm text-foreground break-all">
               {secretToShow}
             </div>
-            <p className="text-xs text-zinc-400 mt-3">
+            <p className="text-xs text-muted-foreground mt-3">
               Use this secret to verify webhook payloads. Sign with HMAC-SHA256 and compare against the{" "}
-              <code className="bg-zinc-100 px-1 rounded">X-Webhook-Signature-256</code> header.
+              <code className="bg-secondary px-1 rounded">X-Webhook-Signature-256</code> header.
             </p>
             <div className="flex justify-end mt-6">
               <button
@@ -922,7 +939,7 @@ function WebhooksTab() {
                   setShowSecretModal(null)
                   setSecretToShow(null)
                 }}
-                className="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition"
+                className="px-4 py-2 bg-primary text-primary-foreground text-sm font-medium rounded-lg hover:bg-primary/90 transition"
               >
                 Got it
               </button>
@@ -960,23 +977,23 @@ function WebhookCard({
   })
 
   return (
-    <div className="bg-white rounded-xl border border-zinc-200 shadow-sm">
+    <div className="bg-card rounded-xl border border-border shadow-sm">
       <div className="p-5">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
-              <Webhook className="w-4 h-4 text-zinc-400 shrink-0" />
-              <h3 className="text-sm font-semibold text-zinc-900 truncate">{webhook.name}</h3>
+              <Webhook className="w-4 h-4 text-muted-foreground shrink-0" />
+              <h3 className="text-sm font-semibold text-foreground truncate">{webhook.name}</h3>
               {!webhook.is_active && (
-                <span className="px-1.5 py-0.5 bg-zinc-100 text-zinc-500 text-xs rounded">
+                <span className="px-1.5 py-0.5 bg-secondary text-muted-foreground text-xs rounded">
                   Disabled
                 </span>
               )}
             </div>
-            <p className="text-xs text-zinc-500 mt-0.5 truncate">{webhook.url}</p>
+            <p className="text-xs text-muted-foreground mt-0.5 truncate">{webhook.url}</p>
             <div className="flex flex-wrap gap-1 mt-2">
               {webhook.events.map((ev) => (
-                <span key={ev} className="px-1.5 py-0.5 bg-indigo-50 text-indigo-600 text-xs rounded">
+                <span key={ev} className="px-1.5 py-0.5 bg-primary/10 text-primary text-xs rounded">
                   {ev}
                 </span>
               ))}
@@ -987,14 +1004,14 @@ function WebhookCard({
             <button
               onClick={onTest}
               title="Send test event"
-              className="px-3 py-1.5 text-xs text-zinc-600 border border-zinc-200 rounded-lg hover:bg-zinc-50 transition"
+              className="px-3 py-1.5 text-xs text-muted-foreground border border-border rounded-lg hover:bg-muted transition"
             >
               Test
             </button>
             <button
               onClick={() => setShowLog(!showLog)}
               title="View delivery logs"
-              className="px-3 py-1.5 text-xs text-zinc-600 border border-zinc-200 rounded-lg hover:bg-zinc-50 transition"
+              className="px-3 py-1.5 text-xs text-muted-foreground border border-border rounded-lg hover:bg-muted transition"
             >
               {showLog ? "Hide log" : "Logs"}
             </button>
@@ -1002,12 +1019,12 @@ function WebhookCard({
               role="switch"
               aria-checked={webhook.is_active}
               onClick={() => onToggle(!webhook.is_active)}
-              className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 ${
-                webhook.is_active ? "bg-indigo-600" : "bg-zinc-200"
+              className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 ${
+                webhook.is_active ? "bg-primary" : "bg-muted"
               }`}
             >
               <span
-                className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
+                className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-card shadow-sm ring-0 transition duration-200 ease-in-out ${
                   webhook.is_active ? "translate-x-4" : "translate-x-0"
                 }`}
               />
@@ -1022,7 +1039,7 @@ function WebhookCard({
                 </button>
                 <button
                   onClick={() => setDeleteConfirm(false)}
-                  className="px-2 py-1 text-xs text-zinc-500 hover:text-zinc-700 transition"
+                  className="px-2 py-1 text-xs text-muted-foreground hover:text-foreground transition"
                 >
                   Cancel
                 </button>
@@ -1031,7 +1048,7 @@ function WebhookCard({
               <button
                 onClick={() => setDeleteConfirm(true)}
                 title="Delete endpoint"
-                className="p-1.5 text-zinc-400 hover:text-red-500 transition"
+                className="p-1.5 text-muted-foreground hover:text-red-500 transition"
               >
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 12a2.25 2.25 0 01-2.25 2.25A2.25 2.25 0 0115 12a2.25 2.25 0 012.25 2.25 2.25 2.25 0 010 4.5 2.25 2.25 0 01-2.25 2.25A2.25 2.25 0 0110.5 21a2.25 2.25 0 01-2.25-2.25 2.25 2.25 0 010-4.5 2.25 2.25 0 012.25-2.25A2.25 2.25 0 0115 16.5a2.25 2.25 0 012.25-2.25A2.25 2.25 0 0119.5 12m0 0a2.25 2.25 0 01-2.25 2.25M19.5 12a2.25 2.25 0 00-2.25-2.25M19.5 12a2.25 2.25 0 01-2.25-2.25m-6 4.5a2.25 2.25 0 01-2.25-2.25m0 0a2.25 2.25 0 00-2.25-2.25m2.25 4.5a2.25 2.25 0 012.25-2.25m0 0a2.25 2.25 0 002.25 2.25m-2.25 0a2.25 2.25 0 012.25 2.25" />
@@ -1043,17 +1060,17 @@ function WebhookCard({
 
         {/* Delivery log */}
         {showLog && (
-          <div className="mt-4 border-t border-zinc-100 pt-4">
-            <h4 className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-3">
+          <div className="mt-4 border-t border-border pt-4">
+            <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">
               Delivery history
             </h4>
             {!deliveries ? (
-              <div className="flex items-center gap-2 text-sm text-zinc-400">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Loader2 className="w-4 h-4 animate-spin" />
                 <span>Loading logs...</span>
               </div>
             ) : deliveries.deliveries.length === 0 ? (
-              <p className="text-sm text-zinc-400 italic">No deliveries yet.</p>
+              <p className="text-sm text-muted-foreground italic">No deliveries yet.</p>
             ) : (
               <div className="space-y-2 max-h-64 overflow-y-auto">
                 {deliveries.deliveries.map((d) => (
@@ -1067,12 +1084,12 @@ function WebhookCard({
                     }`}>
                       {d.status}
                     </span>
-                    <span className="text-zinc-400">{d.event_type}</span>
-                    <span className="text-zinc-400">
+                    <span className="text-muted-foreground">{d.event_type}</span>
+                    <span className="text-muted-foreground">
                       {new Date(d.created_at).toLocaleString()}
                     </span>
                     {d.response_status_code && (
-                      <span className="text-zinc-400">HTTP {d.response_status_code}</span>
+                      <span className="text-muted-foreground">HTTP {d.response_status_code}</span>
                     )}
                     {d.error_message && (
                       <span className="text-red-500 truncate max-w-xs">{d.error_message}</span>
@@ -1143,10 +1160,10 @@ function TranslationDefaultsTab() {
 
   return (
     <div className="space-y-4">
-      <div className="bg-white rounded-xl border border-zinc-200 shadow-sm">
-        <div className="p-6 border-b border-zinc-200">
-          <h2 className="text-lg font-semibold text-zinc-900">Language Preferences</h2>
-          <p className="text-sm text-zinc-500 mt-1">
+      <div className="bg-card rounded-xl border border-border shadow-sm">
+        <div className="p-6 border-b border-border">
+          <h2 className="text-lg font-semibold text-foreground">Language Preferences</h2>
+          <p className="text-sm text-muted-foreground mt-1">
             Set your default languages for new translation jobs.
           </p>
         </div>
@@ -1154,8 +1171,8 @@ function TranslationDefaultsTab() {
           {/* Auto-detect */}
           <div className="flex items-center justify-between gap-4">
             <div className="min-w-0">
-              <p className="text-sm font-medium text-zinc-900">Auto-detect source language</p>
-              <p className="text-xs text-zinc-500 mt-0.5">
+              <p className="text-sm font-medium text-foreground">Auto-detect source language</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
                 Automatically detect the language of uploaded documents.
               </p>
             </div>
@@ -1163,12 +1180,12 @@ function TranslationDefaultsTab() {
               role="switch"
               aria-checked={autoDetect}
               onClick={() => mutation.mutate({ auto_detect: !autoDetect })}
-              className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 ${
-                autoDetect ? "bg-indigo-600" : "bg-zinc-200"
+              className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 ${
+                autoDetect ? "bg-primary" : "bg-muted"
               }`}
             >
               <span
-                className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
+                className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-card shadow-sm ring-0 transition duration-200 ease-in-out ${
                   autoDetect ? "translate-x-4" : "translate-x-0"
                 }`}
               />
@@ -1177,16 +1194,16 @@ function TranslationDefaultsTab() {
 
           {/* Source language */}
           <div className="space-y-2">
-            <label className="text-sm font-medium text-zinc-700" htmlFor="source-lang">
+            <label className="text-sm font-medium text-foreground" htmlFor="source-lang">
               Default source language
-              {languagesLoading && <span className="ml-2 text-xs text-zinc-400 animate-pulse">(loading...)</span>}
+              {languagesLoading && <span className="ml-2 text-xs text-muted-foreground animate-pulse">(loading...)</span>}
             </label>
             <select
               id="source-lang"
               disabled={autoDetect || languagesLoading || languagesError}
               value={sourceLang}
               onChange={(e) => mutation.mutate({ preferred_source_lang: e.target.value || null })}
-              className="w-full bg-white border border-zinc-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full bg-card border border-input rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <option value="">— None —</option>
               {languagesError ? (
@@ -1201,16 +1218,16 @@ function TranslationDefaultsTab() {
 
           {/* Target language */}
           <div className="space-y-2">
-            <label className="text-sm font-medium text-zinc-700" htmlFor="target-lang">
+            <label className="text-sm font-medium text-foreground" htmlFor="target-lang">
               Default target language
-              {languagesLoading && <span className="ml-2 text-xs text-zinc-400 animate-pulse">(loading...)</span>}
+              {languagesLoading && <span className="ml-2 text-xs text-muted-foreground animate-pulse">(loading...)</span>}
             </label>
             <select
               id="target-lang"
               disabled={languagesLoading || languagesError}
               value={targetLang}
               onChange={(e) => mutation.mutate({ preferred_target_lang: e.target.value || null })}
-              className="w-full bg-white border border-zinc-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full bg-card border border-input rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <option value="">— None —</option>
               {languagesError ? (
@@ -1226,10 +1243,10 @@ function TranslationDefaultsTab() {
       </div>
 
       {/* Glossary */}
-      <div className="bg-white rounded-xl border border-zinc-200 shadow-sm">
-        <div className="p-6 border-b border-zinc-200">
-          <h2 className="text-lg font-semibold text-zinc-900">Default Glossary</h2>
-          <p className="text-sm text-zinc-500 mt-1">
+      <div className="bg-card rounded-xl border border-border shadow-sm">
+        <div className="p-6 border-b border-border">
+          <h2 className="text-lg font-semibold text-foreground">Default Glossary</h2>
+          <p className="text-sm text-muted-foreground mt-1">
             Automatically apply a glossary to new translation jobs.
           </p>
         </div>
@@ -1240,7 +1257,7 @@ function TranslationDefaultsTab() {
             onChange={(e) =>
               mutation.mutate({ default_glossary_id: e.target.value || null })
             }
-            className="w-full bg-white border border-zinc-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full bg-card border border-input rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <option value="">— None —</option>
             {glossariesLoading ? (
@@ -1254,9 +1271,9 @@ function TranslationDefaultsTab() {
             )}
           </select>
           {!glossariesLoading && glossaries !== undefined && glossaries.length === 0 && (
-            <p className="text-xs text-zinc-400 mt-2">
+            <p className="text-xs text-muted-foreground mt-2">
               No glossaries yet.{" "}
-              <a href="/glossaries" className="text-indigo-600 hover:underline">
+              <a href="/glossaries" className="text-primary hover:underline">
                 Create one first.
               </a>
             </p>
@@ -1329,7 +1346,7 @@ function ApiKeysTab() {
               <p className="text-xs text-amber-700 mb-3">
                 Copy this key now — it will not be shown again.
               </p>
-              <code className="block bg-white border border-amber-200 rounded px-3 py-2 text-sm font-mono text-zinc-800 break-all">
+              <code className="block bg-card border border-amber-200 dark:border-amber-800 rounded px-3 py-2 text-sm font-mono text-foreground break-all">
                 {pendingCreate.raw_key}
               </code>
             </div>
@@ -1344,10 +1361,10 @@ function ApiKeysTab() {
       )}
 
       {/* Create new key */}
-      <div className="bg-white rounded-xl border border-zinc-200 shadow-sm">
-        <div className="p-6 border-b border-zinc-200">
-          <h2 className="text-lg font-semibold text-zinc-900">API Keys</h2>
-          <p className="text-sm text-zinc-500 mt-1">
+      <div className="bg-card rounded-xl border border-border shadow-sm">
+        <div className="p-6 border-b border-border">
+          <h2 className="text-lg font-semibold text-foreground">API Keys</h2>
+          <p className="text-sm text-muted-foreground mt-1">
             Manage your personal API keys for programmatic access.
           </p>
         </div>
@@ -1363,13 +1380,13 @@ function ApiKeysTab() {
               }}
               placeholder="e.g. Production, Development, CI/CD"
               maxLength={255}
-              className="flex-1 bg-white border border-zinc-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition"
+              className="flex-1 bg-card border border-input rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition"
             />
             <button
               type="button"
               onClick={() => newKeyName.trim() && createMutation.mutate(newKeyName.trim())}
               disabled={!newKeyName.trim() || createMutation.isPending}
-              className="shrink-0 px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+              className="shrink-0 px-4 py-2 bg-primary text-primary-foreground text-sm font-medium rounded-lg hover:bg-primary/90 transition disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {createMutation.isPending ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -1382,31 +1399,31 @@ function ApiKeysTab() {
       </div>
 
       {/* Existing keys */}
-      <div className="bg-white rounded-xl border border-zinc-200 shadow-sm overflow-hidden">
-        <div className="p-6 border-b border-zinc-200">
-          <h2 className="text-lg font-semibold text-zinc-900">Active Keys</h2>
+      <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
+        <div className="p-6 border-b border-border">
+          <h2 className="text-lg font-semibold text-foreground">Active Keys</h2>
         </div>
 
         {isLoading ? (
-          <div className="flex items-center justify-center py-10 gap-3 text-zinc-400">
+          <div className="flex items-center justify-center py-10 gap-3 text-muted-foreground">
             <Loader2 className="w-5 h-5 animate-spin" />
             <span>Loading keys...</span>
           </div>
         ) : keys.length === 0 ? (
-          <div className="p-10 text-center text-sm text-zinc-400">
+          <div className="p-10 text-center text-sm text-muted-foreground">
             No API keys yet. Generate one above.
           </div>
         ) : (
           <div className="divide-y divide-zinc-100">
             {keys.map((key) => (
-              <div key={key.id} className="px-6 py-4 flex items-center justify-between gap-4 hover:bg-zinc-50 transition">
+              <div key={key.id} className="px-6 py-4 flex items-center justify-between gap-4 hover:bg-muted transition">
                 <div className="min-w-0">
-                  <p className="text-sm font-medium text-zinc-900">{key.name}</p>
+                  <p className="text-sm font-medium text-foreground">{key.name}</p>
                   <div className="flex items-center gap-3 mt-1">
-                    <code className="text-xs font-mono text-zinc-500">{key.key_prefix}••••••••</code>
-                    <span className="text-xs text-zinc-400">Created {formatDate(key.created_at)}</span>
+                    <code className="text-xs font-mono text-muted-foreground">{key.key_prefix}••••••••</code>
+                    <span className="text-xs text-muted-foreground">Created {formatDate(key.created_at)}</span>
                     {key.last_used_at && (
-                      <span className="text-xs text-zinc-400">Last used {formatDate(key.last_used_at)}</span>
+                      <span className="text-xs text-muted-foreground">Last used {formatDate(key.last_used_at)}</span>
                     )}
                   </div>
                 </div>
@@ -1490,10 +1507,10 @@ function TeamWorkspaceTab() {
   return (
     <div className="space-y-4">
       {/* Invite form */}
-      <div className="bg-white rounded-xl border border-zinc-200 shadow-sm">
-        <div className="p-6 border-b border-zinc-200">
-          <h2 className="text-lg font-semibold text-zinc-900">Invite Member</h2>
-          <p className="text-sm text-zinc-500 mt-1">
+      <div className="bg-card rounded-xl border border-border shadow-sm">
+        <div className="p-6 border-b border-border">
+          <h2 className="text-lg font-semibold text-foreground">Invite Member</h2>
+          <p className="text-sm text-muted-foreground mt-1">
             Invite collaborators to your workspace.
           </p>
         </div>
@@ -1507,12 +1524,12 @@ function TeamWorkspaceTab() {
                 inviteMutation.mutate()
             }}
             placeholder="colleague@example.com"
-            className="flex-1 bg-white border border-zinc-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition"
+            className="flex-1 bg-card border border-input rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition"
           />
           <select
             value={inviteRole}
             onChange={(e) => setInviteRole(e.target.value)}
-            className="shrink-0 bg-white border border-zinc-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition"
+            className="shrink-0 bg-card border border-input rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition"
           >
             <option value="member">Member</option>
             <option value="admin">Admin</option>
@@ -1521,7 +1538,7 @@ function TeamWorkspaceTab() {
             type="button"
             onClick={() => inviteEmail.trim() && inviteMutation.mutate()}
             disabled={!inviteEmail.trim() || inviteMutation.isPending}
-            className="shrink-0 px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+            className="shrink-0 px-4 py-2 bg-primary text-primary-foreground text-sm font-medium rounded-lg hover:bg-primary/90 transition disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {inviteMutation.isPending ? (
               <Loader2 className="w-4 h-4 animate-spin" />
@@ -1534,18 +1551,18 @@ function TeamWorkspaceTab() {
 
       {/* Pending invites */}
       {pending.length > 0 && (
-        <div className="bg-white rounded-xl border border-zinc-200 shadow-sm overflow-hidden">
-          <div className="p-6 border-b border-zinc-200">
-            <h2 className="text-lg font-semibold text-zinc-900">Pending Invites</h2>
+        <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
+          <div className="p-6 border-b border-border">
+            <h2 className="text-lg font-semibold text-foreground">Pending Invites</h2>
           </div>
           <div className="divide-y divide-zinc-100">
             {pending.map((inv) => (
               <div key={inv.id} className="px-6 py-4 flex items-center justify-between gap-4">
                 <div className="min-w-0">
-                  <p className="text-sm font-medium text-zinc-900">{inv.email}</p>
+                  <p className="text-sm font-medium text-foreground">{inv.email}</p>
                   <div className="flex items-center gap-3 mt-0.5">
-                    <span className="text-xs text-zinc-400 capitalize">{inv.role}</span>
-                    <span className="text-xs text-zinc-400">Expires {formatDate(inv.expires_at)}</span>
+                    <span className="text-xs text-muted-foreground capitalize">{inv.role}</span>
+                    <span className="text-xs text-muted-foreground">Expires {formatDate(inv.expires_at)}</span>
                   </div>
                 </div>
                 <button
@@ -1562,10 +1579,10 @@ function TeamWorkspaceTab() {
       )}
 
       {/* Members list */}
-      <div className="bg-white rounded-xl border border-zinc-200 shadow-sm overflow-hidden">
-        <div className="p-6 border-b border-zinc-200">
-          <h2 className="text-lg font-semibold text-zinc-900">Members</h2>
-          <p className="text-sm text-zinc-500 mt-1">
+      <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
+        <div className="p-6 border-b border-border">
+          <h2 className="text-lg font-semibold text-foreground">Members</h2>
+          <p className="text-sm text-muted-foreground mt-1">
             {members.length} member{members.length !== 1 ? "s" : ""} in this workspace.
           </p>
         </div>
@@ -1573,19 +1590,19 @@ function TeamWorkspaceTab() {
           {members.map((member) => (
             <div key={member.id} className="px-6 py-4 flex items-center justify-between gap-4">
               <div className="flex items-center gap-3 min-w-0">
-                <div className="w-8 h-8 bg-indigo-100 text-indigo-700 rounded-full flex items-center justify-center text-sm font-semibold shrink-0">
+                <div className="w-8 h-8 bg-primary/15 text-primary rounded-full flex items-center justify-center text-sm font-semibold shrink-0">
                   {(member.full_name || member.email)[0].toUpperCase()}
                 </div>
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
-                    <p className="text-sm font-medium text-zinc-900 truncate">
+                    <p className="text-sm font-medium text-foreground truncate">
                       {member.full_name || "—"}
                     </p>
                     {member.role === "owner" && (
                       <span className="shrink-0 text-xs font-medium px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">Owner</span>
                     )}
                   </div>
-                  <p className="text-xs text-zinc-400 truncate">{member.email}</p>
+                  <p className="text-xs text-muted-foreground truncate">{member.email}</p>
                 </div>
               </div>
               {member.role !== "owner" && (
@@ -1624,14 +1641,14 @@ function PlaceholderTab({ id }: { id: NavId }) {
   const navItem = NAV_ITEMS.find((n) => n.id === id)!
   const Icon = navItem.icon
   return (
-    <div className="bg-white rounded-xl border border-zinc-200 shadow-sm">
+    <div className="bg-card rounded-xl border border-border shadow-sm">
       <div className="p-12 flex flex-col items-center justify-center text-center gap-3">
-        <div className="w-12 h-12 bg-zinc-100 rounded-full flex items-center justify-center">
-          <Icon className="w-6 h-6 text-zinc-400" />
+        <div className="w-12 h-12 bg-secondary rounded-full flex items-center justify-center">
+          <Icon className="w-6 h-6 text-muted-foreground" />
         </div>
         <div>
-          <p className="font-medium text-zinc-700">{navItem.label}</p>
-          <p className="text-sm text-zinc-500 mt-1 max-w-sm">
+          <p className="font-medium text-foreground">{navItem.label}</p>
+          <p className="text-sm text-muted-foreground mt-1 max-w-sm">
             {PLACEHOLDER_MESSAGES[id]}
           </p>
         </div>
@@ -1650,10 +1667,7 @@ async function fetchCurrentUser(): Promise<AuthUser> {
 
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<NavId>("profile")
-  const [theme, setTheme] = useState<"light" | "dark" | "system">(() => {
-    if (typeof window === "undefined") return "light"
-    return (localStorage.getItem("forma-theme") as "light" | "dark" | "system") ?? "light"
-  })
+  const { theme, setTheme } = useTheme()
 
   const { data: user, isLoading, isError } = useQuery({
     queryKey: ["auth-user"],
@@ -1665,8 +1679,8 @@ export default function SettingsPage() {
     <div className="space-y-6 max-w-5xl p-6 md:p-8 lg:p-10 overflow-y-auto h-full">
       {/* Page header */}
       <div>
-        <h1 className="text-3xl font-bold tracking-tight text-zinc-900">Settings</h1>
-        <p className="text-zinc-500 mt-1">
+        <h1 className="text-3xl font-bold tracking-tight text-foreground">Settings</h1>
+        <p className="text-muted-foreground mt-1">
           Manage your account preferences and translation defaults.
         </p>
       </div>
@@ -1680,35 +1694,32 @@ export default function SettingsPage() {
               onClick={() => setActiveTab(item.id)}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition ${
                 activeTab === item.id
-                  ? "bg-zinc-100 text-zinc-900"
-                  : "text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900"
+                  ? "bg-primary/10 text-primary dark:bg-primary/20 dark:text-primary/70"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
               }`}
             >
               <item.icon
-                className={`w-4 h-4 ${activeTab === item.id ? "text-zinc-900" : "text-zinc-400"}`}
+                className={`w-4 h-4 ${activeTab === item.id ? "text-primary dark:text-primary/70" : "text-muted-foreground"}`}
               />
               {item.label}
             </button>
           ))}
 
           {/* Divider */}
-          <div className="border-t border-zinc-200 my-2" />
+          <div className="border-t border-border my-2" />
 
           {/* Theme switcher */}
           <div className="px-3 space-y-1">
-            <p className="text-xs font-medium text-zinc-400 uppercase tracking-wider mb-2">Theme</p>
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">Theme</p>
             <div className="flex flex-col gap-1">
-              {(["light", "dark", "system"] as const).map((t) => (
+              {(["light", "dark"] as const).map((t) => (
                 <button
                   key={t}
-                  onClick={() => {
-                    setTheme(t)
-                    localStorage.setItem("forma-theme", t)
-                  }}
+                  onClick={() => setTheme(t)}
                   className={`w-full flex items-center gap-2.5 px-2 py-1.5 rounded-md text-sm transition ${
-                    theme === t
-                      ? "bg-indigo-50 text-indigo-700 font-medium"
-                      : "text-zinc-500 hover:bg-zinc-50 hover:text-zinc-800"
+                    (theme || "light") === t
+                      ? "bg-primary/10 text-primary dark:bg-primary/20 dark:text-primary/70 font-medium"
+                      : "text-muted-foreground hover:bg-muted hover:text-foreground"
                   }`}
                 >
                   {t === "light" && (
@@ -1723,12 +1734,6 @@ export default function SettingsPage() {
                         d="M21.752 15.002A9.718 9.718 0 0118 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 003 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 009.002-5.998z" />
                     </svg>
                   )}
-                  {t === "system" && (
-                    <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                      <path strokeLinecap="round" strokeLinejoin="round"
-                        d="M9 17.25v1.007a3 3 0 01-.879 2.122L7.5 21h9l-.621-.621A3 3 0 0115 18.257V17.25m6-12V15a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 15V5.25m18 0A2.25 2.25 0 0018.75 3H5.25A2.25 2.25 0 003 5.25m18 0V12a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 12V5.25" />
-                    </svg>
-                  )}
                   <span>{t.charAt(0).toUpperCase() + t.slice(1)}</span>
                 </button>
               ))}
@@ -1739,18 +1744,18 @@ export default function SettingsPage() {
         {/* Content area */}
         <div className="flex-1 space-y-6">
           {isLoading && (
-            <div className="flex items-center justify-center py-16 gap-3 text-zinc-400">
+            <div className="flex items-center justify-center py-16 gap-3 text-muted-foreground">
               <Loader2 className="w-5 h-5 animate-spin" />
               <span>Loading settings...</span>
             </div>
           )}
 
           {isError && (
-            <div className="bg-white rounded-xl border border-red-200 shadow-sm p-8 text-center">
+            <div className="bg-card rounded-xl border border-red-200 shadow-sm p-8 text-center">
               <p className="text-red-600 font-medium">Failed to load user profile.</p>
-              <p className="text-sm text-zinc-500 mt-1">
+              <p className="text-sm text-muted-foreground mt-1">
                 Please make sure you are{" "}
-                <a href="/login" className="text-indigo-600 hover:underline">
+                <a href="/login" className="text-primary hover:underline">
                   logged in
                 </a>
                 .

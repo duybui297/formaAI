@@ -23,14 +23,14 @@ export function JobMetaRow({ job }: JobMetaRowProps) {
       : (job.source_lang ?? "—")
 
   return (
-    <div className="flex items-center gap-2 text-xs text-slate-500 flex-wrap">
+    <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
       {job.source_lang && job.target_lang && (
         <span>
           {sourceLang} → {job.target_lang}
         </span>
       )}
       {job.input_format && (
-        <Badge variant="outline" className="text-xs text-slate-700">
+        <Badge variant="outline" className="text-xs text-foreground">
           {job.input_format.toUpperCase()}
         </Badge>
       )}

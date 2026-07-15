@@ -1,5 +1,5 @@
 "use client"
-import { useState, useCallback } from "react"
+import { useState, useCallback, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { useToast } from "@/hooks/use-toast"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -8,11 +8,11 @@ import { Badge } from "@/components/ui/badge"
 import { LanguageSelect } from "@/components/LanguageSelect"
 import { GlossarySelect } from "./GlossarySelect"
 import { TrackedChangesModal } from "./TrackedChangesModal"
-import { UploadCloud, FileText, Languages, BookA, PlayCircle, ArrowUpRight } from "lucide-react"
+import { UploadCloud, FileText, Languages, BookA, PlayCircle, ArrowUpRight, Loader2, Coins } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { detectTrackedChanges } from "@/lib/detectTrackedChanges"
-import { chunkedUploadWithProgress } from "@/lib/api"
-import type { Entitlement } from "@/lib/types"
+import { chunkedUploadWithProgress, estimateTranslation } from "@/lib/api"
+import type { Entitlement, EstimateResponse } from "@/lib/types"
 
 const DEFAULT_MAX_SIZE_BYTES = 25 * 1024 * 1024
 // Phase 3: PPTX and native PDF pipelines added. Keep allowlist in sync with backend.
@@ -63,18 +63,56 @@ export function UploadForm({ onJobCreated, entitlement }: UploadFormProps = {}) 
   const [isScannedDetected, setIsScannedDetected] = useState<boolean | null>(null)
   const [isScannedOverride, setIsScannedOverride] = useState<boolean | null>(null)
 
+  // US-3.6: Credit estimation — triggered after file + language pair are ready
+  const [estimate, setEstimate] = useState<EstimateResponse | null>(null)
+  const [estimating, setEstimating] = useState(false)
+
+  const runEstimate = useCallback(async () => {
+    if (!file || !targetLang || sourceLang === targetLang) {
+      setEstimate(null)
+      return
+    }
+    setEstimating(true)
+    try {
+      const effectiveScanned = isScannedOverride !== null ? isScannedOverride : isScannedDetected
+      const result = await estimateTranslation({
+        file,
+        source_lang: sourceLang,
+        target_lang: targetLang,
+        isScannedOverride: effectiveScanned ?? undefined,
+      })
+      setEstimate(result)
+      if (result.is_scanned !== undefined && isScannedDetected === null) {
+        setIsScannedDetected(result.is_scanned)
+      }
+    } catch {
+      setEstimate(null)
+    } finally {
+      setEstimating(false)
+    }
+  }, [file, targetLang, sourceLang, isScannedOverride, isScannedDetected])
+
+  // Trigger estimate whenever file, languages, or scanned state changes
+  useEffect(() => {
+    if (!file || !targetLang || sourceLang === targetLang) {
+      setEstimate(null)
+      return
+    }
+    runEstimate()
+  }, [file, targetLang, sourceLang, isScannedOverride, isScannedDetected, runEstimate])
+
   const handleFile = useCallback(async (f: File) => {
     const ext = getExt(f.name)
     if (!ALLOWED_EXTS.has(ext)) {
       const msg = "Unsupported file type. Accepted formats: .docx, .pptx, .pdf, .xlsx"
       setError(msg)
-      toast({ variant: "destructive", description: msg })
+      toast({ variant: "destructive", title: "Unsupported file", description: msg })
       return
     }
     if (f.size > maxSizeBytes) {
       const msg = `File too large — your plan allows up to ${formatBytes(maxSizeBytes)}.`
       setError(msg)
-      toast({ variant: "destructive", description: msg })
+      toast({ variant: "destructive", title: "File too large", description: msg })
       return
     }
     setError(null)
@@ -88,6 +126,8 @@ export function UploadForm({ onJobCreated, entitlement }: UploadFormProps = {}) 
     setIsScannedDetected(null)
     setIsScannedOverride(null)
     setDetecting(true)
+    // US-3.6: reset estimate on file change
+    setEstimate(null)
 
     // B4 Option A: detect tracked changes before any upload (DOCX only — PPTX/PDF have no TC)
     const hasTC = ext === ".docx" ? await detectTrackedChanges(f) : false
@@ -101,7 +141,7 @@ export function UploadForm({ onJobCreated, entitlement }: UploadFormProps = {}) 
       setDragState("idle")
       const files = Array.from(e.dataTransfer.files)
       if (files.length > 1) {
-        toast({ variant: "destructive", description: "Upload one file at a time." })
+        toast({ variant: "destructive", title: "Too many files", description: "Upload one file at a time." })
         return
       }
       if (files[0]) handleFile(files[0])
@@ -114,7 +154,9 @@ export function UploadForm({ onJobCreated, entitlement }: UploadFormProps = {}) 
     setDragState(e.dataTransfer.items.length > 1 ? "multi" : "valid")
   }
 
-  const canSubmit = !!file && !!targetLang && sourceLang !== targetLang && !submitting && !detecting
+  // US-3.6: Insufficient credits blocks submit
+  const insufficientCredits = estimate && !estimate.has_sufficient_credits
+  const canSubmit = !!file && !!targetLang && sourceLang !== targetLang && !submitting && !detecting && !estimating && !insufficientCredits
 
   // Chunked upload threshold: files > 10 MB use chunked upload
   const CHUNK_THRESHOLD = 10 * 1024 * 1024
@@ -193,7 +235,7 @@ export function UploadForm({ onJobCreated, entitlement }: UploadFormProps = {}) 
               msg = `File too large — your plan allows up to ${formatBytes(maxSizeBytes)}.`
             }
             setError(msg)
-            toast({ variant: "destructive", description: msg })
+            toast({ variant: "destructive", title: "Upload failed", description: msg })
             setSubmitting(false)
             return
           }
@@ -203,12 +245,13 @@ export function UploadForm({ onJobCreated, entitlement }: UploadFormProps = {}) 
           } else {
             router.push(`/jobs/${(data as { job_id: string }).job_id}`)
           }
+          toast({ variant: "success", title: "Translation started", description: file.name })
           return
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Upload failed."
         setError(msg)
-        toast({ variant: "destructive", description: msg })
+        toast({ variant: "destructive", title: "Upload failed", description: msg })
         setSubmitting(false)
       }
     },
@@ -237,9 +280,9 @@ export function UploadForm({ onJobCreated, entitlement }: UploadFormProps = {}) 
             <div
               className={cn(
                 "border-2 border-dashed rounded-2xl p-16 text-center transition-all relative overflow-hidden cursor-pointer min-h-[320px] flex items-center justify-center",
-                dragState === "valid" ? "border-indigo-500 bg-indigo-50/50" :
+                dragState === "valid" ? "border-primary bg-primary/5" :
                 dragState === "multi" ? "border-red-400 bg-red-50" :
-                "border-zinc-300 bg-zinc-50 hover:border-zinc-400 hover:bg-zinc-100/50"
+                "border-input bg-muted hover:border-input hover:bg-muted/50"
               )}
               onDrop={onDrop}
               onDragOver={onDragOver}
@@ -248,16 +291,16 @@ export function UploadForm({ onJobCreated, entitlement }: UploadFormProps = {}) 
             >
               {file ? (
                 <div className="flex flex-col items-center gap-3">
-                  <div className="w-16 h-16 bg-white rounded-xl shadow-sm border border-zinc-200 flex items-center justify-center">
-                    <FileText className="w-8 h-8 text-indigo-600" />
+                  <div className="w-16 h-16 bg-card rounded-xl shadow-sm border border-border flex items-center justify-center">
+                    <FileText className="w-8 h-8 text-primary" />
                   </div>
                   <div>
-                    <p className="text-zinc-900 font-medium">{file.name}</p>
-                    <p className="text-zinc-500 text-sm">{formatBytes(file.size)}</p>
+                    <p className="text-foreground font-medium">{file.name}</p>
+                    <p className="text-muted-foreground text-sm">{formatBytes(file.size)}</p>
                   </div>
                   <button
                     type="button"
-                    className="text-sm text-indigo-600 hover:text-indigo-700 font-medium underline mt-2 relative z-20"
+                    className="text-sm text-primary hover:text-primary font-medium underline mt-2 relative z-20"
                     onClick={(e) => { e.stopPropagation(); setFile(null) }}
                   >
                     Remove file
@@ -265,25 +308,25 @@ export function UploadForm({ onJobCreated, entitlement }: UploadFormProps = {}) 
                 </div>
               ) : (
                 <div className="flex flex-col items-center gap-4">
-                  <div className="w-16 h-16 bg-white rounded-full shadow-sm border border-zinc-200 flex items-center justify-center">
-                    <UploadCloud className="w-8 h-8 text-indigo-600" />
+                  <div className="w-16 h-16 bg-card rounded-full shadow-sm border border-border flex items-center justify-center">
+                    <UploadCloud className="w-8 h-8 text-primary" />
                   </div>
                   <div>
-                    <p className="text-lg font-medium text-zinc-900">
+                    <p className="text-lg font-medium text-foreground">
                       {dragState === "valid" ? "Release to upload" :
                        dragState === "multi" ? "One file at a time only" :
                        "Drag & drop your file here"}
                     </p>
-                    <p className="text-sm text-zinc-500 mt-1">
+                    <p className="text-sm text-muted-foreground mt-1">
                       Supports DOCX, PDF, PPTX, XLSX up to {formatBytes(maxSizeBytes)}
                     </p>
                   </div>
                   <div className="flex items-center gap-4 mt-2 w-64">
-                    <div className="h-px bg-zinc-300 flex-1" />
-                    <span className="text-xs text-zinc-400 uppercase font-medium">or</span>
-                    <div className="h-px bg-zinc-300 flex-1" />
+                    <div className="h-px bg-input flex-1" />
+                    <span className="text-xs text-muted-foreground uppercase font-medium">or</span>
+                    <div className="h-px bg-input flex-1" />
                   </div>
-                  <span className="bg-white border border-zinc-200 shadow-sm text-sm font-medium px-4 py-2 rounded-lg text-zinc-700">
+                  <span className="bg-card border border-border shadow-sm text-sm font-medium px-4 py-2 rounded-lg text-foreground">
                     Browse Files
                   </span>
                 </div>
@@ -292,7 +335,7 @@ export function UploadForm({ onJobCreated, entitlement }: UploadFormProps = {}) 
 
             {/* Phase 4: Scanned PDF detection */}
             {file && getExt(file.name) === ".pdf" && isScannedDetected !== null && (
-              <div className="flex items-center gap-1 text-xs text-zinc-600">
+              <div className="flex items-center gap-1 text-xs text-muted-foreground">
                 <span>
                   {isScannedOverride !== null
                     ? `Changed to: ${isScannedOverride ? "scanned" : "native"} PDF`
@@ -300,7 +343,7 @@ export function UploadForm({ onJobCreated, entitlement }: UploadFormProps = {}) 
                 </span>
                 <button
                   type="button"
-                  className="text-xs text-indigo-600 underline hover:text-indigo-800 ml-1"
+                  className="text-xs text-primary underline hover:text-primary ml-1"
                   onClick={() =>
                     setIsScannedOverride((v) =>
                       v === null ? !isScannedDetected : null
@@ -318,45 +361,91 @@ export function UploadForm({ onJobCreated, entitlement }: UploadFormProps = {}) 
             {/* Entitlement info — quota + file size limits */}
             {entitlement?.has_active && (
               <div
-                className="bg-indigo-50 border border-indigo-100 rounded-xl px-4 py-3 text-sm space-y-1"
+                className="bg-primary/10 dark:bg-primary/15 border border-primary/20 dark:border-primary/25 rounded-xl px-4 py-3 text-sm space-y-1"
                 data-testid="entitlement-info"
               >
-                <p className="text-indigo-800 font-medium">
+                <p className="text-primary font-medium">
                   {entitlement.tier ?? "Active"} plan
                 </p>
-                <p className="text-indigo-700" data-testid="max-file-size">
+                <p className="text-primary/80" data-testid="max-file-size">
                   Max file size: {formatBytes(maxSizeBytes)}
                 </p>
                 {entitlement.monthly_quota != null ? (
-                  <p className="text-indigo-700" data-testid="quota-remaining">
+                  <p className="text-primary/80" data-testid="quota-remaining">
                     {entitlement.monthly_quota - entitlement.quota_used} / {entitlement.monthly_quota} documents left this month
                   </p>
                 ) : (
-                  <p className="text-indigo-700" data-testid="quota-remaining">
+                  <p className="text-primary/80" data-testid="quota-remaining">
                     Unlimited documents
                   </p>
                 )}
               </div>
             )}
 
+            {/* US-3.6: Credit estimate card */}
+            {estimating && file && targetLang && (
+              <div className="rounded-xl px-4 py-3 text-sm flex items-center gap-2 bg-muted border border-border">
+                <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+                <span className="text-muted-foreground">Estimating cost...</span>
+              </div>
+            )}
+            {estimate && !estimating && (
+              <div
+                className={cn(
+                  "rounded-xl px-4 py-3 text-sm space-y-1",
+                  estimate.has_sufficient_credits
+                    ? "bg-muted border border-border"
+                    : "bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800"
+                )}
+                data-testid="credit-estimate"
+              >
+                <div className="flex items-center gap-2 text-foreground">
+                  <Coins className="w-4 h-4 text-muted-foreground" />
+                  <span className="font-medium">
+                    {estimate.word_count.toLocaleString()} words
+                  </span>
+                  <span className="text-muted-foreground">·</span>
+                  <span className="font-semibold">
+                    {estimate.credit_cost.toLocaleString()} credits
+                  </span>
+                  {estimate.is_scanned && (
+                    <Badge variant="outline" className="text-xs ml-1">OCR</Badge>
+                  )}
+                </div>
+                {!estimate.has_sufficient_credits && (
+                  <p className="text-red-600 dark:text-red-400 text-xs">
+                    Insufficient quota.{" "}
+                    <button
+                      type="button"
+                      className="underline hover:text-red-700"
+                      onClick={() => router.push("/pricing")}
+                    >
+                      Top up
+                    </button>{" "}
+                    to continue.
+                  </p>
+                )}
+              </div>
+            )}
+
             {/* Language Pair */}
-            <div className="bg-white p-6 rounded-xl border border-zinc-200 shadow-md space-y-5">
-              <h3 className="font-semibold text-zinc-900 flex items-center gap-2 mb-2">
-                <Languages className="w-4 h-4 text-indigo-500" />
+            <div className="bg-card p-6 rounded-xl border border-border shadow-md space-y-5">
+              <h3 className="font-semibold text-foreground flex items-center gap-2 mb-2">
+                <Languages className="w-4 h-4 text-muted-foreground" />
                 Language Pair
               </h3>
               <div className="space-y-4">
                 <LanguageSelect
                   label="Source"
                   value={sourceLang}
-                  onValueChange={setSourceLang}
+                  onValueChange={(v) => { setSourceLang(v); setEstimate(null) }}
                   includeAutoDetect
                   placeholder="Auto-detect (Recommended)"
                 />
                 <LanguageSelect
                   label="Target"
                   value={targetLang}
-                  onValueChange={setTargetLang}
+                  onValueChange={(v) => { setTargetLang(v); setEstimate(null) }}
                   placeholder="Select target language"
                 />
                 {targetLang && sourceLang !== "auto" && sourceLang === targetLang && (
@@ -369,9 +458,9 @@ export function UploadForm({ onJobCreated, entitlement }: UploadFormProps = {}) 
 
             {/* Glossary — hidden when glossary_allowed === false */}
             {glossaryAllowed ? (
-              <div className="bg-white p-6 rounded-xl border border-zinc-200 shadow-md space-y-4">
-                <h3 className="font-semibold text-zinc-900 flex items-center gap-2">
-                  <BookA className="w-4 h-4 text-indigo-500" />
+              <div className="bg-card p-6 rounded-xl border border-border shadow-md space-y-4">
+                <h3 className="font-semibold text-foreground flex items-center gap-2">
+                  <BookA className="w-4 h-4 text-muted-foreground" />
                   Glossary
                 </h3>
                 <GlossarySelect
@@ -383,17 +472,17 @@ export function UploadForm({ onJobCreated, entitlement }: UploadFormProps = {}) 
               </div>
             ) : (
               <div
-                className="bg-white p-6 rounded-xl border border-zinc-200 shadow-md space-y-4 opacity-60"
+                className="bg-card p-6 rounded-xl border border-border shadow-md space-y-4 opacity-60"
                 data-testid="glossary-disabled"
               >
-                <h3 className="font-semibold text-zinc-500 flex items-center gap-2">
-                  <BookA className="w-4 h-4 text-zinc-400" />
+                <h3 className="font-semibold text-muted-foreground flex items-center gap-2">
+                  <BookA className="w-4 h-4 text-muted-foreground" />
                   Glossary
-                  <span className="ml-auto text-xs font-normal text-zinc-400 bg-zinc-100 px-2 py-0.5 rounded-full">
+                  <span className="ml-auto text-xs font-normal text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
                     Pro feature
                   </span>
                 </h3>
-                <p className="text-xs text-zinc-400">Upgrade to Pro to use custom glossaries.</p>
+                <p className="text-xs text-muted-foreground">Upgrade to Pro to use custom glossaries.</p>
               </div>
             )}
 
@@ -404,13 +493,13 @@ export function UploadForm({ onJobCreated, entitlement }: UploadFormProps = {}) 
               className={cn(
                 "w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl font-semibold shadow-sm transition-all relative overflow-hidden",
                 !canSubmit
-                  ? "bg-zinc-100 text-zinc-400 cursor-not-allowed"
-                  : "bg-indigo-600 text-white hover:bg-indigo-700 hover:shadow-md hover:-translate-y-0.5"
+                  ? "bg-muted text-muted-foreground cursor-not-allowed"
+                  : "bg-primary text-primary-foreground hover:bg-primary/90"
               )}
             >
               {uploadProgress !== null && submitting && (
                 <div
-                  className="absolute inset-y-0 left-0 bg-indigo-500 transition-all duration-200"
+                  className="absolute inset-y-0 left-0 bg-primary/80 transition-all duration-200"
                   style={{ width: `${uploadProgress}%` }}
                 />
               )}

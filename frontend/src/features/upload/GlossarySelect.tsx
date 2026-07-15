@@ -43,7 +43,7 @@ export function GlossarySelect({ sourceLang, targetLang, value, onChange }: Glos
 
   return (
     <div className="flex flex-col gap-1">
-      <label className="text-xs text-slate-500 font-[--font-roboto]">Glossary (optional)</label>
+      <label className="text-xs text-muted-foreground font-[--font-roboto]">Glossary (optional)</label>
       <Select
         value={selectValue}
         onValueChange={(v) => onChange(v === NONE_SENTINEL ? "" : v)}
@@ -73,7 +73,7 @@ export function GlossarySelect({ sourceLang, targetLang, value, onChange }: Glos
         </SelectContent>
       </Select>
       {enabled && !isLoading && glossaries.length === 0 && (
-        <p className="text-xs text-slate-400">
+        <p className="text-xs text-muted-foreground">
           No glossaries for this language pair.{" "}
           <a href="/glossaries" className="text-violet-600 underline">
             Create one

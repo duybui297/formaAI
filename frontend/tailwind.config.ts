@@ -2,7 +2,7 @@ import type { Config } from "tailwindcss"
 import { fontFamily } from "tailwindcss/defaultTheme"
 
 const config: Config = {
-  darkMode: ["class", "[data-theme='dark']"] as const,  // UI-SPEC: light mode only in Phase 1 — no dark class applied, keeping config valid
+  darkMode: "class",
   content: [
     "./src/**/*.{js,ts,jsx,tsx,mdx}",
   ],

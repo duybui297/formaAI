@@ -27,6 +27,7 @@ from app.api.routes.languages import get_valid_target_codes_async
 from app.db.models import User
 from app.db.session import get_session
 from app.licensing.entitlements import count_monthly_jobs, resolve_entitlements
+from app.services.estimate_service import count_words_in_file, estimate_credit_cost
 from app.services.glossary_service import get_glossary
 from app.services.job_service import create_job
 
@@ -184,6 +185,11 @@ async def upload_document(
     else:
         input_format = ext.lstrip(".")  # "docx", "pptx", "pdf"
 
+    # --- US-3.6: Word count + credit cost for the job row ---
+    word_count = count_words_in_file(content, ext)
+    tier_name = entitlement.tier.value
+    credit_cost = estimate_credit_cost(word_count, tier_name, is_scanned)
+
     # --- DOCX tracked-changes probe (DOCX-04 / D-13) ---
     has_tracked = False
     if ext == ".docx":
@@ -222,6 +228,7 @@ async def upload_document(
         user_id=current_user.id,
         idempotency_key=idempotency_key,
         queue_priority=entitlement.queue_priority,
+        estimated_credit_cost=credit_cost,
     )
 
     # US-3.7 AC-5: idempotent — return existing job if key was already used

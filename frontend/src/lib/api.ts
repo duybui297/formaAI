@@ -26,6 +26,8 @@ import type {
   CreateAdminUserRequest,
   UpdateAdminUserRequest,
   Entitlement,
+  DashboardSummary,
+  EstimateResponse,
 } from "@/lib/types"
 import { authFetch } from "@/lib/auth"
 
@@ -357,6 +359,19 @@ export async function getMyEntitlements(): Promise<Entitlement> {
   return res.json()
 }
 
+// ---------------------------------------------------------------------------
+// Dashboard API (US-2.1)
+// ---------------------------------------------------------------------------
+
+/**
+ * GET /dashboard/summary — returns aggregated usage metrics for current billing period.
+ * Results cached 60s per user in Redis.
+ */
+export async function getDashboardSummary(): Promise<DashboardSummary> {
+  const res = await authFetch("/v1/dashboard/summary")
+  return res.json()
+}
+
 /**
  * GET /licenses/my-licenses — returns all licenses owned by the authenticated user.
  * Includes PENDING (not yet activated) and ACTIVE/EXPIRED/SUSPENDED/REVOKED licenses.
@@ -364,6 +379,48 @@ export async function getMyEntitlements(): Promise<Entitlement> {
  */
 export async function getMyLicenses(): Promise<MyLicensesResponse> {
   const res = await authFetch("/v1/licenses/my-licenses")
+  return res.json()
+}
+
+// ---------------------------------------------------------------------------
+// Credit Estimation API (US-3.6)
+// ---------------------------------------------------------------------------
+
+export interface EstimateOptions {
+  file: File
+  source_lang: string
+  target_lang: string
+  isScannedOverride?: boolean
+}
+
+/**
+ * POST /v1/translations/estimate — get word count + credit cost before submitting.
+ * US-3.6: shows user an estimate before they commit to starting a translation.
+ */
+export async function estimateTranslation(
+  options: EstimateOptions,
+): Promise<EstimateResponse> {
+  const form = new FormData()
+  form.append("file", options.file)
+  form.append("source_lang", options.source_lang)
+  form.append("target_lang", options.target_lang)
+  if (options.isScannedOverride !== undefined) {
+    form.append("is_scanned_override", String(options.isScannedOverride))
+  }
+
+  const res = await authFetch("/v1/translations/estimate", {
+    method: "POST",
+    body: form,
+    throwOnError: false,
+  })
+  if (!res.ok) {
+    const json = await res.json().catch(() => null)
+    const msg =
+      typeof json?.detail === "string"
+        ? json.detail
+        : json?.detail?.message ?? `Estimate failed: ${res.status}`
+    throw Object.assign(new Error(msg), { status: res.status, body: json })
+  }
   return res.json()
 }
 

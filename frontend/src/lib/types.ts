@@ -32,6 +32,26 @@ export interface JobProgress {
   }
   // Phase 4: D-04-14 low confidence pages for needs_review banner
   low_confidence_pages?: number[]
+  // US-3.8: failure categorization
+  failure_reason?: FailureReason | null
+  failure_details?: FailureDetails | null
+}
+
+// US-3.8: Typed failure reasons
+export type FailureReason =
+  | "unsupported_content"
+  | "ocr_low_confidence"
+  | "model_timeout"
+  | "payment"
+  | "quota_exceeded"
+  | "feature_not_in_plan"
+  | "segment_too_large"
+  | "translation_error"
+
+export interface FailureDetails {
+  message?: string
+  feature?: string
+  failing_segments?: Array<{ id: string; source_text: string; batch_id: number }>
 }
 
 // B5: Language shape matches SUPPORTED_LANGUAGES in Plan 06a (list[dict])
@@ -326,6 +346,15 @@ export interface Entitlement {
   glossary_allowed: boolean | null
 }
 
+// --- Credit Estimation (US-3.6) ---
+
+export interface EstimateResponse {
+  word_count: number
+  credit_cost: number
+  has_sufficient_credits: boolean
+  is_scanned: boolean
+}
+
 // --- Lead Capture types (TASK-3.5) ---
 
 export interface LeadRequest {
@@ -355,4 +384,15 @@ export interface Notification {
 
 export interface NotificationsResponse {
   notifications: Notification[]
+}
+
+// US-2.1: Dashboard KPI tiles
+export interface DashboardSummary {
+  files_translated: number
+  words_processed: number
+  credits_remaining: number | null
+  active_plan: string | null
+  billing_period_start: string
+  billing_period_end: string
+  _cached?: boolean
 }

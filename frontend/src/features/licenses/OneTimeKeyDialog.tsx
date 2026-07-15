@@ -12,6 +12,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Copy, Check } from "lucide-react"
+import { useCrudToast } from "@/hooks/use-crud-toast"
 
 interface OneTimeKeyDialogProps {
   open: boolean
@@ -22,11 +23,13 @@ interface OneTimeKeyDialogProps {
 }
 
 export function OneTimeKeyDialog({ open, rawKey, onClose, extraContent }: OneTimeKeyDialogProps) {
+  const crud = useCrudToast()
   const [copied, setCopied] = useState(false)
 
   async function handleCopy() {
     try {
       await navigator.clipboard.writeText(rawKey)
+      crud.info("Key copied", "Pasted into your clipboard.")
     } catch {
       // fallback: select the input text
     }
@@ -42,7 +45,7 @@ export function OneTimeKeyDialog({ open, rawKey, onClose, extraContent }: OneTim
         </DialogHeader>
 
         <div className="space-y-4 py-2">
-          <p className="text-sm text-zinc-600">
+          <p className="text-sm text-muted-foreground">
             Copy this key now. It will <strong>not</strong> be shown again.
           </p>
 

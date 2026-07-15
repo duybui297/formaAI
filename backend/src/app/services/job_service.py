@@ -19,7 +19,8 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Job, JobStage, JobStatus
+from app.db.models import CreditLedger, FailureReason, Job, JobStage, JobStatus
+from app.licensing.plans import FREE_RETRY_WINDOW_HOURS, SYSTEM_SIDE_FAILURE_REASONS
 
 
 async def create_job(
@@ -35,6 +36,7 @@ async def create_job(
     user_id: str | None = None,
     idempotency_key: str | None = None,
     queue_priority: int | None = None,
+    estimated_credit_cost: int = 0,
 ) -> tuple[Job, bool]:
     """
     Insert a new Job row with status=queued.
@@ -73,6 +75,7 @@ async def create_job(
         user_id=user_id,
         idempotency_key=idempotency_key,
         queue_priority=queue_priority,
+        estimated_credit_cost=estimated_credit_cost,
     )
     session.add(job)
     await session.commit()
@@ -210,3 +213,70 @@ def build_job_path(data_dir: str, job_id: str) -> str:
     Multi-tenant isolation is enforced at the DB query layer (per-user job filtering).
     """
     return os.path.join(data_dir, "jobs", job_id)
+
+
+# ---------------------------------------------------------------------------
+# US-3.8: Failure handling with typed reasons and credit refunds
+# ---------------------------------------------------------------------------
+
+async def transition_to_failed_with_reason(
+    session: AsyncSession,
+    job_id: str,
+    failure_reason: FailureReason,
+    failure_details: dict | None = None,
+    refund_credits: bool = True,
+) -> None:
+    """
+    US-3.8: Mark a job as failed with a typed reason.
+
+    If refund_credits=True and the reason is system-side, records a refund in
+    credits_ledger (credit back to the user).
+
+    No-op if job_id does not exist.
+    """
+    job = await get_job(session, job_id)
+    if job is None:
+        return
+
+    job.status = JobStatus.failed
+    job.stage = JobStage.failed
+    job.failure_reason = failure_reason
+    job.failure_details = failure_details
+
+    # US-3.8: refund credits for system-side failures
+    if refund_credits and failure_reason.value in SYSTEM_SIDE_FAILURE_REASONS:
+        # Refund the estimated credit cost stored on the job row
+        credit_cost = job.estimated_credit_cost
+        if credit_cost > 0 and job.user_id:
+            await add_credit_ledger_entry(
+                session=session,
+                user_id=job.user_id,
+                job_id=job_id,
+                amount=credit_cost,
+                reason=f"refund_{failure_reason.value}",
+            )
+
+    await session.commit()
+
+
+async def add_credit_ledger_entry(
+    session: AsyncSession,
+    user_id: str,
+    job_id: str | None,
+    amount: int,
+    reason: str,
+) -> None:
+    """
+    US-3.8: Record a credit transaction in the credits_ledger.
+
+    amount: positive = refund to user, negative = debit from user
+    reason: short code describing the transaction (e.g. "translation", "refund_model_timeout")
+    """
+    entry = CreditLedger(
+        user_id=user_id,
+        job_id=job_id,
+        amount=amount,
+        reason=reason,
+    )
+    session.add(entry)
+    await session.commit()

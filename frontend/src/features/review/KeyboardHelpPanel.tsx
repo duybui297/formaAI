@@ -24,7 +24,7 @@ export function KeyboardHelpPanel({ open, onClose }: KeyboardHelpPanelProps) {
   if (!open) return null;
 
   return (
-    <div className="fixed right-4 top-[180px] z-50 w-72 bg-white border border-slate-200 rounded-lg shadow-lg p-4">
+    <div className="fixed right-4 top-[180px] z-50 w-72 bg-card border border-border rounded-lg shadow-lg p-4">
       <div className="flex items-center justify-between mb-3">
         <h3
           className="text-sm font-semibold text-[#111111]"
@@ -49,10 +49,10 @@ export function KeyboardHelpPanel({ open, onClose }: KeyboardHelpPanelProps) {
           // NOT on the children. Named Fragment import required — <> shorthand
           // does not support the key prop.
           <Fragment key={key}>
-            <kbd className="px-1.5 py-0.5 text-xs font-mono bg-slate-100 border border-slate-300 rounded justify-self-start">
+            <kbd className="px-1.5 py-0.5 text-xs font-mono bg-muted border border-input rounded justify-self-start">
               {key}
             </kbd>
-            <span className="text-xs text-slate-600">{action}</span>
+            <span className="text-xs text-muted-foreground">{action}</span>
           </Fragment>
         ))}
       </div>

@@ -104,10 +104,10 @@ function LicensesPageInner() {
   return (
     <div className="flex flex-col h-full overflow-hidden">
       {/* Header */}
-      <div className="shrink-0 px-6 py-5 border-b border-zinc-200 bg-white flex items-center justify-between">
+      <div className="shrink-0 px-6 py-5 border-b border-border bg-card flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <ShieldCheck className="w-5 h-5 text-indigo-600" />
-          <h1 className="text-xl font-bold font-montserrat text-zinc-900">
+          <ShieldCheck className="w-5 h-5 text-primary" />
+          <h1 className="text-xl font-bold font-montserrat text-foreground">
             License Management
           </h1>
         </div>
@@ -136,7 +136,7 @@ function LicensesPageInner() {
 
         {isLoading ? (
           <div className="flex items-center justify-center py-16">
-            <span className="text-sm text-zinc-400">Loading…</span>
+            <span className="text-sm text-muted-foreground">Loading…</span>
           </div>
         ) : (
           <LicensesTable
@@ -182,7 +182,7 @@ function LicensesPageInner() {
 
 export default function LicensesPage() {
   return (
-    <Suspense fallback={<div className="p-6 text-sm text-zinc-400">Loading…</div>}>
+    <Suspense fallback={<div className="p-6 text-sm text-muted-foreground">Loading…</div>}>
       <LicensesPageInner />
     </Suspense>
   )

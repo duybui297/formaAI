@@ -16,6 +16,7 @@ import { Separator } from "@/components/ui/separator"
 import { getLicenseActivities, extendExpiry } from "@/lib/api"
 import type { License, LicenseActivity } from "@/lib/types"
 import { cn } from "@/lib/utils"
+import { useCrudToast } from "@/hooks/use-crud-toast"
 
 const ACTION_COLORS: Record<string, string> = {
   created: "bg-sky-400",
@@ -28,7 +29,7 @@ const ACTION_COLORS: Record<string, string> = {
 function ActivityTimeline({ activities }: { activities: LicenseActivity[] }) {
   if (activities.length === 0) {
     return (
-      <p className="text-sm text-zinc-400 py-4 text-center">
+      <p className="text-sm text-muted-foreground py-4 text-center">
         No activity yet.
       </p>
     )
@@ -37,25 +38,25 @@ function ActivityTimeline({ activities }: { activities: LicenseActivity[] }) {
   return (
     <ol
       data-testid="activity-timeline"
-      className="relative border-l border-zinc-200 ml-2 space-y-4"
+      className="relative border-l border-border ml-2 space-y-4"
     >
       {activities.map((act) => (
         <li key={act.id} className="ml-4">
           <span
             className={cn(
               "absolute -left-1.5 mt-1.5 h-3 w-3 rounded-full border-2 border-white",
-              ACTION_COLORS[act.action] ?? "bg-zinc-400"
+              ACTION_COLORS[act.action] ?? "bg-muted"
             )}
           />
-          <p className="text-xs text-zinc-400">
+          <p className="text-xs text-muted-foreground">
             {new Date(act.created_at).toLocaleString()}
             {act.actor ? ` · ${act.actor}` : ""}
           </p>
-          <p className="text-sm text-zinc-800 font-medium capitalize">
+          <p className="text-sm text-foreground font-medium capitalize">
             {act.action}
           </p>
           {act.detail && (
-            <p className="text-xs text-zinc-500">{act.detail}</p>
+            <p className="text-xs text-muted-foreground">{act.detail}</p>
           )}
         </li>
       ))}
@@ -75,6 +76,7 @@ export function LicenseDetailDrawer({
   onOpenChange,
 }: LicenseDetailDrawerProps) {
   const queryClient = useQueryClient()
+  const crud = useCrudToast()
   const [extendDate, setExtendDate] = useState("")
   const [showExtend, setShowExtend] = useState(false)
 
@@ -88,8 +90,12 @@ export function LicenseDetailDrawer({
     mutationFn: () => extendExpiry(license!.id, extendDate),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["licenses"] })
+      crud.extended("License", license?.key_masked)
       setShowExtend(false)
       setExtendDate("")
+    },
+    onError: (err: Error) => {
+      crud.failed("extend", "license", err)
     },
   })
 
@@ -111,33 +117,33 @@ export function LicenseDetailDrawer({
           {/* Key info */}
           <div className="space-y-2 text-sm">
             <div className="flex justify-between">
-              <span className="text-zinc-500">Key</span>
-              <span className="font-mono text-zinc-800">{license.key_masked}</span>
+              <span className="text-muted-foreground">Key</span>
+              <span className="font-mono text-foreground">{license.key_masked}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-zinc-500">Tier</span>
-              <span className="text-zinc-800 capitalize">{license.tier}</span>
+              <span className="text-muted-foreground">Tier</span>
+              <span className="text-foreground capitalize">{license.tier}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-zinc-500">Status</span>
-              <span className="text-zinc-800 capitalize">{license.status}</span>
+              <span className="text-muted-foreground">Status</span>
+              <span className="text-foreground capitalize">{license.status}</span>
             </div>
             {license.customer_id && (
               <div className="flex justify-between">
-                <span className="text-zinc-500">Customer</span>
-                <span className="text-zinc-800">{license.customer_id}</span>
+                <span className="text-muted-foreground">Customer</span>
+                <span className="text-foreground">{license.customer_id}</span>
               </div>
             )}
             <div className="flex justify-between">
-              <span className="text-zinc-500">Issued</span>
-              <span className="text-zinc-800">
+              <span className="text-muted-foreground">Issued</span>
+              <span className="text-foreground">
                 {new Date(license.issued_at).toLocaleDateString()}
               </span>
             </div>
             {license.expired_at && (
               <div className="flex justify-between">
-                <span className="text-zinc-500">Expires</span>
-                <span className="text-zinc-800">
+                <span className="text-muted-foreground">Expires</span>
+                <span className="text-foreground">
                   {new Date(license.expired_at).toLocaleDateString()}
                 </span>
               </div>
@@ -191,7 +197,7 @@ export function LicenseDetailDrawer({
 
           {/* Activity timeline */}
           <div>
-            <h3 className="text-sm font-semibold text-zinc-700 mb-3">Activity</h3>
+            <h3 className="text-sm font-semibold text-foreground mb-3">Activity</h3>
             <ActivityTimeline activities={activities} />
           </div>
         </div>

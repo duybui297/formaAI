@@ -29,7 +29,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { useToast } from "@/hooks/use-toast"
+import { useCrudToast } from "@/hooks/use-crud-toast"
+import { useConfirm } from "@/hooks/use-confirm"
 import { getMeApi } from "@/lib/auth"
 import { listUsers, createUser, updateUser, deleteUser } from "@/lib/api"
 import type {
@@ -52,7 +53,7 @@ function RoleBadge({ isSuperuser }: { isSuperuser: boolean }) {
         "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium border",
         isSuperuser
           ? "bg-violet-100 text-violet-800 border-violet-200"
-          : "bg-zinc-100 text-zinc-600 border-zinc-200"
+          : "bg-muted text-muted-foreground border-border"
       )}
     >
       {isSuperuser ? "Admin" : "User"}
@@ -86,7 +87,7 @@ interface CreateUserDialogProps {
 
 function CreateUserDialog({ open, onOpenChange, onCreated }: CreateUserDialogProps) {
   const queryClient = useQueryClient()
-  const { toast } = useToast()
+  const crud = useCrudToast()
 
   const [email, setEmail] = useState("")
   const [fullName, setFullName] = useState("")
@@ -108,7 +109,7 @@ function CreateUserDialog({ open, onOpenChange, onCreated }: CreateUserDialogPro
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["admin-users"] })
-      toast({ title: "User created", description: email })
+      crud.created("User", email)
       onCreated()
       onOpenChange(false)
       setEmail("")
@@ -122,7 +123,7 @@ function CreateUserDialog({ open, onOpenChange, onCreated }: CreateUserDialogPro
       if (err.status === 409 || err.status === 422) {
         setFieldError(err.message)
       } else {
-        toast({ title: "Error", description: err.message, variant: "destructive" })
+        crud.failed("create", "user", err)
       }
     },
   })
@@ -237,41 +238,7 @@ function CreateUserDialog({ open, onOpenChange, onCreated }: CreateUserDialogPro
   )
 }
 
-// ---- Confirm Delete Dialog ----
-
-interface ConfirmDeleteDialogProps {
-  user: AdminUser | null
-  onConfirm: () => void
-  onCancel: () => void
-}
-
-function ConfirmDeleteDialog({ user, onConfirm, onCancel }: ConfirmDeleteDialogProps) {
-  return (
-    <Dialog open={user !== null} onOpenChange={(open) => { if (!open) onCancel() }}>
-      <DialogContent className="sm:max-w-sm" data-testid="confirm-delete-dialog">
-        <DialogHeader>
-          <DialogTitle className="font-montserrat">Delete user?</DialogTitle>
-        </DialogHeader>
-        <p className="text-sm text-zinc-600">
-          This will permanently delete <strong>{user?.email}</strong>. This cannot be undone.
-        </p>
-        <DialogFooter>
-          <Button type="button" variant="outline" onClick={onCancel}>
-            Cancel
-          </Button>
-          <Button
-            type="button"
-            variant="destructive"
-            data-testid="confirm-delete-submit"
-            onClick={onConfirm}
-          >
-            Delete
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  )
-}
+// ---- Confirm Delete Dialog (uses imperative useConfirm from app root) ----
 
 // ---- Users Table Row Actions ----
 
@@ -366,7 +333,8 @@ function UsersPageInner() {
   const searchParams = useSearchParams()
   const router = useRouter()
   const pathname = usePathname()
-  const { toast } = useToast()
+  const crud = useCrudToast()
+  const confirm = useConfirm()
   const queryClient = useQueryClient()
 
   // URL-driven state
@@ -378,7 +346,6 @@ function UsersPageInner() {
 
   // Local UI state
   const [createOpen, setCreateOpen] = useState(false)
-  const [deleteTarget, setDeleteTarget] = useState<AdminUser | null>(null)
   const [searchInput, setSearchInput] = useState(search)
 
   // Current admin user (to detect own row)
@@ -434,7 +401,7 @@ function UsersPageInner() {
       queryClient.invalidateQueries({ queryKey: ["admin-users"] })
     },
     onError: (err: Error & { status?: number }) => {
-      toast({ title: "Error", description: err.message, variant: "destructive" })
+      crud.failed("update", "user", err)
     },
   })
 
@@ -442,22 +409,34 @@ function UsersPageInner() {
     mutationFn: (id: string) => deleteUser(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["admin-users"] })
-      setDeleteTarget(null)
-      toast({ title: "User deleted" })
+      crud.deleted("User")
     },
     onError: (err: Error & { status?: number }) => {
-      setDeleteTarget(null)
-      toast({ title: "Error", description: err.message, variant: "destructive" })
+      crud.failed("delete", "user", err)
     },
   })
+
+  const handleDeleteUser = async (user: AdminUser) => {
+    const ok = await confirm({
+      title: "Delete user?",
+      description: (
+        <>
+          This will permanently delete <strong>{user.email}</strong>. This cannot be undone.
+        </>
+      ),
+      confirmLabel: "Delete",
+      tone: "danger",
+    })
+    if (ok) deleteMutation.mutate(user.id)
+  }
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
       {/* Header */}
-      <div className="shrink-0 px-6 py-5 border-b border-zinc-200 bg-white flex items-center justify-between">
+      <div className="shrink-0 px-6 py-5 border-b border-border bg-card flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Users className="w-5 h-5 text-indigo-600" />
-          <h1 className="text-xl font-bold font-montserrat text-zinc-900">
+          <Users className="w-5 h-5 text-primary" />
+          <h1 className="text-xl font-bold font-montserrat text-foreground">
             User Management
           </h1>
         </div>
@@ -472,7 +451,7 @@ function UsersPageInner() {
       </div>
 
       {/* Filters */}
-      <div className="shrink-0 px-6 py-3 border-b border-zinc-100 bg-white flex items-center gap-3 flex-wrap">
+      <div className="shrink-0 px-6 py-3 border-b border-border bg-card flex items-center gap-3 flex-wrap">
         <form onSubmit={handleSearchSubmit} className="flex items-center gap-2">
           <Input
             data-testid="search-input"
@@ -518,10 +497,10 @@ function UsersPageInner() {
       <div className="flex-1 overflow-y-auto p-6">
         {isLoading ? (
           <div className="flex items-center justify-center py-16">
-            <span className="text-sm text-zinc-400">Loading…</span>
+            <span className="text-sm text-muted-foreground">Loading…</span>
           </div>
         ) : (
-          <div className="rounded-md border border-zinc-200 bg-white overflow-hidden">
+          <div className="rounded-md border border-border bg-card overflow-hidden">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -536,7 +515,7 @@ function UsersPageInner() {
               <TableBody>
                 {users.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center text-sm text-zinc-400 py-10">
+                    <TableCell colSpan={6} className="text-center text-sm text-muted-foreground py-10">
                       No users found.
                     </TableCell>
                   </TableRow>
@@ -546,8 +525,8 @@ function UsersPageInner() {
                     return (
                       <TableRow key={user.id} data-testid={`user-row-${user.id}`}>
                         <TableCell className="font-mono text-sm">{user.email}</TableCell>
-                        <TableCell className="text-sm text-zinc-600">
-                          {user.full_name ?? <span className="text-zinc-300">—</span>}
+                        <TableCell className="text-sm text-muted-foreground">
+                          {user.full_name ?? <span className="text-muted-foreground">—</span>}
                         </TableCell>
                         <TableCell>
                           <RoleBadge isSuperuser={user.is_superuser} />
@@ -555,7 +534,7 @@ function UsersPageInner() {
                         <TableCell>
                           <ActiveChip isActive={user.is_active} />
                         </TableCell>
-                        <TableCell className="text-xs text-zinc-500">
+                        <TableCell className="text-xs text-muted-foreground">
                           {new Date(user.created_at).toLocaleDateString()}
                         </TableCell>
                         <TableCell>
@@ -574,7 +553,7 @@ function UsersPageInner() {
                             onDemote={() =>
                               patchMutation.mutate({ id: user.id, patch: { is_superuser: false } })
                             }
-                            onDelete={() => setDeleteTarget(user)}
+                            onDelete={() => handleDeleteUser(user)}
                           />
                         </TableCell>
                       </TableRow>
@@ -587,7 +566,7 @@ function UsersPageInner() {
         )}
 
         {/* Pagination */}
-        <div className="mt-4 flex items-center justify-between text-sm text-zinc-500">
+        <div className="mt-4 flex items-center justify-between text-sm text-muted-foreground">
           <span>
             {total > 0 ? `${total} user${total !== 1 ? "s" : ""} total` : ""}
           </span>
@@ -625,21 +604,13 @@ function UsersPageInner() {
         onOpenChange={setCreateOpen}
         onCreated={() => {}}
       />
-
-      <ConfirmDeleteDialog
-        user={deleteTarget}
-        onConfirm={() => {
-          if (deleteTarget) deleteMutation.mutate(deleteTarget.id)
-        }}
-        onCancel={() => setDeleteTarget(null)}
-      />
     </div>
   )
 }
 
 export default function UsersPage() {
   return (
-    <Suspense fallback={<div className="p-6 text-sm text-zinc-400">Loading…</div>}>
+    <Suspense fallback={<div className="p-6 text-sm text-muted-foreground">Loading…</div>}>
       <UsersPageInner />
     </Suspense>
   )

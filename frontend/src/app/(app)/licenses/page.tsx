@@ -57,8 +57,8 @@ const STATUS_CONFIG: Record<
   revoked: {
     label: "Revoked",
     icon: Ban,
-    color: "text-zinc-500",
-    bg: "bg-zinc-100 border-zinc-300",
+    color: "text-muted-foreground",
+    bg: "bg-muted border-input",
   },
 }
 
@@ -88,10 +88,10 @@ function LicenseCard({ license }: { license: MyLicenseItem }) {
             <Key className={`w-4 h-4 ${cfg.color}`} />
           </div>
           <div>
-            <p className="font-semibold text-zinc-900">
+            <p className="font-semibold text-foreground">
               {TIER_LABELS[license.tier] ?? license.tier}
             </p>
-            <p className="text-xs text-zinc-500 mt-0.5">
+            <p className="text-xs text-muted-foreground mt-0.5">
               License #{license.id.slice(0, 8)}
             </p>
           </div>
@@ -106,16 +106,16 @@ function LicenseCard({ license }: { license: MyLicenseItem }) {
       {/* Meta */}
       <div className="grid grid-cols-3 gap-4 text-sm">
         <div>
-          <p className="text-zinc-400 text-xs">Issued</p>
-          <p className="font-medium text-zinc-700">{formatDate(license.issued_at)}</p>
+          <p className="text-muted-foreground text-xs">Issued</p>
+          <p className="font-medium text-foreground">{formatDate(license.issued_at)}</p>
         </div>
         <div>
-          <p className="text-zinc-400 text-xs">Activated</p>
-          <p className="font-medium text-zinc-700">{formatDate(license.activated_at)}</p>
+          <p className="text-muted-foreground text-xs">Activated</p>
+          <p className="font-medium text-foreground">{formatDate(license.activated_at)}</p>
         </div>
         <div>
-          <p className="text-zinc-400 text-xs">Expires</p>
-          <p className="font-medium text-zinc-700">{formatDate(license.expired_at)}</p>
+          <p className="text-muted-foreground text-xs">Expires</p>
+          <p className="font-medium text-foreground">{formatDate(license.expired_at)}</p>
         </div>
       </div>
 
@@ -160,12 +160,12 @@ export default function MyLicensesPage() {
   return (
     <div className="flex flex-col h-full overflow-hidden">
       {/* Header */}
-      <div className="shrink-0 px-6 py-5 border-b border-zinc-200 bg-white flex items-center justify-between">
+      <div className="shrink-0 px-6 py-5 border-b border-border bg-card flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold font-montserrat text-zinc-900">
+          <h1 className="text-xl font-bold font-montserrat text-foreground">
             My Licenses
           </h1>
-          <p className="text-sm text-zinc-500 mt-0.5">
+          <p className="text-sm text-muted-foreground mt-0.5">
             View and manage your assigned licenses.
           </p>
         </div>
@@ -191,7 +191,7 @@ export default function MyLicensesPage() {
       {/* Body */}
       <div className="flex-1 overflow-y-auto p-6">
         {isLoading && (
-          <div className="flex items-center justify-center py-16 gap-3 text-zinc-400">
+          <div className="flex items-center justify-center py-16 gap-3 text-muted-foreground">
             <Loader2 className="w-5 h-5 animate-spin" />
             <span>Loading your licenses...</span>
           </div>
@@ -199,7 +199,7 @@ export default function MyLicensesPage() {
 
         {isError && (
           <div className="flex flex-col items-center justify-center py-16 gap-4">
-            <p className="text-zinc-500">Failed to load licenses.</p>
+            <p className="text-muted-foreground">Failed to load licenses.</p>
             <Button variant="outline" onClick={() => refetch()}>
               <RefreshCw className="w-4 h-4 mr-2" />
               Try again
@@ -209,12 +209,12 @@ export default function MyLicensesPage() {
 
         {!isLoading && !isError && licenses.length === 0 && (
           <div className="flex flex-col items-center justify-center py-20 gap-4 text-center">
-            <div className="bg-zinc-100 rounded-full p-4">
-              <Key className="w-8 h-8 text-zinc-400" />
+            <div className="bg-muted rounded-full p-4">
+              <Key className="w-8 h-8 text-muted-foreground" />
             </div>
             <div>
-              <p className="font-semibold text-zinc-700">No licenses yet</p>
-              <p className="text-sm text-zinc-500 mt-1 max-w-xs">
+              <p className="font-semibold text-foreground">No licenses yet</p>
+              <p className="text-sm text-muted-foreground mt-1 max-w-xs">
                 Contact your administrator to get a license assigned to your account.
               </p>
             </div>
@@ -224,9 +224,9 @@ export default function MyLicensesPage() {
         {!isLoading && !isError && licenses.length > 0 && (
           <div className="space-y-4 max-w-2xl">
             {/* Summary strip */}
-            <div className="flex items-center gap-4 text-sm text-zinc-500">
+            <div className="flex items-center gap-4 text-sm text-muted-foreground">
               <span>
-                <strong className="text-zinc-800">{licenses.length}</strong> total license
+                <strong className="text-foreground">{licenses.length}</strong> total license
                 {licenses.length !== 1 ? "s" : ""}
               </span>
               {activeCount > 0 && (
